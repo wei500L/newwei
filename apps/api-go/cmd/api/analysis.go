@@ -20,9 +20,9 @@ import (
 // wireAnalysisCollaboration 按三个 HTTP 开关注册分析工作台。
 // 开关只决定路由。视图删除清理讨论、讨论校验主体，都不看另一个开关。
 func wireAnalysisCollaboration(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
-	viewsGo := cfg.AnalysisViewsMode == config.AnalysisViewsModeGo
-	boardsGo := cfg.AnalysisBoardsMode == config.AnalysisBoardsModeGo
-	threadsGo := cfg.AnalysisThreadsMode == config.AnalysisThreadsModeGo
+	viewsGo := true
+	boardsGo := true
+	threadsGo := true
 	if !viewsGo && !boardsGo && !threadsGo {
 		return nil
 	}
@@ -37,7 +37,7 @@ func wireAnalysisCollaboration(gateway *legacyproxy.Gateway, cfg config.Config, 
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)

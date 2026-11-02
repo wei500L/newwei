@@ -67,42 +67,29 @@ func modelAccessSettingsNestRoutes() []struct{ method, path string } {
 }
 
 // newModelAccessGateway builds a gateway with the model access rules in go mode.
-func newModelAccessGateway(t *testing.T, mode string) *Gateway {
+func newModelAccessGateway(t *testing.T) *Gateway {
 	t.Helper()
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithModelAccessSettings(rules, mode)
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithModelAccessSettings(rules)
+	gateway := New(rules)
 	return gateway
 }
 
 // TestModelAccessSettingsStaysLegacyByDefault proves an unset/legacy mode adds
 // nothing.
-func TestModelAccessSettingsStaysLegacyByDefault(t *testing.T) {
-	for _, mode := range []string{"", "legacy"} {
-		gateway := newModelAccessGateway(t, mode)
-		for _, testCase := range modelAccessSettingsRoutes() {
-			if got := gateway.match(testCase.method, testCase.path); got.Mode != ModeLegacy {
-				t.Fatalf("%s %s mode=%s, want legacy for mode %q", testCase.method, testCase.path, got.Mode, mode)
-			}
-		}
-	}
-}
 
 // TestModelAccessSettingsGoOwnsTenRoutes proves the exact ownership and the rule
 // shape.
 func TestModelAccessSettingsGoOwnsTenRoutes(t *testing.T) {
-	gateway := newModelAccessGateway(t, string(ModeGo))
+	gateway := newModelAccessGateway(t)
 	routes := modelAccessSettingsRoutes()
 	if len(routes) != 10 {
 		t.Fatalf("the batch owns ten routes, the table lists %d", len(routes))
 	}
 	for _, testCase := range routes {
 		got := gateway.match(testCase.method, testCase.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", testCase.method, testCase.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", testCase.method, testCase.path, got.Prefix)
 		}
 		if got.HandlerKey != ModelAccessSettingsKey {
 			t.Fatalf("%s %s key=%s, want %s", testCase.method, testCase.path, got.HandlerKey, ModelAccessSettingsKey)
@@ -120,18 +107,18 @@ func TestModelAccessSettingsGoOwnsTenRoutes(t *testing.T) {
 	}
 	// CORS preflight on the taken-over paths is answered by Go.
 	for _, testCase := range routes {
-		if got := gateway.match(http.MethodOptions, testCase.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", testCase.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, testCase.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", testCase.path, got.Prefix)
 		}
 	}
 }
 
 // TestModelAccessSettingsUnmigratedRoutesStayNest proves nothing else is captured.
 func TestModelAccessSettingsUnmigratedRoutesStayNest(t *testing.T) {
-	gateway := newModelAccessGateway(t, string(ModeGo))
+	gateway := newModelAccessGateway(t)
 	for _, testCase := range modelAccessSettingsNestRoutes() {
-		if got := gateway.match(testCase.method, testCase.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", testCase.method, testCase.path, got.Mode)
+		if got := gateway.match(testCase.method, testCase.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", testCase.method, testCase.path, got.Prefix)
 		}
 	}
 }
@@ -140,17 +127,14 @@ func TestModelAccessSettingsUnmigratedRoutesStayNest(t *testing.T) {
 // not steal each other's routes: they share the /api/system-settings prefix and
 // the runtime settings handler key is the bare prefix.
 func TestModelAccessSettingsCoexistsWithRuntimeSettings(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithRuntimeSettings(rules, string(ModeGo))
-	rules = WithModelAccessSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithRuntimeSettings(rules)
+	rules = WithModelAccessSettings(rules)
+	gateway := New(rules)
 	for _, testCase := range modelAccessSettingsRoutes() {
 		got := gateway.match(testCase.method, testCase.path)
-		if got.Mode != ModeGo || got.HandlerKey != ModelAccessSettingsKey {
-			t.Fatalf("%s %s resolved to mode=%s key=%s", testCase.method, testCase.path, got.Mode, got.HandlerKey)
+		if got.Prefix == "" || got.HandlerKey != ModelAccessSettingsKey {
+			t.Fatalf("%s %s resolved to mode=%s key=%s", testCase.method, testCase.path, got.Prefix, got.HandlerKey)
 		}
 	}
 	for _, testCase := range []struct{ method, path string }{
@@ -159,13 +143,13 @@ func TestModelAccessSettingsCoexistsWithRuntimeSettings(t *testing.T) {
 		{http.MethodGet, "/api/system-settings/newsnow-personalization/metrics"},
 	} {
 		got := gateway.match(testCase.method, testCase.path)
-		if got.Mode != ModeGo || got.HandlerKey != RuntimeSettingsKey {
-			t.Fatalf("%s %s resolved to mode=%s key=%s", testCase.method, testCase.path, got.Mode, got.HandlerKey)
+		if got.Prefix == "" || got.HandlerKey != RuntimeSettingsKey {
+			t.Fatalf("%s %s resolved to mode=%s key=%s", testCase.method, testCase.path, got.Prefix, got.HandlerKey)
 		}
 	}
 	// The neighbouring internal endpoint keeps its legacy route.
-	if got := gateway.match(http.MethodGet, "/api/internal/litellm/proxy-load-balancing"); got.Mode != ModeLegacy {
-		t.Fatalf("proxy-load-balancing mode=%s, want legacy", got.Mode)
+	if got := gateway.match(http.MethodGet, "/api/internal/litellm/proxy-load-balancing"); got.Prefix != "" {
+		t.Fatalf("proxy-load-balancing mode=%s, want legacy", got.Prefix)
 	}
 }
 

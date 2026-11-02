@@ -18,10 +18,7 @@ const CrawlWorkflowTrialKey = "/api/admin/crawl-frontier#workflow-trial"
 // static sibling (options/groups/opml/batch), a bare `:id`, the longer
 // `:id/run` / `:id/schedule` shapes, or any other method. Those keep their
 // existing ownership (own switch or the /api/ legacy fallback).
-func WithNewsSourcePreview(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsSourcePreview(rules []Rule) []Rule {
 	return appendSegmentRule(rules, NewsSourcePreviewKey, "/api/admin/news-sources/", true, false, "/preview", http.MethodGet)
 }
 
@@ -35,10 +32,7 @@ func WithNewsSourcePreview(rules []Rule, mode string) []Rule {
 // GET `workflows/:id`, `workflows/:id/draft|publish|versions`,
 // `workflow-runs/:runId`, `workflow-runs/:runId/candidates` or the candidate
 // explanation route. An empty or legacy mode adds no rules.
-func WithCrawlWorkflowTrial(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlWorkflowTrial(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 	rules = appendSegmentRule(rules, CrawlWorkflowTrialKey, base+"/workflows/", true, false, "/trial-run", http.MethodPost)
 	return appendSegmentRule(rules, CrawlWorkflowTrialKey, base+"/workflow-runs/", true, false, "/replay", http.MethodPost)

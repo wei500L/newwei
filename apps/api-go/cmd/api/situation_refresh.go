@@ -50,9 +50,6 @@ func wireSituationRefresh(
 	scheduler *newssourcescheduler.Scheduler,
 	poller *situationsignalsworker.Service,
 ) error {
-	if cfg.SituationRefreshMode != config.SituationRefreshModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation monitor refresh go takeover requires mysql, redis, and jwt")
 	}
@@ -78,12 +75,12 @@ func wireSituationRefresh(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: situation monitor refresh takeover mode=%s", cfg.SituationRefreshMode)
+	log.Printf("api-go: situation monitor refresh takeover mode=%s", "go")
 	return nil
 }
 

@@ -22,10 +22,7 @@ const ClassificationReportsKey = "/api/admin/quality/classification/reports"
 // (appendExactKeyed does that for every migrated exact route). Every other
 // method falls back to NestJS, so the request never sees a Go 404.
 // Default (empty or legacy) appends nothing.
-func WithClassificationReports(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithClassificationReports(rules []Rule) []Rule {
 	return appendExactKeyed(rules, ClassificationReportsKey,
 		"/api/admin/quality/classification/reports", http.MethodPost)
 }

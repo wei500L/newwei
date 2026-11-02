@@ -43,32 +43,14 @@ func adminLogsNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestAdminLogsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAdminLogs(rules, "")
-	rules = WithAdminLogs(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(adminLogsRoutes(), adminLogsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestAdminLogsGoOwnsSevenRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAdminLogs(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAdminLogs(rules)
+	gateway := New(rules)
 	for _, tc := range adminLogsRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact || got.OneSegment || got.TwoSegments || got.Tail != "" || got.TailSegment {
 			t.Fatalf("%s %s was not exact: %+v", tc.method, tc.path, got)
@@ -79,22 +61,19 @@ func TestAdminLogsGoOwnsSevenRoutes(t *testing.T) {
 	}
 	// 预检 OPTIONS 由 Go 路由回答。
 	for _, tc := range adminLogsRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestAdminLogsUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAdminLogs(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAdminLogs(rules)
+	gateway := New(rules)
 	for _, tc := range adminLogsNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

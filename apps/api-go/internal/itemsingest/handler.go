@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
@@ -64,6 +66,10 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Id
 			return nil
 		}
 		identity = resolved
+		// Publish the machine token's organization so a later failure in this request
+		// (a missing permission, a validation error, a write error) is attributed to
+		// it. The identity comes from the token row, never from the request.
+		authhttp.SetVerifiedIdentity(r, identity)
 	} else {
 		if h.auth == nil {
 			authhttp.WriteDatabaseFailure(w, r)
@@ -92,6 +98,10 @@ func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	input, messages, err := parseCreateBody(r)
 	if err != nil {
+		if errors.Is(err, errCreateBodyTooLarge) {
+			writeCreateBodyTooLarge(w, r)
+			return
+		}
 		writeValidationFailure(w, r, []string{err.Error()})
 		return
 	}
@@ -147,14 +157,46 @@ type createItemResponse struct {
 
 // parseCreateBody validates CreateItemDto. It returns validation messages in
 // property source order and the raw payload object for schema normalization.
+//
+// # Body size contract
+//
+// POST /api/items is served by the same NestJS process middleware as every other
+// route: apps/api/src/main.ts:107-117 installs express.json({limit: "10mb"})
+// before the router, so the parser accepts up to 10 * 1024 * 1024 bytes and the
+// ItemsController.create body arrives fully parsed. This handler previously
+// rejected anything above 1 MiB with 400 "Invalid JSON body", which refused
+// legitimate create requests the NestJS route accepts.
+//
+// The two limits now match NestJS:
+//
+//   - a body of at most createBodyLimit bytes is parsed and validated normally;
+//   - a larger body is answered with the shape NestJS produces for a body-parser
+//     overflow (see writeCreateBodyTooLarge), never with "Invalid JSON body".
+//
+// A malformed body below the limit keeps its own 400, and a well-formed body with
+// invalid fields keeps the ValidationPipe message list. The three outcomes are
+// distinct because NestJS distinguishes them too.
 func parseCreateBody(r *http.Request) (CreateItemInput, []string, error) {
-	decoder := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	// The whole body is read before decoding, like body-parser's raw-body read:
+	// the limit applies to the bytes received, so a body one byte over the ceiling
+	// is refused even when the trailing bytes would not have changed the parsed
+	// document.
+	limited := http.MaxBytesReader(nil, r.Body, createBodyLimit)
+	defer limited.Close()
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return CreateItemInput{}, nil, errCreateBodyTooLarge
+		}
+		return CreateItemInput{}, nil, errInvalidJSONBody
+	}
 	var body map[string]json.RawMessage
-	if err := decoder.Decode(&body); err != nil {
-		return CreateItemInput{}, nil, errors.New("Invalid JSON body")
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return CreateItemInput{}, nil, errInvalidJSONBody
 	}
 	if body == nil {
-		return CreateItemInput{}, nil, errors.New("Invalid JSON body")
+		return CreateItemInput{}, nil, errInvalidJSONBody
 	}
 	input := CreateItemInput{}
 	messages := make([]string, 0, 4)
@@ -243,6 +285,12 @@ func itoa(value int) string {
 	return string(digits)
 }
 
+// writeValidationFailure writes the ValidationPipe message list and reports it.
+//
+// GlobalExceptionFilter joins a class-validator message array with "; " into one
+// string before recording and serializing, but this route answers the array itself
+// (writeError cannot express it). The event therefore carries the joined message so
+// the stored text still matches what NestJS stores for the same rejection.
 func writeValidationFailure(w http.ResponseWriter, r *http.Request, messages []string) {
 	body := struct {
 		StatusCode int      `json:"statusCode"`
@@ -267,6 +315,7 @@ func writeValidationFailure(w http.ResponseWriter, r *http.Request, messages []s
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusBadRequest)
 	_, _ = w.Write(encoded)
+	authhttp.RecordFailure(r, http.StatusBadRequest, strings.Join(messages, "; "))
 }
 
 func writeServiceFailure(w http.ResponseWriter, r *http.Request, err error) {
@@ -276,4 +325,34 @@ func writeServiceFailure(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	log.Printf("api-go: items ingest REST failure: %v", err)
 	authhttp.WriteInternalFailure(w, r)
+}
+
+// createBodyLimit is express.json({limit: "10mb"}) from apps/api/src/main.ts:111
+// expressed in bytes. body-parser parses the string with the `bytes` package,
+// where the "mb" suffix is 1024 * 1024, so the accepted ceiling is exactly
+// 10 * 1024 * 1024 bytes and one byte more is refused.
+const createBodyLimit = 10 << 20
+
+// errCreateBodyTooLarge and errInvalidJSONBody are the two parse outcomes the
+// caller distinguishes: an oversized body follows the body-parser overflow
+// contract, a malformed one follows the SyntaxError -> BadRequestException
+// mapping. Keeping them separate stops an overflow from being reported as a
+// syntax error, which is what the previous single 400 did.
+var (
+	errCreateBodyTooLarge = errors.New("request entity too large")
+	errInvalidJSONBody    = errors.New("Invalid JSON body")
+)
+
+// writeCreateBodyTooLarge writes the response NestJS produces for a body over the
+// 10 MiB parser ceiling.
+//
+// body-parser raises an "entity.too.large" error with status 413, NestJS's
+// RoutesResolver does not recognise it as an HttpException, and
+// GlobalExceptionFilter therefore resolves a non-HttpException to 500 and (in
+// production) masks the message as "Internal server error" with no error field.
+// authhttp.WritePayloadTooLarge already encodes exactly that contract for the
+// other migrated JSON routes, so this route reuses it instead of inventing a 413
+// shape the NestJS route never returns.
+func writeCreateBodyTooLarge(w http.ResponseWriter, r *http.Request) {
+	authhttp.WritePayloadTooLarge(w, r)
 }

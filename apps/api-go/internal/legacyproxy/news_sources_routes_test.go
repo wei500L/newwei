@@ -5,32 +5,14 @@ import (
 	"testing"
 )
 
-func TestNewsSourcesStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSources(rules, "")
-	rules = WithNewsSources(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range newsSourceRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestNewsSourcesGoOwnsFifteenRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSources(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithNewsSources(rules)
+	gateway := New(rules)
 	for _, tc := range newsSourceRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		key := got.Prefix
 		if got.HandlerKey != "" {
@@ -53,13 +35,13 @@ func TestNewsSourcesGoOwnsFifteenRoutes(t *testing.T) {
 	} {
 		got := gateway.match(http.MethodGet, path)
 		if path == "/api/admin/news-sources/options" || path == "/api/admin/news-sources/groups" || path == "/api/admin/news-sources/opml-presets" {
-			if !got.Exact || got.Mode != ModeGo {
+			if !got.Exact || got.Prefix == "" {
 				t.Fatalf("static GET %s was treated as :id: %+v", path, got)
 			}
 			continue
 		}
-		if got.Mode != ModeLegacy {
-			t.Fatalf("GET %s mode=%s, want legacy", path, got.Mode)
+		if got.Prefix != "" {
+			t.Fatalf("GET %s mode=%s, want legacy", path, got.Prefix)
 		}
 	}
 	for _, tc := range []struct{ method, path string }{
@@ -73,8 +55,8 @@ func TestNewsSourcesGoOwnsFifteenRoutes(t *testing.T) {
 		{http.MethodPost, "/api/admin/news-sources/opml/preview/extra"},
 		{http.MethodDelete, "/api/admin/news-sources/batch/frequency"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

@@ -27,10 +27,7 @@ const ProxyLoadBalancingKey = "/api/system-settings/llm-gateways#proxy-load-bala
 // by the Go handler; a non-preflight OPTIONS keeps the previous proxy
 // destination. An empty or legacy mode adds nothing, so the default deployment
 // is unchanged and rollback is a single environment variable change.
-func WithProxyLoadBalancing(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithProxyLoadBalancing(rules []Rule) []Rule {
 
 	rules = appendExactKeyed(rules, ProxyLoadBalancingKey,
 		"/api/system-settings/llm-gateways/proxy-load-balancing",

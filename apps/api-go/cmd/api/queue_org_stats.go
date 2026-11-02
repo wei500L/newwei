@@ -24,9 +24,6 @@ import (
 // returned tracker after the alert/situation workers and closes it before the
 // shared Redis connection is closed.
 func wireQueueOrgStats(cfg config.Config, redisClient *redis.Client, redisOptions *redis.Options) (*queueorgstats.Tracker, error) {
-	if cfg.QueueOrgStatsMode != config.QueueOrgStatsModeGo {
-		return nil, nil
-	}
 	if redisClient == nil || redisOptions == nil {
 		return nil, fmt.Errorf("api-go: API_GO_QUEUE_ORG_STATS_MODE=go requires redis")
 	}
@@ -38,6 +35,6 @@ func wireQueueOrgStats(cfg config.Config, redisClient *redis.Client, redisOption
 		return nil, fmt.Errorf("api-go: queue org stats tracker: %w", err)
 	}
 	log.Printf("api-go: queue org stats tracker enabled mode=%s (single-owner lease, XREAD bull:itemPipeline:events)",
-		cfg.QueueOrgStatsMode)
+		"go")
 	return tracker, nil
 }

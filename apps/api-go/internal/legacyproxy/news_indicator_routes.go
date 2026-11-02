@@ -16,10 +16,7 @@ const NewsIndicatorsKey = "/api/news-indicator"
 // newsIndicatorAssociation）落到 /graphql，由 API_GO_GRAPHQL_READ_MODE 与
 // API_GO_NEWS_INDICATORS_MODE 共同决定，不在这个路由表里。未列出的方法
 // （PUT/DELETE 等）与更长路径继续回落 NestJS（Go 不返回自己的 404）。
-func WithNewsIndicators(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsIndicators(rules []Rule) []Rule {
 	base := "/api/news-indicator"
 	rules = appendExactKeyed(rules, NewsIndicatorsKey, base+"/associations", http.MethodGet)
 	rules = appendExactKeyed(rules, NewsIndicatorsKey, base+"/refresh", http.MethodPost)

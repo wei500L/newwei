@@ -39,9 +39,6 @@ func wireArchiveReadingHTTP(
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
 ) (*archivereading.Service, error) {
-	if cfg.ArchiveReadingMode != config.ArchiveReadingModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: archive reading go takeover requires mysql, jwt, and redis")
 	}
@@ -87,7 +84,7 @@ func wireArchiveReadingHTTP(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)

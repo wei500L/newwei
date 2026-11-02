@@ -1,24 +1,22 @@
 package schema
 
-import (
-	"os"
-	"path/filepath"
-	"runtime"
-	"testing"
-)
+import "testing"
 
-func TestEmbeddedSchemaMatchesAPI(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+// TestEmbeddedSchemaVersionMatchesSource guards the embed/version invariant
+// without depending on the legacy apps/api directory: Version must stay the
+// SHA-256 of the exact embedded SDL, because response-cache keys are derived
+// from it. The cross-source byte comparison with the Nest generator output is
+// now a CI transition guard (the "Contract copies in sync" step), not a Go
+// test, so this package keeps compiling after apps/api is removed.
+func TestEmbeddedSchemaVersionMatchesSource(t *testing.T) {
+	if Source() == "" {
+		t.Fatal("embedded SDL is empty")
 	}
-	apiSchema := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "api", "schema.gql"))
-	raw, err := os.ReadFile(apiSchema)
-	if err != nil {
-		t.Fatalf("read %s: %v", apiSchema, err)
+	if Version != sha256Hex(Source()) {
+		t.Fatalf("Version %q is not the SHA-256 of the embedded SDL", Version)
 	}
-	if string(raw) != Source() {
-		t.Fatalf("embedded SDL drifted from %s", apiSchema)
+	if len(Version) != 64 {
+		t.Fatalf("Version %q is not a 64-char hex digest", Version)
 	}
 }
 

@@ -16,10 +16,7 @@ const CrawlTemplatesKey = "/api/admin/crawl-templates"
 // DELETE）。GET /:id 详情没有迁移，未列出的方法（PUT、GET :id 等）与
 // 更长路径都继续回落 NestJS（Go 不返回自己的 404）。crawl-tasks、
 // crawl4ai 队列与 metadata 也不在这个开关里。
-func WithCrawlTemplates(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlTemplates(rules []Rule) []Rule {
 	base := "/api/admin/crawl-templates"
 	// 精确路径先行：列表与创建不是 :id。
 	rules = appendExactKeyed(rules, CrawlTemplatesKey, base, http.MethodGet, http.MethodPost)

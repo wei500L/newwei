@@ -60,9 +60,6 @@ func wireKGIngestion(
 	redisClient *redis.Client,
 	mongoDatabase *mongo.Database,
 ) (*kgIngestionRuntime, error) {
-	if cfg.KnowledgeGraphIngestionMode != config.KnowledgeGraphIngestionModeGo {
-		return nil, nil
-	}
 	if db == nil {
 		return nil, fmt.Errorf("api-go: API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go requires mysql")
 	}

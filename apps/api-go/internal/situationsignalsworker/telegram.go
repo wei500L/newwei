@@ -15,8 +15,12 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/telegramclient"
 )
 
-// telegramChannelsAsset is the verbatim copy of
-// apps/api/src/modules/situation-monitor/signals/telegram-channels.json.
+// telegramChannelsAsset is the Go-owned curated Telegram channel catalog,
+// formerly emitted by the NestJS asset at
+// apps/api/src/modules/situation-monitor/signals/telegram-channels.json. The
+// embedded copy is authoritative at runtime; the CI "Contract copies in sync"
+// transition step keeps it byte-identical to the Nest asset while the legacy
+// app still exists.
 //
 //go:embed telegram-channels.json
 var telegramChannelsAsset embed.FS

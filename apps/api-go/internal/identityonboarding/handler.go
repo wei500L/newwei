@@ -25,12 +25,14 @@ const (
 	applicationRejectJoinSuffix         = "/reject-join"
 	applicationApproveOrgSuffix         = "/approve-org"
 	applicationRejectOrgSuffix          = "/reject-org"
+	applicationRecoverOrgSuffix         = "/recover-org"
+	applicationResendInviteSuffix       = "/resend-invite"
 	invitationAcceptAuthenticatedSuffix = "/accept-authenticated"
 	invitationAcceptSuffix              = "/accept"
 	usersWritePermission                = "users.write"
 )
 
-// Handler serves the fourteen routes. Authentication, body decoding and response
+// Handler serves the sixteen routes. Authentication, body decoding and response
 // writing live here; persistence and validation live in Service.
 //
 // The evaluation order matches NestJS:
@@ -94,6 +96,14 @@ func (h *Handler) serveDynamic(w http.ResponseWriter, r *http.Request) {
 		}
 		if applicationID, ok := singleSegment(rest, applicationRejectOrgSuffix); ok {
 			h.serveRejectOrg(w, r, applicationID)
+			return
+		}
+		if applicationID, ok := singleSegment(rest, applicationRecoverOrgSuffix); ok {
+			h.serveRecoverOrg(w, r, applicationID)
+			return
+		}
+		if applicationID, ok := singleSegment(rest, applicationResendInviteSuffix); ok {
+			h.serveResendOrgInvite(w, r, applicationID)
 			return
 		}
 	}
@@ -330,6 +340,56 @@ func (h *Handler) serveRejectOrg(w http.ResponseWriter, r *http.Request, applica
 		return
 	}
 	writeResponse(w, r, http.StatusCreated, application)
+}
+
+// serveRecoverOrg handles POST .../:id/recover-org. The route only requires
+// authentication; the service re-checks the global platform role and verifies
+// the target organization association before binding it.
+func (h *Handler) serveRecoverOrg(w http.ResponseWriter, r *http.Request, applicationID string) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	identity := h.auth.authorize(w, r, "")
+	if identity == nil {
+		return
+	}
+	body, ok := readBodyOrFail(w, r)
+	if !ok {
+		return
+	}
+	request, err := parseRecoverOrgRequest(body)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	application, err := h.svc.RecoverNewOrg(r.Context(), identity.UserID, applicationID, request)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeResponse(w, r, http.StatusOK, application)
+}
+
+// serveResendOrgInvite handles POST .../:id/resend-invite. The route only
+// requires authentication; the service re-checks the global platform role. It is
+// the explicit, token-rotating resend for the invitation of an approved
+// new-organization application.
+func (h *Handler) serveResendOrgInvite(w http.ResponseWriter, r *http.Request, applicationID string) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	identity := h.auth.authorize(w, r, "")
+	if identity == nil {
+		return
+	}
+	application, err := h.svc.ResendOrgInvite(r.Context(), identity.UserID, applicationID)
+	if err != nil {
+		writeServiceError(w, r, err)
+		return
+	}
+	writeResponse(w, r, http.StatusOK, application)
 }
 
 // serveSubmitNewOrg handles the public POST /api/auth/register/applications.

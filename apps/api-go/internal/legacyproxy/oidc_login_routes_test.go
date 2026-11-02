@@ -42,52 +42,31 @@ func oidcLoginNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestOIDCLoginStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithOIDCLogin(rules, "")
-	rules = WithOIDCLogin(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(oidcLoginGoRoutes(), oidcLoginNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestOIDCLoginGoOwnsExactlyThreeRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithOIDCLogin(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithOIDCLogin(rules)
+	gateway := New(rules)
 	for _, tc := range oidcLoginGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || !got.Exact || got.HandlerKey != OIDCLoginKey {
+		if got.Prefix == "" || !got.Exact || got.HandlerKey != OIDCLoginKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}
 	for _, tc := range oidcLoginNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestOIDCLoginCoexistsWithOtherAuthUnits(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAuthFactors(rules, string(ModeGo))
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	rules = WithAuthLogin(rules, string(ModeGo))
-	rules = WithIdentityOnboarding(rules, string(ModeGo))
-	rules = WithOIDCLogin(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAuthFactors(rules)
+	rules = WithAccountSecurity(rules)
+	rules = WithAuthLogin(rules)
+	rules = WithIdentityOnboarding(rules)
+	rules = WithOIDCLogin(rules)
+	gateway := New(rules)
 	for _, tc := range oidcLoginGoRoutes() {
 		if got := gateway.match(tc.method, tc.path); got.HandlerKey != OIDCLoginKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)

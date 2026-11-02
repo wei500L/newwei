@@ -38,32 +38,14 @@ func searchReindexNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestSearchReindexStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSearchReindex(rules, "")
-	rules = WithSearchReindex(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range searchReindexGoRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestSearchReindexGoOwnsTwoRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSearchReindex(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithSearchReindex(rules)
+	gateway := New(rules)
 	for _, tc := range searchReindexGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if got.HandlerKey != SearchReindexKey {
 			t.Fatalf("%s %s key=%s, want %s", tc.method, tc.path, got.HandlerKey, SearchReindexKey)
@@ -81,22 +63,19 @@ func TestSearchReindexGoOwnsTwoRoutes(t *testing.T) {
 	}
 	// CORS preflight on both paths is answered by Go.
 	for _, tc := range searchReindexGoRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestSearchReindexUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSearchReindex(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithSearchReindex(rules)
+	gateway := New(rules)
 	for _, tc := range searchReindexNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

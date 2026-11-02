@@ -35,10 +35,7 @@ const SituationSignalsKey = "/api/situation-monitor#signals"
 //
 // The shared rule helpers also whitelist OPTIONS for the taken-over paths, so CORS
 // preflight is answered by the Go handler instead of reaching NestJS.
-func WithSituationSignals(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSituationSignals(rules []Rule) []Rule {
 	base := "/api/situation-monitor"
 	rules = appendExactKeyed(rules, SituationSignalsKey, base+"/catalog", http.MethodGet)
 	rules = appendExactKeyed(rules, SituationSignalsKey, base+"/feedback", http.MethodPost)

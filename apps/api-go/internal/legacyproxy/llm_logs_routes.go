@@ -19,10 +19,7 @@ const LlmLogsKey = "/api/llm-logs"
 // /api/system-settings/llm-request-logs 不在这个开关里：那组设置会修改
 // Mongo TTL 索引，始终留在 NestJS。Go 只从 MySQL SystemSetting 读
 // llm_request_log_settings 算出列表响应里的 metadataPolicy。
-func WithLlmLogs(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithLlmLogs(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, LlmLogsKey, "/api/llm-logs", http.MethodGet)
 	rules = appendExactKeyed(rules, LlmLogsKey, "/api/llm-logs/export", http.MethodGet)
 	return appendExactKeyed(rules, LlmLogsKey, "/api/llm-logs/summary", http.MethodGet)

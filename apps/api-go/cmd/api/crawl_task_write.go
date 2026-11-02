@@ -64,17 +64,17 @@ func wireCrawlTaskLifecycle(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
 	}
-	if cfg.CrawlTaskWriteMode == config.CrawlTaskWriteModeGo {
+	if true {
 		register(legacyproxy.CrawlTaskWriteKey,
 			crawltaskwrite.NewHandler(authenticator, svc, cfg.TrustProxy))
 	}
-	if cfg.CrawlQueueOpsMode == config.CrawlQueueOpsModeGo {
+	if true {
 		register(legacyproxy.CrawlQueueOpsKey, crawltaskwrite.NewQueueHandler(authenticator, svc))
 	}
 }

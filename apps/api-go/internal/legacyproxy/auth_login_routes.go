@@ -40,10 +40,7 @@ const AuthLoginKey = "/api/auth#login"
 // whitelists OPTIONS for these paths, so CORS preflight is answered by the Go
 // handler instead of reaching NestJS; a non-preflight OPTIONS request is sent
 // back to the proxy by the wiring.
-func WithAuthLogin(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithAuthLogin(rules []Rule) []Rule {
 	base := "/api/auth"
 	for _, path := range []string{
 		"/login",

@@ -30,9 +30,6 @@ func wireAlertWorker(
 	graphqlMongo **dashboardstats.Connection,
 	dashboardMongo **dashboardstats.Connection,
 ) (*alertworker.Service, error) {
-	if cfg.AlertWorkerMode != config.AlertWorkerModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_ALERT_WORKER_MODE=go requires mysql and redis")
 	}
@@ -94,7 +91,7 @@ func wireAlertWorker(
 		return nil, fmt.Errorf("api-go: alert worker: %w", err)
 	}
 	log.Printf("api-go: alert worker enabled mode=%s (concurrency=%d, scan interval=%dms, forecast enabled=%t)",
-		cfg.AlertWorkerMode, cfg.AlertQueueConcurrency, cfg.AlertScanIntervalMs, forecastConfig.Enabled)
+		"go", cfg.AlertQueueConcurrency, cfg.AlertScanIntervalMs, forecastConfig.Enabled)
 	return service, nil
 }
 

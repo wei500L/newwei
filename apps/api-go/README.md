@@ -1,6 +1,8 @@
-# api-go —— 主后端 Go 网关（Strangler Fig）
+# api-go —— 主后端 Go 网关（仓库唯一后端）
 
-NestJS `apps/api` 的渐进替代入口。默认全部流量反向代理到 NestJS（`LEGACY_API_URL`，默认 `http://localhost:4000`）；已迁移路由按四态路由表分流。详细语义见 `docs/refactor/api-go-four-mode.md`。
+本服务是仓库**唯一**的 HTTP 网关：NestJS `apps/api` 已随 GO-NODE-RETIRE-001 删除，所有业务路由都由 Go 直接响应，未匹配路由返回普通 404。Go 运行时**不再读取任何 `API_GO_*_MODE` 开关**——每个迁移单元始终启用；保留的运行时执行门是 `SCHEDULE_ENABLED` / `BULLMQ_WORKERS_ENABLED` / `WS_REDIS_ADAPTER_ENABLED` / `GRAPHQL_SUBSCRIPTION_BUS`。
+
+下文各段保留迁移批次的历史说明（"默认 legacy"、"切换/回滚开关"是当时的事实；删除 Node 后端后这些 mode 开关已失效）。当前行为以 `config.go` 与 `docs/refactor/cutover/` 的语义为准；回退旧后端依靠正常版本回滚，不再保留并行 Node 服务或 legacy override。
 
 Go-批3B 起，**user-settings 六个只读 GET** 在 pilot 中由统一 Go handler 接管（`API_GO_USER_SETTINGS_READ_MODE=go`）。Go-批3C 起，**同一六个 PUT** 在 `API_GO_USER_SETTINGS_WRITE_MODE=go` 时由 Go 写入现有 `UserSetting` 并重读返回；该变量默认 `legacy`，且 `go` 要求读模式同为 `go`。登录、refresh、logout、MFA、OIDC、机器令牌仍是 NestJS。
 
@@ -46,12 +48,23 @@ B1 是有意变化：Go 的每次 tick 在 `PROCESSED_ITEM_OUTBOX_TICK_BUDGET_MS
 ## 运行
 
 ```bash
-PORT=4020 LEGACY_API_URL=http://localhost:4000 go run ./cmd/api
-curl http://localhost:4020/__go/healthz     # routes/shadow/canary/onboarding/userSettingsRead/userSettingsWrite
-curl http://localhost:4020/api/healthz/live # shadow 态：NestJS 响应 + Go 异步差分
+# 仓库默认配置（只给资源、不给开关）：全部业务路由由 Go 接管，fallback=reject
+pnpm --filter @modular/api-go run dev
+# 等价于
+go run ./cmd/api
+
+# 宿主开发时的资源与地址（按需覆盖）
+PORT=4020 DATABASE_URL=mysql://user:pass@127.0.0.1:3306/app \
+  REDIS_HOST=127.0.0.1 MONGO_URI=mongodb://127.0.0.1:27017/app \
+  JWT_SECRET=... go run ./cmd/api
+
+curl http://localhost:4020/api/healthz/live # 默认 go：由 Go 直接响应（Web 启动等待它）
+curl http://localhost:4020/api/healthz      # 认证探针：需登录或机器令牌
 ```
 
-手工裸启（`API_GO_USER_SETTINGS_READ_MODE` 未设、`API_GO_ONBOARDING_MODE=shadow`）行为与批2C 完全一致——onboarding/rss/spacetime 仍是 shadow 差分，war-map/newsnow/situation-monitor 保持 legacy，无 JWT/Redis 依赖。
+> 以上直接命令不会读取仓库根 `.env`。正常本地开发从仓库根执行 `pnpm dev`（`infra/scripts/src/dev.mts` 负责加载 `.env`、派生 `DATABASE_URL`、注入每个子进程的 `PORT` 并转发信号）；只有直接 `go run` 时才需要自行导出这些变量。
+
+旧 NestJS 后端与 `API_GO_*_MODE` 回退已随 GO-NODE-RETIRE-001 删除；回退旧行为依靠正常版本回滚，不再有 proxy / legacy / shadow 开关。
 
 ## 生产容器与真实入口（Go-批2C）
 

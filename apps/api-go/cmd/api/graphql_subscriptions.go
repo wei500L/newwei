@@ -34,7 +34,7 @@ func newRedisOptions(cfg config.Config) *redis.Options {
 // wireGraphQLSubscriptions builds the local graphql-transport-ws executor. It
 // registers no HTTP route itself; main registers the exact /graphql
 // entrypoint that routes only legal upgrades here and keeps every other
-// method/operation on the existing read handler or legacy proxy.
+// method/operation on the Go read handler.
 func wireGraphQLSubscriptions(
 	cfg config.Config,
 	authenticator *authhttp.Authenticator,
@@ -50,7 +50,6 @@ func wireGraphQLSubscriptions(
 		Limiter:       limiter,
 		Redis:         redisClient,
 		RedisOptions:  redisOptions,
-		LegacyURL:     cfg.LegacyAPIURL,
 	})
 	if err != nil {
 		return nil, err
@@ -60,12 +59,12 @@ func wireGraphQLSubscriptions(
 
 // graphqlEntrypoint decides the exact /graphql request family. A legal
 // graphql-transport-ws upgrade goes to the local subscription runtime; every
-// other request keeps the previous Go read handler or legacy proxy. This is
-// why taking over subscriptions does not require enabling API_GO_GRAPHQL_READ_MODE.
+// other request goes to the Go read handler. There is no legacy proxy
+// fallback: when neither component can serve the request, a GraphQL protocol
+// error is written directly.
 func graphqlEntrypoint(
 	subscriptions *graphqlsubscriptions.Runtime,
 	readHandler *graphqlread.Handler,
-	legacy func(http.ResponseWriter, *http.Request),
 ) legacyproxy.GoHandler {
 	return func(w http.ResponseWriter, request *http.Request) {
 		if subscriptions != nil && subscriptions.Handles(request) {
@@ -76,6 +75,14 @@ func graphqlEntrypoint(
 			readHandler.ServeHTTP(w, request)
 			return
 		}
-		legacy(w, request)
+		writeGraphQLNotConfigured(w)
 	}
+}
+
+// writeGraphQLNotConfigured writes a GraphQL-over-HTTP protocol error when the
+// entrypoint has no handler to serve the request.
+func writeGraphQLNotConfigured(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"errors":[{"message":"GraphQL endpoint is not configured","extensions":{"code":"INTERNAL_SERVER_ERROR","http":{"status":500}}}]}`))
 }

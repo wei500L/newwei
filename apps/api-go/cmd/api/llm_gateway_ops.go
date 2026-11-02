@@ -38,9 +38,6 @@ func wireLLMGatewayOps(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.LLMGatewayOpsMode != config.LLMGatewayOpsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm gateway ops go takeover requires mysql, redis, and jwt")
 	}
@@ -69,11 +66,11 @@ func wireLLMGatewayOps(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: llm gateway governance/diagnostics takeover mode=%s", cfg.LLMGatewayOpsMode)
+	log.Printf("api-go: llm gateway governance/diagnostics takeover mode=%s", "go")
 	return nil
 }

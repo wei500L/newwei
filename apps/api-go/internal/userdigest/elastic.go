@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 // elasticSearcher 只实现摘要用到的字面关键词检索。
@@ -120,14 +122,17 @@ func (e *elasticSearcher) SearchLiteralKeywords(ctx context.Context, orgID strin
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsLiteralKeywordSearch, false)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsLiteralKeywordSearch, false)
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsLiteralKeywordSearch, false)
 		return nil, errSearchHTTP
 	}
 	var parsed struct {
@@ -140,8 +145,12 @@ func (e *elasticSearcher) SearchLiteralKeywords(ctx context.Context, orgID strin
 		} `json:"hits"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsLiteralKeywordSearch, false)
 		return nil, err
 	}
+	// NestJS records success as soon as the search call resolves, before it maps
+	// the hits, so this boundary matches searchLiteralKeywords.
+	metrics.RecordElasticsearchEvent(metrics.OperationItemsLiteralKeywordSearch, true)
 	out := make([]KeywordHit, 0, len(parsed.Hits.Hits))
 	for _, hit := range parsed.Hits.Hits {
 		id := strings.TrimSpace(hit.Source.ItemMetaID)

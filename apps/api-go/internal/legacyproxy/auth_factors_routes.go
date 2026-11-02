@@ -34,10 +34,7 @@ const AuthFactorsKey = "/api/auth#factors"
 // whitelists OPTIONS for these paths, so CORS preflight is answered by the Go
 // handler instead of reaching NestJS; a non-preflight OPTIONS request is sent
 // back to the proxy by the wiring.
-func WithAuthFactors(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithAuthFactors(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, AuthFactorsKey, "/api/auth/mfa", http.MethodGet)
 	rules = appendExactKeyed(rules, AuthFactorsKey, "/api/auth/mfa/enroll", http.MethodPost)
 	rules = appendExactKeyed(rules, AuthFactorsKey, "/api/auth/mfa/verify-enroll", http.MethodPost)

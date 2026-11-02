@@ -31,9 +31,6 @@ type realtimeSignalsUnit struct {
 // API_GO_REALTIME_SIGNALS_MODE=go. It returns nil in the legacy default. Config
 // validation guarantees MySQL, Redis and Mongo for go mode.
 func newRealtimeSignalsUnit(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn *dashboardstats.Connection) *realtimeSignalsUnit {
-	if cfg.RealtimeSignalsMode != config.RealtimeSignalsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || mongoConn == nil {
 		log.Printf("api-go: realtime signals collector not built (mysql, redis or mongo missing)")
 		return nil
@@ -52,7 +49,7 @@ func newRealtimeSignalsUnit(cfg config.Config, db *sql.DB, redisClient *redis.Cl
 // Start launches the minute scheduler. It does not replay the minute boundary
 // that elapsed before startup.
 func (u *realtimeSignalsUnit) Start(cfg config.Config) {
-	if u == nil || u.service == nil || cfg.RealtimeSignalsMode != config.RealtimeSignalsModeGo {
+	if u == nil || u.service == nil {
 		return
 	}
 	u.scheduler = realtimesignals.NewScheduler(u.service)

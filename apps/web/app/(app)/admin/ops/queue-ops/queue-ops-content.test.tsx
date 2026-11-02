@@ -311,8 +311,27 @@ async function selectFirstQueue(): Promise<void> {
   await screen.findByRole("tab", { name: "Waiting" });
 }
 
+/**
+ * Switch the job-state tab and wait for the refetch it triggers.
+ *
+ * Every "dangerous action" test switches state and then looks for a row from the
+ * new state. Without waiting for the request that the switch issues, the row
+ * lookup races the refetch; on a loaded CI runner that race loses even with the
+ * default timeout. Waiting on the request parameters here removes the race, and
+ * the row assertions keep their normal semantics.
+ */
 async function switchJobState(label: string): Promise<void> {
   fireEvent.click(screen.getByRole("tab", { name: label }));
+  await waitFor(() =>
+    expect(apiMock.get).toHaveBeenCalledWith(
+      QUEUE_OPS_ENDPOINTS.jobs,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          state: label.toLowerCase(),
+        }),
+      }),
+    ),
+  );
 }
 
 /** 从 Modal 内的元素向上找到 antd 弹窗容器，避免依赖 rc-dialog 的 role 落点。 */
@@ -324,8 +343,18 @@ function requireClosestModal(element: Element | null): HTMLElement {
   return modal;
 }
 
+/**
+ * Open the job-detail modal for one row.
+ *
+ * The row can only appear after the state switch triggers a refetch, and the
+ * whole suite runs in parallel on CI, so the default 1s Testing Library timeout
+ * is not enough headroom for the round trip (list request → render → row). The
+ * lookup therefore gets a longer budget; the assertion itself is unchanged.
+ */
 async function openJobDetail(jobId: string): Promise<HTMLElement> {
-  fireEvent.click(await screen.findByRole("button", { name: jobId }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: jobId }, { timeout: 10_000 }),
+  );
   const dataBlock = await screen.findByTestId("queue-ops-job-data");
   return requireClosestModal(dataBlock);
 }
@@ -707,5 +736,85 @@ describe("QueueOpsContent legacy and permission errors", () => {
     expect(
       await screen.findByText("Queue operations permission required"),
     ).toBeInTheDocument();
+  });
+});
+
+// The economic akshare-data queue is tracked by the same queue-ops console. These
+// cases assert the real queue shape (counts / paused flag / pause+resume
+// endpoints) renders and acts correctly, independently of the economic panel's
+// "latest fetch result" tag.
+const AKSHARE_QUEUE_PAUSED: QueueOpsQueue = {
+  name: "akshare-data",
+  counts: {
+    waiting: 2,
+    active: 1,
+    delayed: 0,
+    completed: 5,
+    failed: 3,
+    paused: 4,
+  },
+  paused: true,
+  concurrency: 2,
+  isDLQ: false,
+};
+
+const AKSHARE_QUEUE_RUNNING: QueueOpsQueue = {
+  ...AKSHARE_QUEUE_PAUSED,
+  counts: {
+    waiting: 0,
+    active: 0,
+    delayed: 0,
+    completed: 7,
+    failed: 1,
+    paused: 0,
+  },
+  paused: false,
+};
+
+function findQueueRow(name: string): HTMLTableRowElement {
+  const button = screen.getByRole("button", { name });
+  const row = button.closest("tr");
+  if (!(row instanceof HTMLTableRowElement)) {
+    throw new Error(`row for ${name} not found`);
+  }
+  return row;
+}
+
+describe("QueueOpsContent economic akshare-data queue", () => {
+  it("renders the paused akshare-data queue with its counters and resumes it", async () => {
+    installApiMock({ queues: [AKSHARE_QUEUE_PAUSED] });
+    await renderQueueOpsPage();
+
+    await screen.findByRole("button", { name: "akshare-data" });
+    const row = findQueueRow("akshare-data");
+    const cells = within(row)
+      .getAllByRole("cell")
+      .map((cell) => cell.textContent);
+    // name, waiting, active, delayed, completed, failed, paused, status, ...
+    expect(cells.slice(1, 7)).toEqual(["2", "1", "0", "5", "3", "4"]);
+    expect(within(row).getByText("Paused")).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole("button", { name: "Resume" }));
+    expect(confirmCalls[0]?.title).toBe("Resume queue akshare-data?");
+    await triggerLastConfirm();
+    expect(apiMock.post).toHaveBeenCalledWith(QUEUE_OPS_ENDPOINTS.resumeQueue, {
+      queue: "akshare-data",
+    });
+  });
+
+  it("pauses the running akshare-data queue", async () => {
+    installApiMock({ queues: [AKSHARE_QUEUE_RUNNING] });
+    await renderQueueOpsPage();
+
+    await screen.findByRole("button", { name: "akshare-data" });
+    const row = findQueueRow("akshare-data");
+    expect(within(row).getByText("Running")).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
+    expect(confirmCalls[0]?.title).toBe("Pause queue akshare-data?");
+    await triggerLastConfirm();
+    expect(apiMock.post).toHaveBeenCalledWith(QUEUE_OPS_ENDPOINTS.pauseQueue, {
+      queue: "akshare-data",
+    });
   });
 });

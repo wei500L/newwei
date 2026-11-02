@@ -33,9 +33,6 @@ func wirePlatformGovernanceSettings(
 	mongoConn **dashboardstats.Connection,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.PlatformGovernanceSettingsMode != config.PlatformGovernanceSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: platform governance settings go takeover requires mysql, redis, and jwt")
 	}
@@ -62,7 +59,7 @@ func wirePlatformGovernanceSettings(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)

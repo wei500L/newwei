@@ -35,9 +35,6 @@ func wireSearchReindex(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) (*searchreindex.Service, error) {
-	if cfg.SearchReindexMode != config.SearchReindexModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil || cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("api-go: search reindex go takeover requires mysql, jwt, and redis")
 	}
@@ -60,11 +57,11 @@ func wireSearchReindex(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: search reindex takeover mode=%s", cfg.SearchReindexMode)
+	log.Printf("api-go: search reindex takeover mode=%s", "go")
 	return service, nil
 }

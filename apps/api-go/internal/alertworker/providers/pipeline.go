@@ -15,6 +15,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 // PipelineJobStatus values, matching the Prisma enum. They are the plain
@@ -660,9 +662,11 @@ func (p *pipelineProvider) fetchPipelineRateMetric(ctx context.Context, rule Rul
 			latest = float64(failed) / float64(total)
 		}
 	}
-	// The NestJS provider also exports a Prometheus gauge through
-	// setPipelineMetric; the Go worker has no Prometheus registry for this
-	// queue, so the metric export is not part of the queue contract.
+	// NestJS exports the value through setPipelineMetric before returning, so a
+	// zero total still publishes 0 rather than leaving the previous sample in
+	// place. The gauge is keyed by the rule's organization and metric slug, the
+	// same two labels the NestJS call site uses.
+	metrics.RecordPipelineValue(rule.OrgID, metricSlug, latest)
 	raw, err := marshalProviderContext(pipelineRateContext{
 		WindowMinutes: windowMinutes,
 		Total:         total,
@@ -689,6 +693,10 @@ func (p *pipelineProvider) fetchPipelineLatencyMetric(ctx context.Context, rule 
 	}
 	return p.fetchIngestionLatency(ctx, rule, metricSlug, windowMinutes)
 }
+
+// pipelineAverageLLMLatencyMetric is the metric slug fetchAverageLLMLatency
+// serves. It is also the gauge label value the call site exports.
+const pipelineAverageLLMLatencyMetric = "pipeline.average_llm_latency_ms"
 
 // fetchAverageLLMLatency reads the newest 5000 numeric latency samples from
 // llmrequestlogs and averages the finite non-negative ones.
@@ -740,6 +748,11 @@ func (p *pipelineProvider) fetchAverageLLMLatency(ctx context.Context, rule Rule
 		}
 		latest = sum / float64(len(values))
 	}
+	// Same export point and labels as PipelineMetricProvider.fetchPipelineLatencyMetric:
+	// the average is published before the context is built, and a zero-sample
+	// window still publishes 0. The metric slug is the one this branch was
+	// dispatched for.
+	metrics.RecordPipelineValue(rule.OrgID, pipelineAverageLLMLatencyMetric, latest)
 	raw, err := marshalProviderContext(pipelineAverageLatencyContext{
 		WindowMinutes: windowMinutes,
 		SampleSize:    len(values),
@@ -796,6 +809,10 @@ func (p *pipelineProvider) fetchIngestionLatency(ctx context.Context, rule Rule,
 	if sampled := pipelineQuantile(values, float64(percentile)); sampled != nil {
 		latest = *sampled
 	}
+	// Same export point and labels as the NestJS ingestion-percentile branch: the
+	// p90/p99 value is published before the context, and an empty window still
+	// publishes 0.
+	metrics.RecordPipelineValue(rule.OrgID, metricSlug, latest)
 	raw, err := marshalProviderContext(pipelineIngestionLatencyContext{
 		WindowMinutes: windowMinutes,
 		SampleSize:    len(values),

@@ -16,9 +16,6 @@ import (
 // wireCrawlTemplates 只在开关为 go 时注册采集模板编辑接口的 handler；
 // legacy（含空串）不注册，全部路径回落 NestJS。
 func wireCrawlTemplates(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
-	if cfg.CrawlTemplatesMode != config.CrawlTemplatesModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl templates go takeover requires mysql, jwt, and redis")
 	}
@@ -29,11 +26,11 @@ func wireCrawlTemplates(gateway *legacyproxy.Gateway, cfg config.Config, db *sql
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl templates takeover mode=%s", cfg.CrawlTemplatesMode)
+	log.Printf("api-go: crawl templates takeover mode=%s", "go")
 	return nil
 }

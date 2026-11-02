@@ -21,10 +21,7 @@ const CrawlQueueOpsKey = "/__go/crawl-queue-ops"
 // belong to API_GO_CRAWL_READ_TELEMETRY_MODE and are untouched.
 //
 // An empty or legacy mode adds no rules.
-func WithCrawlQueueOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlQueueOps(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, CrawlQueueOpsKey, "/api/admin/crawl4ai/queue", http.MethodGet)
 	rules = appendExactKeyed(rules, CrawlQueueOpsKey, "/api/admin/crawl4ai/queue/pause", http.MethodPost)
 	rules = appendExactKeyed(rules, CrawlQueueOpsKey, "/api/admin/crawl4ai/queue/resume", http.MethodPost)

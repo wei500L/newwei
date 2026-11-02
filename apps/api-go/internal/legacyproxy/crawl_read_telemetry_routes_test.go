@@ -60,32 +60,14 @@ func crawlReadTelemetryNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestCrawlReadTelemetryStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlReadTelemetry(rules, "")
-	rules = WithCrawlReadTelemetry(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range crawlReadTelemetryRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestCrawlReadTelemetryGoOwnsSevenRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlReadTelemetry(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlReadTelemetry(rules)
+	gateway := New(rules)
 	for _, tc := range crawlReadTelemetryRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if got.HandlerKey != CrawlReadTelemetryKey {
 			t.Fatalf("%s %s key=%s, want %s", tc.method, tc.path, got.HandlerKey, CrawlReadTelemetryKey)
@@ -108,22 +90,19 @@ func TestCrawlReadTelemetryGoOwnsSevenRoutes(t *testing.T) {
 	// CORS preflight on the seven paths is answered by Go for the registered
 	// methods; the write queue preflight is not registered at all.
 	for _, tc := range crawlReadTelemetryRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestCrawlReadTelemetryUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlReadTelemetry(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlReadTelemetry(rules)
+	gateway := New(rules)
 	for _, tc := range crawlReadTelemetryNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

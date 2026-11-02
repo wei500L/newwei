@@ -20,9 +20,6 @@ import (
 // legacy mode (including unset) nothing is registered and every path keeps
 // proxying to NestJS.
 func wireCrawlFrontierRuns(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.CrawlFrontierRunsMode != config.CrawlFrontierRunsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl frontier runs go takeover requires mysql, jwt, and redis")
 	}
@@ -33,11 +30,11 @@ func wireCrawlFrontierRuns(gateway *legacyproxy.Gateway, cfg config.Config, db *
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl frontier runs takeover mode=%s", cfg.CrawlFrontierRunsMode)
+	log.Printf("api-go: crawl frontier runs takeover mode=%s", "go")
 	return nil
 }

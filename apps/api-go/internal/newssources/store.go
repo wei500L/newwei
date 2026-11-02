@@ -18,12 +18,27 @@ import (
 
 const sourceSelect = `id, orgId, name, url, siteType, language, crawlTemplateId, workflowId, workflowVersionId, workflowBindingMode, frequencySeconds, priority, isActive, config, ` + "`group`" + `, lastRunAt, lastSuccessAt, lastFailureAt, consecutiveFailures, circuitOpenUntil, nextRunAt, createdAt, updatedAt`
 
+// SnapshotRefresher rebuilds the NewsSourceOpsSnapshot rows for a page of
+// sources that already passed the list authorization. The implementation lives
+// in internal/newssourcescheduler (which already imports this package), so the
+// dependency stays a narrow interface defined here instead of a reverse import
+// that would create an import cycle. The orgID and sourceIDs are always passed
+// explicitly so a refresh can only touch the current organization's page.
+type SnapshotRefresher interface {
+	RefreshSnapshotsForSources(ctx context.Context, orgID string, sourceIDs []string) error
+}
+
 type Service struct {
 	db *sql.DB
 	// redis carries the news-source list runtime state. It is optional: the
 	// write routes work without it, and the list falls back to the empty
 	// runtime block when Redis is not configured.
 	redis *redis.Client
+	// snapshots backfills missing ops snapshot rows when the list runs in
+	// production. It is nil for callers that do not own the aggregation (for
+	// example the operations machine-auth read model), in which case the list
+	// keeps the previous read-only behavior.
+	snapshots SnapshotRefresher
 }
 
 func NewService(db *sql.DB) *Service {
@@ -34,6 +49,13 @@ func NewService(db *sql.DB) *Service {
 // list response can include the runtime block the scheduler writes.
 func NewServiceWithRedis(db *sql.DB, client *redis.Client) *Service {
 	return &Service{db: db, redis: client}
+}
+
+// NewServiceWithSnapshots builds the production list service: the shared Redis
+// client for the runtime block plus the snapshot refresher that regenerates the
+// current page's missing NewsSourceOpsSnapshot rows.
+func NewServiceWithSnapshots(db *sql.DB, client *redis.Client, snapshots SnapshotRefresher) *Service {
+	return &Service{db: db, redis: client, snapshots: snapshots}
 }
 
 func nowMillis() time.Time {
@@ -124,6 +146,9 @@ func (s *Service) List(ctx context.Context, orgID string, query listQuery) (map[
 	if err != nil {
 		return nil, err
 	}
+	if err := s.backfillMissingSnapshots(ctx, orgID, sources, summaries); err != nil {
+		return nil, err
+	}
 	if err := s.applyRuntimeStates(ctx, sources, summaries); err != nil {
 		return nil, err
 	}
@@ -142,17 +167,59 @@ func (s *Service) List(ctx context.Context, orgID string, query listQuery) (map[
 	}, nil
 }
 
-func (s *Service) readSnapshots(ctx context.Context, orgID string, sources []sourceRow) (map[string]opsSummary, error) {
-	out := map[string]opsSummary{}
-	if len(sources) == 0 {
-		return out, nil
+// backfillMissingSnapshots refreshes the NewsSourceOpsSnapshot rows the current
+// page read back as absent, then re-reads only those rows and merges them into
+// summaries. It mirrors the legacy NestJS list: only the sources the paginated
+// query already authorized (same org, same page) can be refreshed, an existing
+// snapshot is never rebuilt, and a refresh or re-read error is returned instead
+// of being turned into a fake zero-statistics success.
+func (s *Service) backfillMissingSnapshots(ctx context.Context, orgID string, sources []sourceRow, summaries map[string]opsSummary) error {
+	if len(sources) == 0 || s.snapshots == nil {
+		return nil
 	}
-	ids := make([]any, len(sources))
+	missing := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if _, ok := summaries[source.ID]; !ok {
+			missing = append(missing, source.ID)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if err := s.snapshots.RefreshSnapshotsForSources(ctx, orgID, missing); err != nil {
+		return err
+	}
+	refreshed, err := s.readSnapshotsByIDs(ctx, orgID, missing)
+	if err != nil {
+		return err
+	}
+	for sourceID, summary := range refreshed {
+		summaries[sourceID] = summary
+	}
+	return nil
+}
+
+func (s *Service) readSnapshots(ctx context.Context, orgID string, sources []sourceRow) (map[string]opsSummary, error) {
+	if len(sources) == 0 {
+		return map[string]opsSummary{}, nil
+	}
+	ids := make([]string, len(sources))
 	for i, source := range sources {
 		ids[i] = source.ID
 	}
-	query := `SELECT sourceId, latestJob, latestCrawlTask, latestArticle, stats24h FROM NewsSourceOpsSnapshot WHERE orgId = ? AND sourceId IN (` + placeholders(len(ids)) + `)`
-	args := append([]any{orgID}, ids...)
+	return s.readSnapshotsByIDs(ctx, orgID, ids)
+}
+
+// readSnapshotsByIDs reads the snapshot rows for exactly the given source ids.
+// The orgId predicate keeps the read inside the current tenant even though the
+// ids already came from the authorized page query.
+func (s *Service) readSnapshotsByIDs(ctx context.Context, orgID string, sourceIDs []string) (map[string]opsSummary, error) {
+	out := map[string]opsSummary{}
+	if len(sourceIDs) == 0 {
+		return out, nil
+	}
+	query := `SELECT sourceId, latestJob, latestCrawlTask, latestArticle, stats24h FROM NewsSourceOpsSnapshot WHERE orgId = ? AND sourceId IN (` + placeholders(len(sourceIDs)) + `)`
+	args := append([]any{orgID}, stringsToArgs(sourceIDs)...)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

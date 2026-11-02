@@ -21,10 +21,7 @@ const SituationSettingsKey = "/api/system-settings/situation-monitor#settings"
 // and every other sub-path or method stay on NestJS, because no exact rule
 // matches them and they fall back to the legacy /api/ proxy. The default
 // (empty or legacy) adds no rules at all.
-func WithSituationSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSituationSettings(rules []Rule) []Rule {
 	base := "/api/system-settings/situation-monitor"
 	rules = appendExactKeyed(rules, SituationSettingsKey, base+"/telegram-auth", http.MethodDelete)
 	return appendExactKeyed(rules, SituationSettingsKey, base,

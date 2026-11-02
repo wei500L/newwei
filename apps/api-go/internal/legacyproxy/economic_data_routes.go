@@ -15,10 +15,7 @@ const EconomicDataKey = "/api/admin/akshare"
 // The GraphQL mutations share API_GO_ECONOMIC_DATA_MODE but are routed through
 // the /graphql handler, not through this rule set. Every other method, trailing
 // slash and similar path falls back to NestJS.
-func WithEconomicData(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithEconomicData(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, EconomicDataKey, "/api/admin/akshare/version", http.MethodGet)
 	rules = appendExactKeyed(rules, EconomicDataKey, "/api/admin/akshare/status", http.MethodGet)
 	return appendExactKeyed(rules, EconomicDataKey, "/api/admin/akshare/upgrade", http.MethodPost)

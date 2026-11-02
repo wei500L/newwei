@@ -26,9 +26,6 @@ import (
 // performs no startup network probe: the OIDC routes only read and write local
 // configuration and never contact an identity provider.
 func wireAuthFactors(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.AuthFactorsMode != config.AuthFactorsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: auth factors go takeover requires mysql, redis, and jwt")
 	}
@@ -44,11 +41,11 @@ func wireAuthFactors(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: auth factors takeover mode=%s", cfg.AuthFactorsMode)
+	log.Printf("api-go: auth factors takeover mode=%s", "go")
 	return nil
 }

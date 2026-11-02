@@ -31,16 +31,13 @@ const LLMGatewayProfilesKey = "/api/system-settings/llm-gateways#profiles"
 // PUT and DELETE /proxy-governance and /proxy-load-balancing are shaped like one
 // dynamic segment, so the wiring detects those two static paths before
 // authentication and forwards them to NestJS unchanged; this function
-// deliberately does not add permanent ModeLegacy exact rules for them, because a
+// deliberately does not add permanent catch-all exact rules for them, because a
 // future batch that migrates proxy governance must be able to register a more
 // specific rule that wins naturally.
 //
 // An empty or legacy mode adds no rules at all, so the default deployment is
 // unchanged and rollback only flips this one switch.
-func WithLLMGatewayProfiles(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithLLMGatewayProfiles(rules []Rule) []Rule {
 	base := "/api/system-settings/llm-gateways"
 
 	rules = appendExactKeyed(rules, LLMGatewayProfilesKey, base,

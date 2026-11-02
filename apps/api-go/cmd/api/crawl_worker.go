@@ -113,9 +113,6 @@ func wireCrawlWorker(
 	redisOptions *redis.Options,
 	mongoConn **dashboardstats.Connection,
 ) (*crawlWorkerRuntime, error) {
-	if cfg.CrawlWorkerMode != config.CrawlWorkerModeGo {
-		return nil, nil
-	}
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: crawl worker requested by API_GO_CRAWL_WORKER_MODE=go but BULLMQ_WORKERS_ENABLED=false; no consumer started")
 		return nil, nil

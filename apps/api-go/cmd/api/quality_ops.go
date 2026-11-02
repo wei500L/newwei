@@ -57,9 +57,9 @@ func wireQualityOps(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) (*qualityOpsRuntime, error) {
-	reportsGo := cfg.ClassificationReportsMode == config.ClassificationReportsModeGo
-	workerGo := cfg.ClassificationQualityWorkerMode == config.ClassificationQualityWorkerModeGo
-	recoveryGo := cfg.PipelineRecoveryMode == config.PipelineRecoveryModeGo
+	reportsGo := true
+	workerGo := true
+	recoveryGo := true
 	if !reportsGo && !workerGo && !recoveryGo {
 		return nil, nil
 	}
@@ -94,12 +94,12 @@ func wireQualityOps(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: classification report creation takeover mode=%s", cfg.ClassificationReportsMode)
+		log.Printf("api-go: classification report creation takeover mode=%s", "go")
 	}
 
 	if workerGo {
@@ -121,7 +121,7 @@ func wireQualityOps(
 		worker.Start(context.Background())
 		runtime.worker = worker
 		log.Printf("api-go: classification quality worker enabled mode=%s concurrency=%d",
-			cfg.ClassificationQualityWorkerMode, cfg.QualityWorkerConcurrency())
+			"go", cfg.QualityWorkerConcurrency())
 	}
 
 	if recoveryGo {
@@ -135,12 +135,12 @@ func wireQualityOps(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
 		})
-		log.Printf("api-go: pipeline recovery takeover mode=%s", cfg.PipelineRecoveryMode)
+		log.Printf("api-go: pipeline recovery takeover mode=%s", "go")
 	}
 
 	return runtime, nil

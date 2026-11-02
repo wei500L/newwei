@@ -5,90 +5,51 @@ import (
 	"testing"
 )
 
-// TestMetricsRouteOwnership locks GET-only, exact-path ownership and the
-// legacy fallback of every other method/path.
+// TestMetricsRouteOwnership locks GET-only, exact-path ownership and the fact
+// that every other method/path is not claimed.
 func TestMetricsRouteOwnership(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithMetrics(rules, "")
-	rules = WithMetrics(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := gateway.match(http.MethodGet, "/api/metrics"); got.Mode != ModeLegacy {
-		t.Fatalf("legacy mode = %s", got.Mode)
-	}
+	gateway := New(WithMetrics(BaseRules()))
 
-	rules = DefaultRules(ModeShadow, "")
-	rules = WithMetrics(rules, string(ModeGo))
-	gateway, err = New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
+	rule, matched := gateway.matchRule(http.MethodGet, "/api/metrics")
+	if !matched || !rule.Exact || rule.HandlerKey != MetricsKey {
+		t.Fatalf("metrics rule = %+v matched=%v", rule, matched)
 	}
-	rule := gateway.match(http.MethodGet, "/api/metrics")
-	if rule.Mode != ModeGo || !rule.Exact || rule.HandlerKey != MetricsKey {
-		t.Fatalf("metrics rule = %+v", rule)
-	}
-	if got := gateway.match(http.MethodOptions, "/api/metrics"); got.Mode != ModeGo ||
-		got.HandlerKey != MetricsKey {
-		t.Fatalf("metrics preflight rule = %+v", got)
+	if preflight, ok := gateway.matchRule(http.MethodOptions, "/api/metrics"); !ok || preflight.HandlerKey != MetricsKey {
+		t.Fatalf("metrics preflight rule = %+v matched=%v", preflight, ok)
 	}
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodHead} {
-		if got := gateway.match(method, "/api/metrics"); got.Mode != ModeLegacy {
-			t.Fatalf("%s /api/metrics mode = %s, want legacy", method, got.Mode)
+		if _, ok := gateway.matchRule(method, "/api/metrics"); ok {
+			t.Fatalf("%s /api/metrics unexpectedly matched", method)
 		}
 	}
 	for _, path := range []string{"/api/metrics/", "/api/metrics/extra", "/api/metricsX"} {
-		if got := gateway.match(http.MethodGet, path); got.Mode != ModeLegacy {
-			t.Fatalf("GET %s mode = %s, want legacy", path, got.Mode)
+		if _, ok := gateway.matchRule(http.MethodGet, path); ok {
+			t.Fatalf("GET %s unexpectedly matched", path)
 		}
 	}
 }
 
 // TestPipelineRecoveryWriteOwnership locks the two POST routes to their own
-// switch: the runs read switch must not take them over, and GET must not move.
+// switch: the runs read routes are not taken over, and GET must not move.
 func TestPipelineRecoveryWriteOwnership(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithPipelineRecovery(rules, string(ModeGo))
-	rules = WithPipelineRecoveryWrite(rules, "")
-	rules = WithPipelineRecoveryWrite(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	gateway := New(WithPipelineRecoveryWrite(BaseRules()))
 	for _, path := range []string{
 		"/api/admin/quality/pipeline/replay",
 		"/api/admin/quality/pipeline/rollback",
 	} {
-		if got := gateway.match(http.MethodPost, path); got.Mode != ModeLegacy {
-			t.Fatalf("POST %s mode = %s, want legacy", path, got.Mode)
+		rule, matched := gateway.matchRule(http.MethodPost, path)
+		if !matched || !rule.Exact || rule.HandlerKey != PipelineRecoveryWriteKey {
+			t.Fatalf("POST %s rule = %+v matched=%v", path, rule, matched)
 		}
-	}
-
-	rules = DefaultRules(ModeShadow, "")
-	rules = WithPipelineRecoveryWrite(rules, string(ModeGo))
-	gateway, err = New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{
-		"/api/admin/quality/pipeline/replay",
-		"/api/admin/quality/pipeline/rollback",
-	} {
-		rule := gateway.match(http.MethodPost, path)
-		if rule.Mode != ModeGo || !rule.Exact || rule.HandlerKey != PipelineRecoveryWriteKey {
-			t.Fatalf("POST %s rule = %+v", path, rule)
+		if _, ok := gateway.matchRule(http.MethodGet, path); ok {
+			t.Fatalf("GET %s unexpectedly matched", path)
 		}
-		if got := gateway.match(http.MethodGet, path); got.Mode != ModeLegacy {
-			t.Fatalf("GET %s mode = %s, want legacy", path, got.Mode)
-		}
-		if got := gateway.match(http.MethodOptions, path); got.Mode != ModeGo ||
-			got.HandlerKey != PipelineRecoveryWriteKey {
-			t.Fatalf("OPTIONS %s rule = %+v", path, got)
+		if preflight, ok := gateway.matchRule(http.MethodOptions, path); !ok || preflight.HandlerKey != PipelineRecoveryWriteKey {
+			t.Fatalf("OPTIONS %s rule = %+v matched=%v", path, preflight, ok)
 		}
 	}
 	// The runs read keeps its own switch and handler.
-	if got := gateway.match(http.MethodGet, "/api/admin/quality/pipeline/runs"); got.Mode != ModeLegacy {
-		t.Fatalf("runs mode = %s, want legacy (read switch is off)", got.Mode)
+	if _, ok := gateway.matchRule(http.MethodGet, "/api/admin/quality/pipeline/runs"); ok {
+		t.Fatalf("runs unexpectedly matched (read switch is off)")
 	}
 }

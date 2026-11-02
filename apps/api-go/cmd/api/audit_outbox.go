@@ -19,9 +19,6 @@ import (
 // nothing, so no process replays this chain. The returned scheduler is started
 // by main and closed before the shared Redis/MySQL connections are closed.
 func wireAuditOutbox(cfg config.Config, db *sql.DB, redisClient *redis.Client) (*auditoutbox.Scheduler, error) {
-	if cfg.AuditOutboxMode != config.AuditOutboxModeGo {
-		return nil, nil
-	}
 	if !cfg.ScheduleEnabled {
 		log.Printf("api-go: audit log outbox scheduler not started (SCHEDULE_ENABLED=false)")
 		return nil, nil
@@ -33,6 +30,6 @@ func wireAuditOutbox(cfg config.Config, db *sql.DB, redisClient *redis.Client) (
 		Repository: auditoutbox.NewMySQLRepository(db),
 		Locks:      auditoutbox.NewRedisLockStore(redisClient),
 	})
-	log.Printf("api-go: audit log outbox scheduler enabled mode=%s", cfg.AuditOutboxMode)
+	log.Printf("api-go: audit log outbox scheduler enabled mode=%s", "go")
 	return scheduler, nil
 }

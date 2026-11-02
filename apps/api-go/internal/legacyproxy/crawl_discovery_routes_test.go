@@ -7,43 +7,21 @@ import (
 
 // TestCrawlDiscoveryRoutesStayLegacyByDefault pins the default: with the empty
 // and legacy values the three paths keep proxying to NestJS.
-func TestCrawlDiscoveryRoutesStayLegacyByDefault(t *testing.T) {
-	for _, mode := range []string{"", "legacy"} {
-		rules := DefaultRules(ModeShadow, "")
-		rules = WithNewsSources(rules, string(ModeGo))
-		rules = WithCrawlWorkflows(rules, string(ModeGo))
-		rules = WithCrawlFrontierRuns(rules, string(ModeGo))
-		rules = WithNewsSourcePreview(rules, mode)
-		rules = WithCrawlWorkflowTrial(rules, mode)
-		gateway, err := New("http://legacy:4000", rules)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, tc := range crawlDiscoveryRoutes() {
-			if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-				t.Fatalf("mode=%q %s %s => %s", mode, tc.method, tc.path, got.Mode)
-			}
-		}
-	}
-}
 
 // TestCrawlDiscoveryRoutesGoOwnsThreePaths pins the three migrated entries and
 // their handler keys.
 func TestCrawlDiscoveryRoutesGoOwnsThreePaths(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSources(rules, string(ModeGo))
-	rules = WithCrawlWorkflows(rules, string(ModeGo))
-	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
-	rules = WithNewsSourcePreview(rules, string(ModeGo))
-	rules = WithCrawlWorkflowTrial(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithNewsSources(rules)
+	rules = WithCrawlWorkflows(rules)
+	rules = WithCrawlFrontierRuns(rules)
+	rules = WithNewsSourcePreview(rules)
+	rules = WithCrawlWorkflowTrial(rules)
+	gateway := New(rules)
 	for _, tc := range crawlDiscoveryRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s => %s", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s => %s", tc.method, tc.path, got.Prefix)
 		}
 		if got.HandlerKey != tc.key {
 			t.Fatalf("%s %s key=%s want %s", tc.method, tc.path, got.HandlerKey, tc.key)
@@ -56,16 +34,13 @@ func TestCrawlDiscoveryRoutesGoOwnsThreePaths(t *testing.T) {
 // the collection, static siblings, bare :id, :id/run or :id/schedule, and the
 // trial/replay rules do not steal the existing workflow GETs.
 func TestCrawlDiscoveryRoutesDoNotShadowExistingRules(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSources(rules, string(ModeGo))
-	rules = WithCrawlWorkflows(rules, string(ModeGo))
-	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
-	rules = WithNewsSourcePreview(rules, string(ModeGo))
-	rules = WithCrawlWorkflowTrial(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithNewsSources(rules)
+	rules = WithCrawlWorkflows(rules)
+	rules = WithCrawlFrontierRuns(rules)
+	rules = WithNewsSourcePreview(rules)
+	rules = WithCrawlWorkflowTrial(rules)
+	gateway := New(rules)
 
 	// Still owned by the news-sources switch.
 	for _, tc := range []struct {
@@ -80,8 +55,8 @@ func TestCrawlDiscoveryRoutesDoNotShadowExistingRules(t *testing.T) {
 		{http.MethodPost, "/api/admin/news-sources/source-1/schedule", NewsSourcesKey},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != tc.key {
-			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Mode, got.HandlerKey)
+		if got.Prefix == "" || got.HandlerKey != tc.key {
+			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Prefix, got.HandlerKey)
 		}
 	}
 
@@ -96,8 +71,8 @@ func TestCrawlDiscoveryRoutesDoNotShadowExistingRules(t *testing.T) {
 		{http.MethodPost, "/api/admin/crawl-frontier/workflows/compare"},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != CrawlWorkflowsKey {
-			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Mode, got.HandlerKey)
+		if got.Prefix == "" || got.HandlerKey != CrawlWorkflowsKey {
+			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Prefix, got.HandlerKey)
 		}
 	}
 
@@ -111,8 +86,8 @@ func TestCrawlDiscoveryRoutesDoNotShadowExistingRules(t *testing.T) {
 		{http.MethodGet, "/api/admin/crawl-frontier/runs/run-1"},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != CrawlFrontierRunsKey {
-			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Mode, got.HandlerKey)
+		if got.Prefix == "" || got.HandlerKey != CrawlFrontierRunsKey {
+			t.Fatalf("%s %s => mode=%s key=%s", tc.method, tc.path, got.Prefix, got.HandlerKey)
 		}
 	}
 
@@ -127,8 +102,8 @@ func TestCrawlDiscoveryRoutesDoNotShadowExistingRules(t *testing.T) {
 		{http.MethodPost, "/api/admin/crawl-frontier/workflows/w1/trial-run/extra"},
 		{http.MethodGet, "/api/admin/crawl-frontier/workflow-runs/run-1/replay"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s => %s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s => %s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

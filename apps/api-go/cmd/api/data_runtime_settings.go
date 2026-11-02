@@ -26,9 +26,6 @@ import (
 // geocoding, embedding or model client and performs no startup network probe: the
 // routes only read and write configuration and the derived archive status index.
 func wireDataRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.DataRuntimeSettingsMode != config.DataRuntimeSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: data runtime settings go takeover requires mysql, redis, and jwt")
 	}
@@ -91,11 +88,11 @@ func wireDataRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: data runtime settings takeover mode=%s", cfg.DataRuntimeSettingsMode)
+	log.Printf("api-go: data runtime settings takeover mode=%s", "go")
 	return nil
 }

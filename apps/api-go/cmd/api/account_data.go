@@ -39,8 +39,8 @@ func wireAccountData(
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	avatarGo := cfg.AvatarUploadMode == config.AvatarUploadModeGo
-	exportGo := cfg.UserDataExportMode == config.UserDataExportModeGo
+	avatarGo := true
+	exportGo := true
 	if !avatarGo && !exportGo {
 		return nil
 	}
@@ -97,7 +97,7 @@ func wireAccountData(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)
@@ -109,6 +109,6 @@ func wireAccountData(
 	if exportGo {
 		register(legacyproxy.UserDataExportKey)
 	}
-	log.Printf("api-go: account data takeover avatar=%s export=%s", cfg.AvatarUploadMode, cfg.UserDataExportMode)
+	log.Printf("api-go: account data takeover avatar=%s export=%s", "go", "go")
 	return nil
 }

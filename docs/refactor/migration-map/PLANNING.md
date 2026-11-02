@@ -2,6 +2,40 @@
 
 本文件是用户长期偏好的稳定入口。适用后端迁移规划、执行提示词、进度更新；代码事实仍以最新 main 为准。返回[入口](README.md)。
 
+## 2026-11-01 两项功能修复完成回填
+
+用户告知任务完成后，核对 main `2e63645d`、GitHub merge 与生产接线：EX-05 表格修复 #155、M-04 监控地理编码 #156 均已合入，两个最终源 head 的普通 CI 三主 job success，regen skipped 不算通过；最终 main CI 41286944654 尚未完成，单独记录。
+
+`CRAWL-TABLE-NORMALIZATION-001` / `MONITOR-GEOCODING-001` 均 merged，对应两个 GAP 按源码范围关闭，原文件占用释放，不按旧 reserved/pr_open 或历史提示词重复派发。编码窗口实际交付记录予以保留，规划分支正常 merge main 后回填共享地图；未清理历史工作树、未创建新窗口或新业务任务。
+
+后续仍从当前实现与稳定缺口选完整产品链，不把源码修复或 CI 容器验证冒充部署/实网验收。本轮下一检查点为最终 main CI 与规划文档进入 main，不自动开展部署、全量重审或 Prisma/seed Go 化。
+
+## 2026-11-01 源码退役目标已落地
+
+#152 / #153 / #154 已实际合入 main `e04fc4d8`，见 [收口记录](GO-MIGRATION-CLOSEOUT.md)。不再按旧 reserved/planned 或“保留 Nest / 默认 legacy / 每批新增迁移 mode”条款分派重复迁移；这些约束属于此前阶段，当前源码中已无 Node 后端与迁移分流。
+
+后续仍沿用独立 worktree、Ready PR、不合并/auto-merge、中文提交、纯静态复核与普通 CI 精确 head、本机不安装/运行服务的纪律。先确认最新 main CI 与真实源码，再针对已知稳定 GAP 或用户的新目标决定范围；不因目标完成自动创建部署、全面重审或 Prisma/seed Go 化任务。真实业务开关/鉴权/租户与必要事务保持，旧包名/注释不能作为功能未迁证据。
+
+## 2026-10-31 #151 合并后的退役阶段
+
+用户已确认默认切换合并，已用 GitHub 实际 merge `fcf1e533` 与 main 祖先关系核实。按原“全部后端转 Go、只做静态与 CI、不部署”的阶段 4，先迁契约/工具，再去 Go 迁移分流，最后删三个 Node 后端并完成构建/CI 收尾，三项串行。
+
+- GO-CONTRACT-TOOLING-001：契约、索引/回填工具、邮件资源与协议夹具独立；保留 Node 实现和对照。
+- GO-ONLY-RUNTIME-001：前置合入后，允许移除迁移 mode/legacyproxy/shadow/canary 与整包回退；保留真实资源/业务开关/鉴权/租户/后台第二道门。旧“每批新增默认 legacy 开关”的规程不适用于这项退役任务。
+- GO-NODE-RETIRE-001：前两项合入后允许删除 Node 后端、legacy profile/回退命令，并将差分检查改为有效 Go 单端验证。旧“apps/api 暂时保留”只适用于此前阶段，不要求在本任务保留空壳或迁移代理。
+- Prisma/seed、Web、共享 Mongo 与协议工具可以继续 Node；不扩大为数据库工具链重写。任一阶段都不部署或连接真实外部服务，也不能把 CI 服务容器等同真实业务验收。
+- 独立 worktree、Ready PR、不合并/auto-merge、本机不安装/运行 build/test/vet/Docker/服务、普通 CI 精确 head 与轻量文档分工继续有效。
+
+## 2026-10-27 阶段更新：全部转 Go，仍只做静态审查与 CI
+
+用户提供的上一轮交接明确目标为“后端全部转成 Go、静态审查加 CI、不上生产”，本轮告知六批已合并并要求继续提示词。#148 已核实落地后，按此目标推进，不重新派发六批审查或整合。
+
+- 先执行 [GO-CUTOVER-PREREQS-001](tasks/GO-CUTOVER-PREREQS-001.md)，关闭整合报告中四项真实横切缺口；默认维持当前状态。
+- 后执行 [GO-DEFAULT-CUTOVER-001](tasks/GO-DEFAULT-CUTOVER-001.md)，有意把仓库默认改成全业务 go / fallback reject、Web 与 vector/AIS 指向 Go，并处理迁移/索引工具职责。**仅该阶段是下方长期偏好第 1、2 条中“默认保留 Nest / legacy”的例外**；已有显式 legacy/shadow 合法值与完整回退继续保留，canary 仍为 0。
+- 前置实际合入与普通 CI 通过后才能启动默认切换；默认切换合入后才规划删 Node 后端、双轨代码和迁移契约/CI 基线。本轮只写规划，不改业务/默认，不执行后续任务。
+- 无真实部署、真实流量或外部服务验收要求；运行证据不足应如实记录，不能成为擅自上生产的理由。Node Prisma/seed/index 工具可独立保留，是否转 Go 另定。
+- 编码仍独立 worktree、Ready PR、不合并、不 auto-merge；本机不安装/运行 build/test/Docker/服务。普通 CI 记录精确 head，额外 runner smoke 不代替普通 CI。
+
 ## 新对话恢复与增量刷新
 
 1. 读 README、本文件、[任务索引](tasks/README.md)、[缺口摘要](GAPS.md#当前摘要)与[候选队列](BACKLOG.md)；不得只看历史聊天/旧工作目录。

@@ -83,6 +83,9 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Id
 			return nil
 		}
 		identity = resolved
+		// Publish the machine token's organization so a later failure in this request
+		// is attributed to it; the identity comes from the token row, not the request.
+		authhttp.SetVerifiedIdentity(r, identity)
 	} else {
 		if h.auth == nil {
 			authhttp.WriteDatabaseFailure(w, r)

@@ -22,9 +22,6 @@ const VectorDiagnosticsHandlerKey = "/api/system-settings/vector-service/diagnos
 // keep falling back to the legacy /api/ rule. An empty or legacy mode adds
 // nothing, so the default deployment is unchanged and rollback only flips this
 // one switch.
-func WithVectorDiagnostics(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithVectorDiagnostics(rules []Rule) []Rule {
 	return appendExactMethods(rules, http.MethodGet, VectorDiagnosticsHandlerKey)
 }

@@ -1,7 +1,8 @@
 // Package geocoding is the shared Nominatim client. It owns the cache layout
 // (geo:geocode:v1), the sliding-window rate limit key (rate:geocode:nominatim),
-// the identity row read and the country-code helpers, so the dashboard war map
-// and the two REST geocoding entries cannot drift apart.
+// the identity row read and the country-code helpers, so the dashboard war map,
+// the two REST geocoding entries and the situation monitor location resolver
+// cannot drift apart.
 package geocoding
 
 import (
@@ -258,8 +259,10 @@ func (g *Client) Geocode(ctx context.Context, query, alpha2 string) (*Hit, error
 	}
 	switch outcome {
 	case fetchFound:
-		if err := g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective, country)}, g.config.CacheTTL); err != nil {
-			return nil, err
+		if err := g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective)}, g.config.CacheTTL); err != nil {
+			// Keep the successful provider result for callers that can still
+			// use it; the REST handler reports the cache error as before.
+			return result, err
 		}
 	case fetchNotFound:
 		if err := g.store(ctx, key, cachedGeocode{OK: false, CachedAt: g.now().UnixMilli()}, g.config.NegativeTTL); err != nil {
@@ -267,6 +270,21 @@ func (g *Client) Geocode(ctx context.Context, query, alpha2 string) (*Hit, error
 		}
 	}
 	return result, nil
+}
+
+// CachedGeocode returns a positive cached hit for the provider-normalized query
+// without touching the network or the shared limiter. Monitor preview requests
+// carry no country field, while create/update echoes the resolved alpha-2; this
+// read lets the monitor resolver reuse the preview entry when the cached country
+// agrees instead of issuing a duplicate Nominatim request under a second cache
+// key. It never creates a cache entry of its own.
+func (g *Client) CachedGeocode(ctx context.Context, query, alpha2 string) (*Hit, error) {
+	normalized := normalizeGeocodeQuery(query)
+	if normalized == "" {
+		return nil, nil
+	}
+	effective, country := providerQuery(normalized, alpha2)
+	return g.positive(ctx, effective, country)
 }
 
 // Probe is the administrator test semantics (D3): it never reads the cache, but
@@ -291,7 +309,7 @@ func (g *Client) Probe(ctx context.Context, query, alpha2 string) (*Hit, error) 
 		key := geocodeCacheKey(effective, country)
 		// The diagnostic must not fail because the cache write failed: the
 		// probe's answer is the real upstream response.
-		_ = g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective, country)}, g.config.CacheTTL)
+		_ = g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective)}, g.config.CacheTTL)
 	}
 	return result, nil
 }
@@ -366,7 +384,7 @@ func (g *Client) lookupNetwork(ctx context.Context, query, alpha2 string, cacheT
 		return nil, err
 	}
 	if result != nil {
-		if err := g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective, country)}, g.config.CacheTTL); err != nil {
+		if err := g.store(ctx, key, cachedGeocode{OK: true, CachedAt: g.now().UnixMilli(), Result: result.cached(effective)}, g.config.CacheTTL); err != nil {
 			return nil, err
 		}
 	} else if outcome == fetchNotFound || (outcome == fetchTransient && cacheTransient) {
@@ -581,13 +599,13 @@ func (h *cachedGeoHit) toHit() *Hit {
 	return &Hit{Lat: h.Lat, Lng: h.Lng, DisplayName: h.DisplayName, Provider: provider, Bounds: h.Bounds, Query: h.Query, CountryCodeAlpha2: h.CountryCodeAlpha2}
 }
 
-func (h *Hit) cached(query, alpha2 string) *cachedGeoHit {
+func (h *Hit) cached(query string) *cachedGeoHit {
 	if h == nil {
 		return nil
 	}
 	return &cachedGeoHit{
 		Lat: h.Lat, Lng: h.Lng, DisplayName: h.DisplayName, Provider: "nominatim",
-		Bounds: h.Bounds, Query: query, CountryCodeAlpha2: alpha2,
+		Bounds: h.Bounds, Query: query, CountryCodeAlpha2: h.CountryCodeAlpha2,
 	}
 }
 

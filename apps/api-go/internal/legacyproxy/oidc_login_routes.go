@@ -22,10 +22,7 @@ const OIDCLoginKey = "/api/auth#oidc-login"
 //
 // The empty and legacy values add nothing, so the default deployment is
 // unchanged and rollback is one variable.
-func WithOIDCLogin(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithOIDCLogin(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, OIDCLoginKey, "/api/auth/sso/oidc/start", http.MethodGet)
 	rules = appendExactKeyed(rules, OIDCLoginKey, "/api/auth/oidc/callback", http.MethodGet)
 	rules = appendExactKeyed(rules, OIDCLoginKey, "/api/auth/sso/handoff/exchange", http.MethodPost)

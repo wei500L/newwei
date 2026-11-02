@@ -19,13 +19,10 @@ const (
 // through to the shorter /api/ rule and stay on NestJS, so the
 // archive-preparing search export and the un-migrated methods are never
 // answered by a partial Go handler.
-func WithAnalysisExport(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithAnalysisExport(rules []Rule) []Rule {
 	methods := map[string]bool{http.MethodPost: true, http.MethodOptions: true}
 	return append(rules,
-		Rule{Prefix: AnalysisExportItemsKey, Mode: ModeGo, Exact: true, HandlerKey: AnalysisExportItemsKey, Methods: methods},
-		Rule{Prefix: AnalysisExportEventsKey, Mode: ModeGo, Exact: true, HandlerKey: AnalysisExportEventsKey, Methods: methods},
+		Rule{Prefix: AnalysisExportItemsKey, Exact: true, HandlerKey: AnalysisExportItemsKey, Methods: methods},
+		Rule{Prefix: AnalysisExportEventsKey, Exact: true, HandlerKey: AnalysisExportEventsKey, Methods: methods},
 	)
 }

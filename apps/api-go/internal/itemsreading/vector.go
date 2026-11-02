@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 // Vector service defaults and storage keys mirrored from the NestJS env schema
@@ -389,8 +390,17 @@ func (v *vectorRecall) RecallIDs(ctx context.Context, orgID string, search strin
 
 // decodeCandidateResult turns a loader outcome into the RecallIDs contract:
 // hard-fail errors propagate, every other failure degrades to an empty slice.
+//
+// Every final loader failure records integration_events_total{integration=
+// "vector", operation="items_vector_search", status="failure"}. That is the only
+// vector call site NestJS instruments: the inner catch of resolveVectorSearchIds
+// runs after the cache wrap and the direct loader retry have both failed, records
+// the event and returns []. Hard-fail failures travel through the same catch in
+// NestJS (the ServiceUnavailableException is thrown inside the loader), so they
+// are counted here as well before this gateway surfaces its typed 503 error.
 func decodeCandidateResult(raw json.RawMessage, err error) ([]string, error) {
 	if err != nil {
+		metrics.RecordVectorSearchFailure()
 		var unavailable *ItemVectorUnavailableError
 		if errors.As(err, &unavailable) {
 			return nil, unavailable

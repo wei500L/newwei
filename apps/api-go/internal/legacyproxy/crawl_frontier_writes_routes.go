@@ -29,10 +29,7 @@ const CrawlFrontierWritesKey = "/api/admin/crawl-frontier#writes"
 // POST /workflow-runs/:runId/replay and POST /workflows/:id/trial-run belong to
 // the workflows / workflow-trial switches and are untouched here; the profiles,
 // workflow-versions and news-sources subtrees belong to their own switches too.
-func WithCrawlFrontierWrites(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlFrontierWrites(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 
 	// /runs is a static path, not a dynamic segment.

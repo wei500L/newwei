@@ -1,7 +1,9 @@
-# api-go 四态路由与首个迁移单元（shadow/canary 实现说明）
+# api-go 四态路由与首个迁移单元（历史：shadow/canary 实现说明）
 
 > 2026-09-03 落地 · 2026-09-07 Go-批3A 增补 · 2026-09-07 Go-批3B 增补 · 2026-09-26 Go-批3C 增补（六个 PUT，`API_GO_USER_SETTINGS_WRITE_MODE`，默认 legacy）· 2026-09-27 Go-批4A 增补（public-portal 首页与频道）· 2026-09-27 Go-批4B 增补（故事详情两个 GET，仍是 `API_GO_PUBLIC_PORTAL_MODE`，默认 legacy）· 2026-10-09 Go-批5A 增补（`GET /api/dashboard/stats`，`API_GO_DASHBOARD_STATS_MODE`，默认 legacy）· 2026-10-09 Go-批5B 增补（三个图表 GET，`API_GO_DASHBOARD_CHARTS_MODE`，默认 legacy）· 2026-10-10 Go-批6A 增补（Spacetime 热力图与传播图各一对 GET，两个独立开关，默认 legacy）· 2026-10-10 Go-批6B 增补（`GET /api/dashboard/stream` 与认证版 `GET /api/healthz`，两个独立开关，默认 legacy）
 > 关联：docs/refactor/go-migration-adr.md §3/§4/§4.3、roadmap M2
+
+> **已废弃（GO-ONLY-RUNTIME-001，2026-10-31）**：本文描述的 legacy/shadow/canary/go 四态路由、`internal/shadow`、`internal/canary` 与 `API_GO_*_MODE` 迁移开关已从 `apps/api-go` 删除。Go 运行时现在直接拥有全部已实现入口，未知路由返回 Nest 等价 404；保留 `SCHEDULE_ENABLED`/`BULLMQ_WORKERS_ENABLED`/`WS_REDIS_ADAPTER_ENABLED`/`GRAPHQL_SUBSCRIPTION_BUS` 等第二道门。本文仅作历史背景。
 
 ---
 

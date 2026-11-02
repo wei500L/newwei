@@ -39,6 +39,20 @@ func NewService(db *sql.DB, redisClient *redis.Client) *Service {
 	}
 }
 
+// NewServiceWithHTTPClient is NewService with a caller-supplied HTTP client. It
+// is the narrow seam the Frontier node integration test uses to answer
+// robots/sitemap requests from an in-process transport. Only the client is
+// replaced; every request still goes through fetchWithStatus and therefore its
+// per-hop SSRF validation and manual redirect checks. A nil client keeps the
+// production client.
+func NewServiceWithHTTPClient(db *sql.DB, redisClient *redis.Client, client *http.Client) *Service {
+	service := NewService(db, redisClient)
+	if client != nil {
+		service.client = client
+	}
+	return service
+}
+
 // newMetadataHTTPClient builds the client used for every outbound request. Go's
 // automatic redirect following is disabled so each hop can be validated; the
 // transport keeps its default transparent gzip handling.

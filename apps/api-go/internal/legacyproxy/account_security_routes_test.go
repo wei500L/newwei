@@ -76,33 +76,16 @@ func accountSecurityNestRoutes() []struct{ method, path string } {
 
 // TestAccountSecurityStaysLegacyByDefault locks the default and the explicit
 // legacy value.
-func TestAccountSecurityStaysLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAccountSecurity(rules, "")
-	rules = WithAccountSecurity(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(accountSecurityGoRoutes(), accountSecurityNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestAccountSecurityGoOwnsRoutes locks the eight rules and their handler key.
 func TestAccountSecurityGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAccountSecurity(rules)
+	gateway := New(rules)
 	for _, tc := range accountSecurityGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if got.HandlerKey != AccountSecurityKey {
 			t.Fatalf("%s %s key=%s", tc.method, tc.path, got.HandlerKey)
@@ -127,15 +110,12 @@ func TestAccountSecurityGoOwnsRoutes(t *testing.T) {
 
 // TestAccountSecurityUnmigratedRoutesStayNest locks every fallback.
 func TestAccountSecurityUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithAccountSecurity(rules)
+	gateway := New(rules)
 	for _, tc := range accountSecurityNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -143,22 +123,19 @@ func TestAccountSecurityUnmigratedRoutesStayNest(t *testing.T) {
 // TestAccountSecurityCoexistsWithOtherAuthRoutes locks rule attribution when the
 // account switch is go alongside the runtime settings switch.
 func TestAccountSecurityCoexistsWithOtherAuthRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithRuntimeSettings(rules, string(ModeGo))
-	rules = WithAccountSecurity(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithRuntimeSettings(rules)
+	rules = WithAccountSecurity(rules)
+	gateway := New(rules)
 	for _, tc := range accountSecurityGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != AccountSecurityKey {
+		if got.Prefix == "" || got.HandlerKey != AccountSecurityKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}
 	// The account switch must not have taken any settings route over.
 	rateLimits := gateway.match(http.MethodGet, "/api/system-settings/rate-limits")
-	if rateLimits.Mode != ModeGo || rateLimits.HandlerKey != RuntimeSettingsKey {
+	if rateLimits.Prefix == "" || rateLimits.HandlerKey != RuntimeSettingsKey {
 		t.Fatalf("runtime settings route = %+v", rateLimits)
 	}
 	if got := gateway.match(http.MethodGet, "/api/system-settings/vector-service"); got.HandlerKey == AccountSecurityKey {

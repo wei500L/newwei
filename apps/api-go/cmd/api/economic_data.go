@@ -22,7 +22,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
-// economicRuntime owns the Go consumer and its dedicated blocking Redis client.
+// economicRuntime owns the Go consumer and its dedicated Redis client. The
+// worker uses the official BullMQ state machine, so it needs a client separate
+// from the shared request client only to keep its own close lifecycle.
 type economicRuntime struct {
 	service     *economicdata.Service
 	worker      *economicqueue.Worker
@@ -85,8 +87,8 @@ func wireEconomicData(
 	authenticator *authhttp.Authenticator,
 	mongo **dashboardstats.Connection,
 ) (*economicdata.Service, *economicRuntime, error) {
-	requestGo := cfg.EconomicDataMode == config.EconomicDataModeGo
-	workerGo := cfg.EconomicDataWorkerMode == config.EconomicDataWorkerModeGo
+	requestGo := true
+	workerGo := true
 	if !requestGo && !workerGo {
 		return nil, nil, nil
 	}
@@ -137,7 +139,7 @@ func wireEconomicData(
 				return
 			}
 			if r.Method == http.MethodOptions {
-				gateway.ServeLegacy(w, r)
+				gateway.Reject(w, r)
 				return
 			}
 			handler.ServeHTTP(w, r)

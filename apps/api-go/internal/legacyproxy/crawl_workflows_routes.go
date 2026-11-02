@@ -24,10 +24,7 @@ const CrawlWorkflowsKey = "/api/admin/crawl-frontier/workflows"
 //
 // trial-run、replay、workflow-runs、profiles 列表/创建/预览/回滚、runs 与
 // nodes 都不在这个开关里，继续回落 NestJS（Go 不返回自己的 404）。
-func WithCrawlWorkflows(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlWorkflows(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 	// 精确路径先行：node-schemas 与 compare 不是 :id。
 	rules = appendExactKeyed(rules, CrawlWorkflowsKey, base+"/workflows/node-schemas", http.MethodGet)

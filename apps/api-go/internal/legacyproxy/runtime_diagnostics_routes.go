@@ -19,10 +19,7 @@ const RuntimeDiagnosticsKey = "/api/system-settings#runtime-diagnostics"
 // selects this exact rule even when those switches are also go. The data
 // runtime group is not widened: /realtime-signals itself stays with its own
 // switch.
-func WithRuntimeDiagnostics(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithRuntimeDiagnostics(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, RuntimeDiagnosticsKey,
 		"/api/system-settings/assistant-safety/diagnostics", http.MethodGet)
 	return appendExactKeyed(rules, RuntimeDiagnosticsKey,

@@ -16,9 +16,6 @@ import (
 // wireCrawlProfiles 只在开关为 go 时注册采集站点画像编辑接口的 handler；
 // legacy（含空串）不注册，全部路径回落 NestJS。
 func wireCrawlProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
-	if cfg.CrawlProfilesMode != config.CrawlProfilesModeGo {
-		return nil
-	}
 	if db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl profiles go takeover requires mysql, jwt, and redis")
 	}
@@ -29,11 +26,11 @@ func wireCrawlProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: crawl profiles takeover mode=%s", cfg.CrawlProfilesMode)
+	log.Printf("api-go: crawl profiles takeover mode=%s", "go")
 	return nil
 }

@@ -31,9 +31,6 @@ func wireCrawlFrontierLlmWorker(
 	redisOptions *redis.Options,
 	mongoDatabase *mongo.Database,
 ) (*crawlfrontierllm.Runtime, error) {
-	if cfg.CrawlFrontierLlmWorkerMode != config.CrawlFrontierLlmWorkerModeGo {
-		return nil, nil
-	}
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: frontier LLM worker owner is go but BULLMQ_WORKERS_ENABLED=false; no consumer starts")
 		return nil, nil
@@ -79,7 +76,7 @@ func wireCrawlFrontierLlmWorker(
 		return nil, fmt.Errorf("api-go: frontier LLM worker: %w", err)
 	}
 	log.Printf("api-go: frontier LLM worker enabled mode=%s (queues=%s,%s concurrency=1 limiter=1/1000ms)",
-		cfg.CrawlFrontierLlmWorkerMode, crawlfrontierllm.JudgeQueueName, crawlfrontierllm.LearnQueueName)
+		"go", crawlfrontierllm.JudgeQueueName, crawlfrontierllm.LearnQueueName)
 	return runtime, nil
 }
 

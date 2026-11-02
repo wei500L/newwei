@@ -40,9 +40,6 @@ func wireSituationSettings(
 	authenticator *authhttp.Authenticator,
 	economic *economicdata.Service,
 ) error {
-	if cfg.SituationSettingsMode != config.SituationSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation settings go takeover requires mysql, redis, and jwt")
 	}
@@ -105,11 +102,11 @@ func wireSituationSettings(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: situation-monitor settings takeover mode=%s", cfg.SituationSettingsMode)
+	log.Printf("api-go: situation-monitor settings takeover mode=%s", "go")
 	return nil
 }

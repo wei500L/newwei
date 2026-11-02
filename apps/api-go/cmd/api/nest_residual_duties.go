@@ -105,9 +105,6 @@ func startResidualDuties(
 // API_GO_BULLMQ_CLEANUP_MODE=go. The scheduler runs one cycle immediately and
 // then hourly; the lease makes exactly one replica perform each cycle (B1).
 func startBullmqCleanup(cfg config.Config, redisClient *redis.Client) (*bullmqcleanup.Scheduler, error) {
-	if cfg.BullmqCleanupMode != config.BullmqCleanupModeGo {
-		return nil, nil
-	}
 	if redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_BULLMQ_CLEANUP_MODE=go requires redis")
 	}
@@ -117,7 +114,7 @@ func startBullmqCleanup(cfg config.Config, redisClient *redis.Client) (*bullmqcl
 	)
 	scheduler.Start(context.Background())
 	log.Printf("api-go: BullMQ retained-job cleanup owned by Go (mode=%s, lease=cron:bullmq-retained-cleanup)",
-		cfg.BullmqCleanupMode)
+		"go")
 	return scheduler, nil
 }
 
@@ -157,9 +154,6 @@ func startClassificationReviewSeed(
 	redisOptions *redis.Options,
 	graphqlRuntime *graphqlsubscriptions.Runtime,
 ) (*reviewSeedRuntime, error) {
-	if cfg.ClassificationReviewSeedMode != config.ClassificationReviewSeedModeGo {
-		return nil, nil
-	}
 	if redisClient == nil || redisOptions == nil {
 		return nil, fmt.Errorf("api-go: API_GO_CLASSIFICATION_REVIEW_SEED_MODE=go requires redis")
 	}
@@ -177,7 +171,7 @@ func startClassificationReviewSeed(
 		observer.Start(context.Background())
 	}
 	log.Printf("api-go: classification review seed trigger owned by Go (mode=%s, shared reader=%t)",
-		cfg.ClassificationReviewSeedMode, !owned)
+		"go", !owned)
 	return &reviewSeedRuntime{observer: observer, owned: owned, unsubscribe: unsubscribe}, nil
 }
 
@@ -191,9 +185,6 @@ func wirePipelineRecoveryWrites(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.PipelineRecoveryWriteMode != config.PipelineRecoveryWriteModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_PIPELINE_RECOVERY_WRITE_MODE=go requires mysql, redis, and jwt")
 	}
@@ -217,12 +208,12 @@ func wirePipelineRecoveryWrites(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: pipeline recovery writes owned by Go (mode=%s)", cfg.PipelineRecoveryWriteMode)
+	log.Printf("api-go: pipeline recovery writes owned by Go (mode=%s)", "go")
 	return nil
 }
 
@@ -234,9 +225,6 @@ func wireMetricsTakeover(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.MetricsMode != config.MetricsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_METRICS_MODE=go requires mysql, redis, and jwt")
 	}
@@ -247,12 +235,12 @@ func wireMetricsTakeover(
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: Prometheus metrics endpoint owned by Go (mode=%s)", cfg.MetricsMode)
+	log.Printf("api-go: Prometheus metrics endpoint owned by Go (mode=%s)", "go")
 	return nil
 }
 
@@ -265,9 +253,6 @@ func startStartupReconcile(
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
 ) (*startupreconcile.Reconciler, error) {
-	if cfg.StartupReconcileMode != config.StartupReconcileModeGo {
-		return nil, nil
-	}
 	if redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_STARTUP_RECONCILE_MODE=go requires redis")
 	}
@@ -297,7 +282,7 @@ func startStartupReconcile(
 		return nil, nil
 	}
 	log.Printf("api-go: startup reconciliation owned by Go (mode=%s, lease=startup:reconcile)",
-		cfg.StartupReconcileMode)
+		"go")
 	return startupreconcile.New(startupreconcile.Deps{
 		Settings: settings,
 		Search:   searchIndex,

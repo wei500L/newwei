@@ -23,10 +23,7 @@ const PipelineRecoveryWriteKey = "/__go/pipeline-recovery-write"
 // GET, a POST to the same prefix is not swallowed by this handler.
 //
 // Default (empty or legacy) appends nothing.
-func WithPipelineRecovery(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithPipelineRecovery(rules []Rule) []Rule {
 	return appendExactKeyed(rules, PipelineRecoveryKey,
 		"/api/admin/quality/pipeline/runs", http.MethodGet)
 }
@@ -39,10 +36,7 @@ func WithPipelineRecovery(rules []Rule, mode string) []Rule {
 // Both are exact paths with their own method; OPTIONS is registered for CORS.
 // GET on either path, longer paths and the parent path keep falling back to
 // NestJS, and the runs read keeps its own switch.
-func WithPipelineRecoveryWrite(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithPipelineRecoveryWrite(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, PipelineRecoveryWriteKey,
 		"/api/admin/quality/pipeline/replay", http.MethodPost)
 	return appendExactKeyed(rules, PipelineRecoveryWriteKey,

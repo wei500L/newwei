@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 // Item search defaults mirrored from ELASTICSEARCH_* env schema entries and
@@ -165,6 +167,9 @@ func (e *elasticSearcher) Search(ctx context.Context, orgID string, query string
 	}
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
+		// A blank query is not an Elasticsearch call at all, so it records no
+		// integration event: NestJS returns before its try block for the same
+		// reason and only counts real round trips.
 		return nil, nil
 	}
 	body, err := json.Marshal(buildItemSearchBody(orgID, trimmed, normalizeSearchLimit(limit)))
@@ -184,20 +189,28 @@ func (e *elasticSearcher) Search(ctx context.Context, orgID string, query string
 	}
 	resp, err := e.client.Do(req)
 	if err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsSearch, false)
 		return nil, nil
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, elasticsearchResponseBodyLimit))
 	if err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsSearch, false)
 		return nil, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsSearch, false)
 		return nil, nil
 	}
 	var parsed esSearchResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
+		metrics.RecordElasticsearchEvent(metrics.OperationItemsSearch, false)
 		return nil, nil
 	}
+	// NestJS records success right after the search call resolves and before it
+	// maps the hits, so a hit with an unusable source still counts as a successful
+	// integration call. Recording here keeps that boundary.
+	metrics.RecordElasticsearchEvent(metrics.OperationItemsSearch, true)
 	hits := make([]ItemSearchHit, 0, len(parsed.Hits.Hits))
 	for _, hit := range parsed.Hits.Hits {
 		id := hit.Source.ItemMetaID

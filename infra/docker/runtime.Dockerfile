@@ -3,11 +3,14 @@ FROM ${NODE_IMAGE} AS builder
 
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG NEXTAUTH_URL=http://localhost:3000
-ARG API_BASE_URL=http://api:4000
-ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
+# Defaults describe the repository default (Go gateway). NEXT_PUBLIC_* values are
+# inlined into the client bundle at build time, so they must be passed as build
+# args when they change; NEXTAUTH_SECRET stays runtime-only and is never an ARG.
+ARG API_BASE_URL=http://api-go:4020
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:4020/api
 ARG NEXT_PUBLIC_GRAPHQL_APQ_ENABLED=true
-ARG NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=/socket.io
-ARG NEXT_PUBLIC_REALTIME_SOCKET_PATH=/socket.io
+ARG NEXT_PUBLIC_NOTIFICATIONS_SOCKET_PATH=/socket.io-notifications
+ARG NEXT_PUBLIC_REALTIME_SOCKET_PATH=/socket.io-realtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -47,8 +50,12 @@ RUN DATABASE_URL=mysql://root:secret@mysql:3306/app \
     MYSQL_PASSWORD=secret \
     MYSQL_DB=app \
     pnpm --filter @modular/db run prisma:generate
-RUN pnpm --filter @modular/api run generate:schema
-RUN pnpm exec turbo run build --env-mode=loose --filter=@modular/ais-relay --filter=@modular/api --filter=@modular/vector --filter=@modular/web
+# The NestJS SDL generator and the three former Node backends are gone. The Web
+# codegen reads the committed Go-owned SDL (apps/api-go/internal/graphqlread/
+# schema/schema.gql), so building @modular/web (plus its workspace deps) is all
+# this shared Node image needs to produce. The one-shot Prisma/Mongo tool
+# services run their tsx CLIs directly from source.
+RUN pnpm exec turbo run build --env-mode=loose --filter=@modular/web
 
 FROM ${NODE_IMAGE} AS runtime
 

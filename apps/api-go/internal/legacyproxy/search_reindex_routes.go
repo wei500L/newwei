@@ -18,10 +18,7 @@ const SearchReindexKey = "/__go/search-reindex"
 // path, longer paths and the parent path keep falling back to the /api/ legacy
 // rule, so Go never answers its own 404 for them. Both rules also allow OPTIONS
 // so CORS preflight is answered by Go. An empty or legacy mode adds no rules.
-func WithSearchReindex(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSearchReindex(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, SearchReindexKey, "/api/admin/search/reindex", http.MethodPost)
 	return appendSegmentRule(rules, SearchReindexKey, "/api/admin/search/reindex/", true, false, "", http.MethodGet)
 }

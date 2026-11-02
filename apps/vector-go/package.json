@@ -2,9 +2,10 @@
   "name": "@modular/vector-go",
   "version": "0.1.0",
   "private": true,
-  "description": "Go 重写的 vector 服务（Strangler Fig 试点，契约等价于 apps/vector）",
+  "description": "Go vector service (the repository's only vector backend; the former Node apps/vector has been removed)",
   "scripts": {
     "build": "go build ./...",
+    "dev": "go run .",
     "test": "go test ./...",
     "lint": "go vet ./..."
   }

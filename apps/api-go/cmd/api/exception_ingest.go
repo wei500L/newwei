@@ -29,9 +29,6 @@ func wireExceptionIngest(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) error {
-	if cfg.ExceptionIngestMode != config.ExceptionIngestModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: exception ingest go takeover requires mysql, jwt, and redis")
 	}
@@ -57,13 +54,13 @@ func wireExceptionIngest(
 		}
 		if r.Method == http.MethodOptions {
 			// A non-preflight OPTIONS keeps the previous proxy destination.
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	}
 	gateway.RegisterGoHandler(legacyproxy.ExceptionIngestClientKey, serve)
 	gateway.RegisterGoHandler(legacyproxy.ExceptionIngestInternalKey, serve)
-	log.Printf("api-go: exception ingest takeover mode=%s", cfg.ExceptionIngestMode)
+	log.Printf("api-go: exception ingest takeover mode=%s", "go")
 	return nil
 }

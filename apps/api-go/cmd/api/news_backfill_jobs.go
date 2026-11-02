@@ -96,9 +96,9 @@ func wireNewsBackfillJobs(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) (*newsBackfillRuntime, error) {
-	manualGo := cfg.NewsClusteringLlmBackfillMode == config.NewsClusteringLlmBackfillModeGo
-	workerGo := cfg.NewsClusteringRecoveryWorkerMode == config.NewsClusteringRecoveryWorkerModeGo
-	cronGo := cfg.NewsIndicatorAssociationCronMode == config.NewsIndicatorAssociationCronModeGo
+	manualGo := true
+	workerGo := true
+	cronGo := true
 	if !manualGo && !workerGo && !cronGo {
 		return nil, nil
 	}
@@ -173,7 +173,7 @@ func wireNewsBackfillJobs(
 					return
 				}
 				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
+					gateway.Reject(w, r)
 					return
 				}
 				handler.ServeHTTP(w, r)

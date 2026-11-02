@@ -26,9 +26,6 @@ import (
 // reader. It deliberately builds no S3 client at startup and performs no probe:
 // the diagnostics run only inside a request.
 func wireStorageDiagnostics(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.StorageDiagnosticsMode != config.StorageDiagnosticsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: storage diagnostics go takeover requires mysql, redis, and jwt")
 	}
@@ -43,11 +40,11 @@ func wireStorageDiagnostics(gateway *legacyproxy.Gateway, cfg config.Config, db 
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: storage diagnostics takeover mode=%s", cfg.StorageDiagnosticsMode)
+	log.Printf("api-go: storage diagnostics takeover mode=%s", "go")
 	return nil
 }

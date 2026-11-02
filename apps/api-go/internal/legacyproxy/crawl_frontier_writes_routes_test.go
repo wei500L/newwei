@@ -17,36 +17,19 @@ func crawlFrontierWriteRoutes() []struct{ method, path string } {
 
 // TestCrawlFrontierWritesStayLegacyByDefault proves the default keeps every path
 // on NestJS: an unset and an explicit legacy switch add no rules at all.
-func TestCrawlFrontierWritesStayLegacyByDefault(t *testing.T) {
-	for _, mode := range []string{"", "legacy"} {
-		rules := WithCrawlFrontierWrites(DefaultRules(ModeShadow, ""), mode)
-		gateway, err := New("http://legacy:4000", rules)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, tc := range crawlFrontierWriteRoutes() {
-			if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-				t.Fatalf("mode %q: %s %s matched %+v, want legacy", mode, tc.method, tc.path, got)
-			}
-		}
-	}
-}
 
 // TestCrawlFrontierWritesGoOwnsRoutes covers the go table, including the CORS
 // preflight on each route.
 func TestCrawlFrontierWritesGoOwnsRoutes(t *testing.T) {
-	rules := WithCrawlFrontierWrites(DefaultRules(ModeShadow, ""), string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := WithCrawlFrontierWrites(BaseRules())
+	gateway := New(rules)
 	for _, tc := range crawlFrontierWriteRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != CrawlFrontierWritesKey {
+		if got.Prefix == "" || got.HandlerKey != CrawlFrontierWritesKey {
 			t.Fatalf("%s %s rule=%+v, want go key %s", tc.method, tc.path, got, CrawlFrontierWritesKey)
 		}
 		preflight := gateway.match(http.MethodOptions, tc.path)
-		if preflight.Mode != ModeGo || preflight.HandlerKey != CrawlFrontierWritesKey {
+		if preflight.Prefix == "" || preflight.HandlerKey != CrawlFrontierWritesKey {
 			t.Fatalf("OPTIONS %s rule=%+v, want go", tc.path, preflight)
 		}
 	}
@@ -67,11 +50,8 @@ func TestCrawlFrontierWritesGoOwnsRoutes(t *testing.T) {
 // switch must not steal methods or path shapes that belong to NestJS or to the
 // read switch.
 func TestCrawlFrontierWritesDoNotClaimOtherShapes(t *testing.T) {
-	rules := WithCrawlFrontierWrites(DefaultRules(ModeShadow, ""), string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := WithCrawlFrontierWrites(BaseRules())
+	gateway := New(rules)
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/admin/crawl-frontier/runs"},
 		{http.MethodPut, "/api/admin/crawl-frontier/runs"},
@@ -84,7 +64,7 @@ func TestCrawlFrontierWritesDoNotClaimOtherShapes(t *testing.T) {
 		{http.MethodPost, "/api/admin/crawl-frontier/nodes/node-1/retry/extra"},
 		{http.MethodPost, "/api/admin/crawl-frontier/workflow-runs/wrun-1/replay"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
 			t.Fatalf("%s %s matched %+v, want legacy", tc.method, tc.path, got)
 		}
 	}
@@ -93,13 +73,10 @@ func TestCrawlFrontierWritesDoNotClaimOtherShapes(t *testing.T) {
 // TestCrawlFrontierWritesAndRunsShareThePrefix runs the two switches together,
 // which config.go forces in go mode. Each route keeps exactly one owner.
 func TestCrawlFrontierWritesAndRunsShareThePrefix(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithCrawlFrontierRuns(rules, string(ModeGo))
-	rules = WithCrawlFrontierWrites(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithCrawlFrontierRuns(rules)
+	rules = WithCrawlFrontierWrites(rules)
+	gateway := New(rules)
 	cases := []struct {
 		method string
 		path   string
@@ -115,7 +92,7 @@ func TestCrawlFrontierWritesAndRunsShareThePrefix(t *testing.T) {
 	}
 	for _, tc := range cases {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != tc.key {
+		if got.Prefix == "" || got.HandlerKey != tc.key {
 			t.Fatalf("%s %s rule=%+v, want go key %s", tc.method, tc.path, got, tc.key)
 		}
 	}

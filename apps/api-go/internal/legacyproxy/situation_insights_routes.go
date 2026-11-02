@@ -17,9 +17,6 @@ const SituationInsightsKey = "/api/situation-monitor/insights"
 //
 // Sorting by prefix length means the exact insights rule wins over /api/, and
 // no existing rule shares this prefix.
-func WithSituationInsights(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSituationInsights(rules []Rule) []Rule {
 	return appendExactKeyed(rules, SituationInsightsKey, "/api/situation-monitor/insights", http.MethodGet)
 }

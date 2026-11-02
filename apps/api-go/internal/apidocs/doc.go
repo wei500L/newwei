@@ -20,8 +20,11 @@
 // exception filter's 404 (internal/nestnotfound), never with a Go-flavoured
 // error.
 //
-// The OpenAPI document is a byte-identical copy of
-// apps/api/tests/contract/openapi.snapshot.json vendored next to this file. It
+// The OpenAPI document vendored next to this file (openapi.snapshot.json) is
+// the authoritative copy served by api-go; it is a byte-identical copy of the
+// Nest generator output at the migration baseline (see PROVENANCE.md for the
+// source SHA and generation boundary). The CI "Contract copies in sync" step
+// keeps it equal to the Nest generator while the legacy app still exists. It
 // is served as-is so info.completeness and every other member keep their exact
 // bytes. The Swagger UI files are the pruned swagger-ui-dist 5.29.4 copies in
 // assets/ (provenance: assets/SOURCE.md); nothing is fetched from a CDN.

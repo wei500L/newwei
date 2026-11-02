@@ -37,9 +37,6 @@ func wireModelAccessSettings(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
-	if cfg.ModelAccessSettingsMode != config.ModelAccessSettingsModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: model access settings go takeover requires mysql, redis, and jwt")
 	}
@@ -69,11 +66,11 @@ func wireModelAccessSettings(
 		}
 		if r.Method == http.MethodOptions {
 			// A non-preflight OPTIONS keeps the previous proxy destination.
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: model access settings takeover mode=%s", cfg.ModelAccessSettingsMode)
+	log.Printf("api-go: model access settings takeover mode=%s", "go")
 	return nil
 }

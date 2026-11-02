@@ -77,6 +77,10 @@ func writeError(w http.ResponseWriter, r *http.Request, body errorBody) {
 	// path, which also differs from Express's raw url).
 	body.Path = r.URL.RequestURI()
 	body.Timestamp = nestTimestamp()
+	// Every REST failure written by this package becomes one exception event,
+	// mirroring GlobalExceptionFilter.handleHttpException. The event is built
+	// before the response so a client that disconnects mid-write cannot drop it.
+	recordException(r, body.StatusCode, body.Message)
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(body.StatusCode)
 	// 不追加换行（与 Express res.json 的字节形态一致——契约比对按字节

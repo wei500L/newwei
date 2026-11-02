@@ -35,10 +35,7 @@ const AccountSecurityKey = "/api/auth#account-security"
 //
 // The shared rule helpers also whitelist OPTIONS for the taken-over paths, so
 // CORS preflight is answered by the Go handler instead of reaching NestJS.
-func WithAccountSecurity(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithAccountSecurity(rules []Rule) []Rule {
 	base := "/api/auth"
 
 	rules = appendExactKeyed(rules, AccountSecurityKey, base+"/me", http.MethodGet)

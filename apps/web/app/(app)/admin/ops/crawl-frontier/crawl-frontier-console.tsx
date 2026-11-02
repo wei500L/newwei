@@ -41,6 +41,7 @@ import {
 } from "@/lib/crawl-config-policy";
 
 import { canViewCrawlFrontierLlmLogs } from "./crawl-frontier-access";
+import { buildSitemapDiagnosticRows } from "./crawl-frontier-diagnostics";
 import { CrawlWorkflowStudio } from "./crawl-workflow-studio";
 import {
   buildWorkflowCandidateTraceChain,
@@ -2319,9 +2320,17 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Strategy">{asString(asRecord(selectedRunSummary?.seedSummary)?.strategy) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Method">{asString(asRecord(selectedRunSummary?.seedSummary)?.method) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Origin">{asString(asRecord(selectedRunSummary?.seedSummary)?.origin) ?? "-"}</Descriptions.Item>
+                        <Descriptions.Item label="Discovery mode">{asString(asRecord(selectedRunSummary?.seedSummary)?.discoveryMode) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Fallback">{asString(asRecord(selectedRunSummary?.seedSummary)?.fallbackStage) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Seed yield">{formatCountSummary(asRecord(asRecord(selectedRunSummary?.seedSummary)?.yield))}</Descriptions.Item>
                         <Descriptions.Item label="Seed quality">{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.quality))}</Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+                    <Card size="small" title="Sitemap discovery">
+                      <Descriptions size="small" column={2} bordered>
+                        {buildSitemapDiagnosticRows(asRecord(asRecord(selectedRunSummary?.seedSummary)?.diagnostics)).map((row) => (
+                          <Descriptions.Item key={row.key} label={row.label}>{row.value}</Descriptions.Item>
+                        ))}
                       </Descriptions>
                     </Card>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.diagnostics.payloads")}>
@@ -2622,6 +2631,7 @@ export function CrawlFrontierConsole() {
                 <Descriptions.Item label="Crawled at">{formatDateTime(selectedNode.crawledAt)}</Descriptions.Item>
                 <Descriptions.Item label="Cluster label">{asString(asRecord(selectedNode.metadata)?.clusterLabel) ?? "-"}</Descriptions.Item>
                 <Descriptions.Item label="Seed origin">{asString(asRecord(selectedNode.metadata)?.seedOrigin) ?? "-"}</Descriptions.Item>
+                <Descriptions.Item label="Seed method">{asString(asRecord(selectedNode.metadata)?.seedMethod) ?? "-"}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.judgment")}>

@@ -21,10 +21,7 @@ const CrawlProfilesKey = "/api/admin/crawl-frontier/profiles"
 // match/preview 不会被当成 id。runs、nodes、workflows、trial-run、
 // workflow-runs 与 /profiles/:id/workflow-bridge 都不在这个开关里，继续
 // 回落 NestJS（Go 不返回自己的 404）。
-func WithCrawlProfiles(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlProfiles(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier/profiles"
 	// 精确路径先行：match 与 preview 不是 :id。
 	rules = appendExactKeyed(rules, CrawlProfilesKey, base, http.MethodGet, http.MethodPost)
@@ -46,7 +43,6 @@ func appendTailSegmentRule(rules []Rule, key, prefix, tail string, methods ...st
 	}
 	return append(rules, Rule{
 		Prefix:      prefix,
-		Mode:        ModeGo,
 		OneSegment:  true,
 		Tail:        tail,
 		TailSegment: true,

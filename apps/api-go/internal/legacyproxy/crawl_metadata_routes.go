@@ -15,9 +15,6 @@ const CrawlMetadataKey = "/__go/crawl-metadata"
 // POST /api/crawl-tasks/:id/retry, DELETE /api/crawl-tasks/:id and every other
 // crawl task route keep falling back to NestJS. An empty or legacy mode adds no
 // rules.
-func WithCrawlMetadata(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithCrawlMetadata(rules []Rule) []Rule {
 	return appendExactKeyed(rules, CrawlMetadataKey, "/api/crawl-tasks/metadata", http.MethodPost)
 }

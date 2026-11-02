@@ -19,10 +19,7 @@ const RbacKey = "/api/rbac"
 // （例如 DELETE /api/rbac/roles）与更长路径（例如 /api/rbac/roles/:id）
 // 不在此列，继续回落 NestJS——Go 不返回自己的 404。默认（空 / legacy）
 // 不追加规则。本开关不新增 updateRole 的 HTTP。
-func WithRbac(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithRbac(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, RbacKey, "/api/rbac/permissions", http.MethodGet)
 	rules = appendExactKeyed(rules, RbacKey, "/api/rbac/roles", http.MethodGet, http.MethodPost)
 	rules = appendExactKeyed(rules, RbacKey, "/api/rbac/assign", http.MethodPost)

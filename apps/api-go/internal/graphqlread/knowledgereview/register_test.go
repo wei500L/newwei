@@ -22,7 +22,7 @@ func TestReviewMutationPlansToExecuteOnlyWhenRegistered(t *testing.T) {
 	engine := exec.New(loaded, reg, 8, 2000, nil)
 
 	const review = `mutation { reviewKnowledgeGraphEvidence(input: {evidenceId: "e1", status: "approved"}) { id confidence extractorVersion createdAt evidence edge { id type weight confidence properties fromEntity { id name type properties } toEntity { id } } article { id url title summary language crawlAt } } }`
-	if got := engine.PlanDocument(review, nil, nil); got.Kind != exec.KindLegacy {
+	if got := engine.PlanDocument(review, nil, nil); got.Kind != exec.KindProtocol {
 		t.Fatalf("unregistered mutation kind %s body %s", got.Kind, got.Result.Body)
 	}
 
@@ -45,7 +45,7 @@ func TestReviewMutationPlansToExecuteOnlyWhenRegistered(t *testing.T) {
 		// The knowledge-graph settings read root is not widened either.
 		`query { knowledgeGraphSettings { enabled } }`,
 	} {
-		if got := engine.PlanDocument(doc, nil, nil); got.Kind != exec.KindLegacy {
+		if got := engine.PlanDocument(doc, nil, nil); got.Kind != exec.KindProtocol {
 			t.Fatalf("%s kind %s body %s", doc, got.Kind, got.Result.Body)
 		}
 	}

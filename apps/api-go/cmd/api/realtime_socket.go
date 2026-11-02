@@ -113,7 +113,7 @@ func wireRealtimeSocket(
 		DB:               db,
 		Mongo:            mongoDatabase,
 		Situation:        augmenter,
-		NewsnowSourcesGo: cfg.NewsnowSourcesMode == config.NewsnowSourcesModeGo,
+		NewsnowSourcesGo: true,
 		// The browser's active-source list is validated against the same
 		// generated source registry the NestJS gateway uses, so an unknown id
 		// cannot make the transport track a source that never fetches.

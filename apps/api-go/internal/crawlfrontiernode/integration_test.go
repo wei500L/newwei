@@ -53,6 +53,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
+	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
@@ -83,6 +84,11 @@ type testNodeHarness struct {
 	mongoDB     *mongo.Database
 	server      *httptest.Server
 	requests    atomic.Int64
+	// metadata, when set before calling service(), is the sitemap discovery
+	// surface injected into the Service. The sitemap success scenario builds it
+	// around a stub HTTP transport so robots/sitemap discovery runs for real
+	// without leaving the process.
+	metadata *crawlmetadata.Discovery
 	// respond is the /crawl behaviour per target URL. It returns the HTTP status
 	// and the raw body the stub writes back.
 	respond func(targetURL string) (int, string)
@@ -350,6 +356,7 @@ func (h *testNodeHarness) service() *Service {
 		Redis:      h.redis,
 		Crawl:      client,
 		Enqueuer:   producer,
+		Metadata:   h.metadata,
 		Now:        func() time.Time { return testClockTime },
 		ExecConfig: crawlexecution.Config{},
 	})
@@ -628,10 +635,17 @@ const testHomeResultMessage = "# Example home\n\nFrontier node integration fixtu
 // testHomeCrawlBody is the depth-0 home page response: one self result with two
 // in-domain links (a category and a second category hub) plus one system event.
 func testHomeCrawlBody(runID string) string {
+	return testHomeCrawlBodyForURL(runID, "https://example.com")
+}
+
+// testHomeCrawlBodyForURL is testHomeCrawlBody with a caller-supplied self URL.
+// The sitemap scenario uses a public IP literal as the seed origin so discovery
+// never depends on DNS resolution.
+func testHomeCrawlBodyForURL(runID, selfURL string) string {
 	return testCrawlBody(testCrawlEnvelope{
 		RunID: runID,
 		Results: []testCrawlResult{{
-			URL:        "https://example.com",
+			URL:        selfURL,
 			Success:    true,
 			StatusCode: 200,
 			Markdown:   map[string]string{"raw_markdown": testHomeResultMessage},
@@ -883,6 +897,190 @@ func TestFrontierNodeLayeredHappyPath(t *testing.T) {
 	}
 	if got := h.scalar("SELECT lastError FROM CrawlFrontierRun WHERE id = ?", testRunID); got != "" {
 		t.Fatalf("run lastError = %q, want NULL", got)
+	}
+}
+
+// staticSitemapTransport answers the sitemap discovery fixture URLs and 404s
+// every other target. It is installed only on the injected crawlmetadata
+// Discovery, so the crawl4ai httptest server is unaffected.
+type staticSitemapTransport struct {
+	routes map[string]string
+	mu     sync.Mutex
+	seen   []string
+}
+
+func (t *staticSitemapTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	t.seen = append(t.seen, req.URL.String())
+	t.mu.Unlock()
+	body, ok := t.routes[req.URL.String()]
+	status := http.StatusNotFound
+	if ok {
+		status = http.StatusOK
+	}
+	header := http.Header{}
+	header.Set("Content-Type", "application/xml")
+	return &http.Response{
+		StatusCode: status,
+		Status:     http.StatusText(status),
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+// childNodeIDs lists the direct children of a node in depth then id order.
+func (h *testNodeHarness) childNodeIDs(runID, parentNodeID string) []string {
+	h.t.Helper()
+	rows, err := h.db.Query(`SELECT id FROM CrawlFrontierNode
+		WHERE runId = ? AND parentNodeId = ? ORDER BY depth, id`, runID, parentNodeID)
+	if err != nil {
+		h.t.Fatalf("query child nodes: %v", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			h.t.Fatalf("scan child node: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// TestFrontierNodeSitemapSeedMaterialization runs a non-disabled sitemap
+// discovery through the real node chain: the crawlmetadata walk reads robots and
+// the declared sitemap over a stub transport, the seed candidates materialize as
+// queued article nodes, and the seed method plus the full sitemap diagnostics
+// are projected onto the root node and the run metadata. Only the sitemap HTTP
+// transport and the crawl4ai HTTP server are stubbed; the discovery walk,
+// materialization, persistence and read projection are the production code.
+func TestFrontierNodeSitemapSeedMaterialization(t *testing.T) {
+	h := testNewNodeHarness(t)
+	// A public IP literal keeps the production SSRF check active without any DNS
+	// lookup, so the fixture is deterministic in an offline CI runner.
+	const sitemapOrigin = "https://8.8.8.8"
+	transport := &staticSitemapTransport{routes: map[string]string{
+		sitemapOrigin + "/robots.txt": "Sitemap: " + sitemapOrigin + "/sitemap-articles.xml\n",
+		sitemapOrigin + "/sitemap-articles.xml": `<?xml version="1.0" encoding="UTF-8"?>` +
+			`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` +
+			`<url><loc>` + sitemapOrigin + `/story/seed-one</loc><lastmod>2025-03-01T00:00:00Z</lastmod></url>` +
+			`<url><loc>` + sitemapOrigin + `/story/seed-two</loc><lastmod>2025-03-02T00:00:00Z</lastmod></url>` +
+			`</urlset>`,
+	}}
+	h.metadata = crawlmetadata.NewDiscovery(
+		crawlmetadata.NewServiceWithHTTPClient(h.db, h.redis, &http.Client{
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}),
+		nil,
+		nil,
+	)
+	h.insertProfile(testProfileID, "layered",
+		`{"sourceTier":"tier1","seedDiscovery":{"strategy":"seed_first","mode":"robots","maxSeedUrls":5,"freshnessWindowHours":168,"qualityThresholds":{"minCandidates":1,"minArticleRatio":0,"maxNoiseRatio":1,"minFreshRatio":0}},"layeredOptions":{"maxDepth":3,"maxPages":10}}`)
+	h.insertTask(testTaskID)
+	h.insertWorkflowRun(testWorkflowRunID)
+	h.insertRun(testRunSeed{
+		ID: testRunID, ProfileID: testProfileID, WorkflowRunID: testWorkflowRunID, CrawlTaskID: testTaskID,
+		SeedURL: sitemapOrigin, ExecutionMode: "layered", Status: "queued", MaxDepth: 3, MaxPages: 10,
+	})
+	h.insertNode(testNodeSeed{
+		ID: testRootNodeID, RunID: testRunID, URL: sitemapOrigin, PageType: "home",
+		Depth: 0, QueueClass: "hot", Status: "queued",
+	})
+	h.startCrawl4ai(func(string) (int, string) {
+		return http.StatusOK, testHomeCrawlBodyForURL("crawl-sitemap-run", sitemapOrigin)
+	})
+	service := h.service()
+
+	if _, err := service.ProcessQueuedNode(h.ctx, testRootNodeID, testOrgID, 0); err != nil {
+		t.Fatalf("process node: %v", err)
+	}
+
+	// robots was requested first, then the declared sitemap.
+	if len(transport.seen) < 2 || transport.seen[0] != sitemapOrigin+"/robots.txt" ||
+		transport.seen[1] != sitemapOrigin+"/sitemap-articles.xml" {
+		t.Fatalf("sitemap requests = %v", transport.seen)
+	}
+
+	// 1. The real sitemap candidates materialized as queued article nodes,
+	// stamped with the seedMethod the sitemap walk actually produced.
+	seedNodes := 0
+	for _, nodeID := range h.childNodeIDs(testRunID, testRootNodeID) {
+		metadata := h.jsonObject("SELECT metadata FROM CrawlFrontierNode WHERE id = ?", nodeID)
+		if origin, _ := metadata.String("seedOrigin"); origin != "sitemap" {
+			continue
+		}
+		seedNodes++
+		if candidate, _ := metadata.Bool("seedCandidate"); !candidate {
+			t.Fatalf("seed node %s seedCandidate = false", nodeID)
+		}
+		if method, _ := metadata.String("seedMethod"); method != "robots" {
+			t.Fatalf("seed node %s seedMethod = %q, want robots", nodeID, method)
+		}
+	}
+	if seedNodes != 2 {
+		t.Fatalf("seed nodes = %d, want 2", seedNodes)
+	}
+
+	// 2. The root node metadata carries the full sitemap diagnostics produced by
+	// the walk, not a request-mode echo.
+	rootMetadata := h.jsonObject("SELECT metadata FROM CrawlFrontierNode WHERE id = ?", testRootNodeID)
+	if got, _ := rootMetadata.String("seedMethod"); got != "robots" {
+		t.Fatalf("root seedMethod = %q", got)
+	}
+	if got, _ := rootMetadata.String("seedDiscoveryMode"); got != "robots" {
+		t.Fatalf("root seedDiscoveryMode = %q", got)
+	}
+	diagnostics, ok := rootMetadata.Object("seedDiagnostics")
+	if !ok {
+		raw, _ := rootMetadata.MarshalJSON()
+		t.Fatalf("root metadata has no seedDiagnostics: %s", raw)
+	}
+	if got, _ := diagnostics.String("seedMethod"); got != "robots" {
+		t.Fatalf("diagnostics seedMethod = %q", got)
+	}
+	if got, _ := diagnostics.String("robotsUrl"); got != sitemapOrigin+"/robots.txt" {
+		t.Fatalf("diagnostics robotsUrl = %q", got)
+	}
+	if parsed, ok := diagnostics.Number("parsedSitemaps"); !ok || parsed != 1 {
+		t.Fatalf("diagnostics parsedSitemaps = %v (present=%v), want 1", parsed, ok)
+	}
+	if candidates, ok := diagnostics.Number("candidateCount"); !ok || candidates != 2 {
+		t.Fatalf("diagnostics candidateCount = %v (present=%v), want 2", candidates, ok)
+	}
+	if fetched, _ := diagnostics.Strings("fetchedSitemaps"); len(fetched) != 1 || fetched[0] != sitemapOrigin+"/sitemap-articles.xml" {
+		t.Fatalf("diagnostics fetchedSitemaps = %v", fetched)
+	}
+
+	// 3. refreshRunStatus hoists the same seed fields onto the run metadata, which
+	// is the document the Web console's run diagnostics tab reads.
+	runMetadata := h.jsonObject("SELECT metadata FROM CrawlFrontierRun WHERE id = ?", testRunID)
+	if got, _ := runMetadata.String("seedMethod"); got != "robots" {
+		t.Fatalf("run seedMethod = %q", got)
+	}
+	if got, _ := runMetadata.String("seedDiscoveryMode"); got != "robots" {
+		t.Fatalf("run seedDiscoveryMode = %q", got)
+	}
+	runDiagnostics, ok := runMetadata.Object("seedDiagnostics")
+	if !ok {
+		raw, _ := runMetadata.MarshalJSON()
+		t.Fatalf("run metadata has no seedDiagnostics: %s", raw)
+	}
+	if got, _ := runDiagnostics.String("seedMethod"); got != "robots" {
+		t.Fatalf("run diagnostics seedMethod = %q", got)
+	}
+	if got, _ := runDiagnostics.String("robotsUrl"); got != sitemapOrigin+"/robots.txt" {
+		t.Fatalf("run diagnostics robotsUrl = %q", got)
+	}
+
+	// 4. The seed branch completion event was recorded for the root branch.
+	if got := h.count(`SELECT COUNT(*) FROM CrawlStrategyWorkflowRunEvent
+		WHERE runId = ? AND eventType = 'seed_branch_completed'`, testWorkflowRunID); got != 1 {
+		t.Fatalf("seed_branch_completed events = %d, want 1", got)
 	}
 }
 

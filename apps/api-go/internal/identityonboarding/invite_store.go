@@ -51,6 +51,45 @@ func loadInviteByIDOrg(ctx context.Context, q dbtx, orgID, inviteID string) (inv
 	return invite, true, nil
 }
 
+// loadInviteByIDAny reads an invitation by id without an organization
+// predicate. The approval recovery path is platform scoped and derives the
+// organization from the invitation row itself.
+func loadInviteByIDAny(ctx context.Context, q dbtx, inviteID string) (inviteRecord, bool, error) {
+	invite, err := scanInvite(q.QueryRowContext(ctx,
+		"SELECT "+inviteColumns+" FROM `OrgInvite` WHERE `id` = ? LIMIT 1", inviteID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return inviteRecord{}, false, nil
+	}
+	if err != nil {
+		return inviteRecord{}, false, err
+	}
+	return invite, true, nil
+}
+
+// loadInvitesByIDs batches invitation lookups for the platform application list
+// so the progress projection never issues one query per generated invite.
+func loadInvitesByIDs(ctx context.Context, q dbtx, ids []string) (map[string]inviteRecord, error) {
+	out := make(map[string]inviteRecord, len(ids))
+	unique := sortedUniqueStrings(ids)
+	if len(unique) == 0 {
+		return out, nil
+	}
+	query := "SELECT " + inviteColumns + " FROM `OrgInvite` WHERE `id` IN (" + placeholders(len(unique)) + ")"
+	rows, err := q.QueryContext(ctx, query, argsOf(unique)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		invite, err := scanInvite(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[invite.ID] = invite
+	}
+	return out, rows.Err()
+}
+
 func loadInviteByTokenHash(ctx context.Context, q dbtx, tokenHash string) (inviteRecord, bool, error) {
 	invite, err := scanInvite(q.QueryRowContext(ctx,
 		"SELECT "+inviteColumns+" FROM `OrgInvite` WHERE `tokenHash` = ? LIMIT 1", tokenHash))

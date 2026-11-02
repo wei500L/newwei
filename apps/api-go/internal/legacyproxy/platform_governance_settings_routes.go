@@ -47,10 +47,7 @@ const PlatformGovernanceSettingsKey = "/api/system-settings#platform-governance"
 // unchanged and rollback only flips this one switch. The shared rule helper also
 // whitelists OPTIONS for the taken-over paths, so CORS preflight is answered by
 // the Go handler instead of reaching NestJS.
-func WithPlatformGovernanceSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithPlatformGovernanceSettings(rules []Rule) []Rule {
 	base := "/api/system-settings"
 
 	// Longer exact paths are registered before the paths they extend.

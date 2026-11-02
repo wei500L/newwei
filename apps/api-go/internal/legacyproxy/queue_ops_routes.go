@@ -32,10 +32,7 @@ const QueueOpsKey = "/__go/queue-ops"
 // API_GO_QUEUE_OPS_MODE=legacy this function adds no rule at all and the requests
 // keep falling through to the /api/ legacy fallback, where Nest answers 404.
 // /admin/queues (Bull Board) is untouched and keeps proxying to NestJS.
-func WithQueueOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithQueueOps(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, QueueOpsKey, "/api/admin/queue-ops/queues",
 		http.MethodGet)
 	rules = appendExactKeyed(rules, QueueOpsKey, "/api/admin/queue-ops/jobs",

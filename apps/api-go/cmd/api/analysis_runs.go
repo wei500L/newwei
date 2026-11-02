@@ -37,9 +37,6 @@ func registerAnalysisRunMutations(
 	redisClient *redis.Client,
 	mongoDatabase *mongo.Database,
 ) error {
-	if cfg.AnalysisRunsMode != config.AnalysisRunsModeGo {
-		return nil
-	}
 	if reg == nil {
 		return fmt.Errorf("api-go: API_GO_ANALYSIS_RUNS_MODE=go requires a GraphQL registry")
 	}
@@ -73,9 +70,6 @@ func startAnalysisWorker(
 	redisClient *redis.Client,
 	existingMongo *dashboardstats.Connection,
 ) (*analysisqueue.Worker, *dashboardstats.Connection, error) {
-	if cfg.AnalysisWorkerMode != config.AnalysisWorkerModeGo {
-		return nil, nil, nil
-	}
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: analysis worker owner is go but BULLMQ_WORKERS_ENABLED=false; no consumer starts")
 		return nil, nil, nil

@@ -9,14 +9,10 @@ const ArchiveReadingSearchKey = "/api/analysis/exports/search"
 // independent archive reading switch is go. Only POST and its CORS preflight
 // are matched; the two already-migrated exports and every other path keep their
 // own rules.
-func WithArchiveReadingSearch(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithArchiveReadingSearch(rules []Rule) []Rule {
 	methods := map[string]bool{http.MethodPost: true, http.MethodOptions: true}
 	return append(rules, Rule{
 		Prefix:     ArchiveReadingSearchKey,
-		Mode:       ModeGo,
 		Exact:      true,
 		HandlerKey: ArchiveReadingSearchKey,
 		Methods:    methods,

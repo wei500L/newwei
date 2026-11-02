@@ -2,16 +2,27 @@ package situationmonitors
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/contentsubscriptions"
+	"github.com/wei500L/newwei/apps/api-go/internal/geocoding"
 )
+
+// LocationGeocoder is the narrow geocoding surface resolveLocation depends on.
+// Production uses *geocoding.Client, which owns the shared Redis positive and
+// negative cache, the global Nominatim rate limiter and the SQL-backed identity
+// settings; monitor code must not create a second cache or HTTP fallback.
+type LocationGeocoder interface {
+	Geocode(ctx context.Context, query, alpha2 string) (*geocoding.Hit, error)
+}
+
+// cachedLocationGeocoder is the optional cache-only read the production
+// *geocoding.Client also implements. Keeping it separate keeps the required
+// monitor dependency at one method while still letting the save path reuse the
+// preview entry that was keyed without the country field the editor echoes back.
+type cachedLocationGeocoder interface {
+	CachedGeocode(ctx context.Context, query, alpha2 string) (*geocoding.Hit, error)
+}
 
 type geoHit struct {
 	Lat     float64
@@ -110,66 +121,54 @@ func asString(value any) string {
 	return text
 }
 
+// geocode delegates to the shared geocoding client. The monitor service keeps
+// the historical recoverable-failure behaviour: a cache or upstream failure
+// yields no provider metadata but never discards coordinates the caller
+// supplied. Only a definitive cache/upstream miss becomes a negative entry,
+// which is owned by geocoding.Client.
 func (s *Service) geocode(ctx context.Context, name, country string) *geoHit {
-	if s == nil || s.httpClient == nil || strings.TrimSpace(name) == "" {
+	if s == nil || s.geocoder == nil || strings.TrimSpace(name) == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	query := url.Values{}
-	query.Set("format", "jsonv2")
-	query.Set("limit", "1")
-	query.Set("addressdetails", "1")
-	query.Set("q", name)
 	if country != "" {
-		query.Set("countrycodes", strings.ToLower(country))
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://nominatim.openstreetmap.org/search?"+query.Encode(), nil)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("User-Agent", "modular-api")
-	req.Header.Set("Accept", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil
-	}
-	var rows []struct {
-		Lat         string   `json:"lat"`
-		Lon         string   `json:"lon"`
-		Boundingbox []string `json:"boundingbox"`
-		Address     struct {
-			CountryCode string `json:"country_code"`
-		} `json:"address"`
-	}
-	if err := json.Unmarshal(body, &rows); err != nil || len(rows) == 0 {
-		return nil
-	}
-	lat, latErr := strconv.ParseFloat(rows[0].Lat, 64)
-	lng, lngErr := strconv.ParseFloat(rows[0].Lon, 64)
-	if latErr != nil || lngErr != nil || !finite(lat) || !finite(lng) {
-		return nil
-	}
-	hit := &geoHit{Lat: lat, Lng: lng}
-	if code := contentsubscriptions.NormalizeCountryAlpha2(rows[0].Address.CountryCode); code != "" {
-		hit.Country = code
-	}
-	if len(rows[0].Boundingbox) == 4 {
-		minLat, err1 := strconv.ParseFloat(rows[0].Boundingbox[0], 64)
-		maxLat, err2 := strconv.ParseFloat(rows[0].Boundingbox[1], 64)
-		minLng, err3 := strconv.ParseFloat(rows[0].Boundingbox[2], 64)
-		maxLng, err4 := strconv.ParseFloat(rows[0].Boundingbox[3], 64)
-		if err1 == nil && err2 == nil && err3 == nil && err4 == nil && finite(minLat) && finite(maxLat) && finite(minLng) && finite(maxLng) {
-			hit.Bounds = &bounds{MinLat: minLat, MaxLat: maxLat, MinLng: minLng, MaxLng: maxLng}
+		// Preview requests do not carry a country, so their shared cache entry
+		// uses the "any" key. The editor echoes the resolved alpha-2 on save;
+		// accept the cached entry only when it agrees with that country.
+		if cache, ok := s.geocoder.(cachedLocationGeocoder); ok {
+			if cached, err := cache.CachedGeocode(ctx, name, ""); err == nil && cached != nil {
+				if converted := providerHit(cached); converted != nil && converted.Country == country {
+					return converted
+				}
+			}
 		}
 	}
-	return hit
+	hit, err := s.geocoder.Geocode(ctx, name, country)
+	if hit == nil {
+		return nil
+	}
+	// A cache write failure wraps a successful provider result. Keep the
+	// provider metadata rather than discarding it for a recoverable cache error.
+	_ = err
+	return providerHit(hit)
+}
+
+// providerHit projects the shared geocoding result onto the monitor DTO shape.
+// Coordinates and country/bounds are copied only from a usable provider hit.
+func providerHit(hit *geocoding.Hit) *geoHit {
+	if hit == nil || !finite(hit.Lat) || !finite(hit.Lng) {
+		return nil
+	}
+	out := &geoHit{Lat: hit.Lat, Lng: hit.Lng}
+	if code := contentsubscriptions.NormalizeCountryAlpha2(hit.CountryCodeAlpha2); code != "" {
+		out.Country = code
+	}
+	if hit.Bounds != nil && finite(hit.Bounds.MinLat) && finite(hit.Bounds.MaxLat) && finite(hit.Bounds.MinLng) && finite(hit.Bounds.MaxLng) {
+		out.Bounds = &bounds{
+			MinLat: hit.Bounds.MinLat,
+			MaxLat: hit.Bounds.MaxLat,
+			MinLng: hit.Bounds.MinLng,
+			MaxLng: hit.Bounds.MaxLng,
+		}
+	}
+	return out
 }

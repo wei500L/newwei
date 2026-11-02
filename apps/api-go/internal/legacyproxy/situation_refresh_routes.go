@@ -24,9 +24,6 @@ const SituationRefreshKey = "/api/situation-monitor#refresh"
 // unchanged and rollback only flips this one variable. The shared rule helper
 // whitelists OPTIONS for the taken-over path, so the CORS preflight is answered
 // by the Go handler instead of reaching NestJS.
-func WithSituationRefresh(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithSituationRefresh(rules []Rule) []Rule {
 	return appendExactKeyed(rules, SituationRefreshKey, "/api/situation-monitor/refresh", http.MethodPost)
 }

@@ -18,10 +18,7 @@ const NewsnowSourcesKey = "/api/news-aggregator/source"
 // independent switch; NestJS while it is legacy), and unknown methods or longer
 // paths fall through to the legacy proxy. The default (empty or legacy) appends
 // no rule at all, so rollback is a single variable change.
-func WithNewsnowSources(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsnowSources(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, NewsnowSourcesKey, "/api/news-aggregator/source", http.MethodGet)
 	return appendExactKeyed(rules, NewsnowSourcesKey, "/api/news-aggregator/sources/batch", http.MethodPost)
 }

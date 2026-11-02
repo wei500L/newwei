@@ -59,9 +59,6 @@ func (r *archivePreparationRuntime) Close(ctx context.Context) error {
 // API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go. The legacy default returns
 // (nil, nil) and registers/claims nothing.
 func wireArchivePreparationWorker(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn **dashboardstats.Connection) (*archivePreparationRuntime, error) {
-	if cfg.ArchivePreparationWorkerMode != config.ArchivePreparationWorkerModeGo {
-		return nil, nil
-	}
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: archive preparation worker go takeover requires mysql and redis")
 	}

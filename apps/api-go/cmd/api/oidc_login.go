@@ -29,9 +29,6 @@ import (
 // configuration the login batch uses, but this unit only calls the trusted
 // login entry, which never sends mail.
 func wireOIDCLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
-	if cfg.OIDCLoginMode != config.OIDCLoginModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: oidc login go takeover requires mysql and redis")
 	}
@@ -71,11 +68,11 @@ func wireOIDCLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: oidc login takeover mode=%s", cfg.OIDCLoginMode)
+	log.Printf("api-go: oidc login takeover mode=%s", "go")
 	return nil
 }

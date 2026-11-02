@@ -13,68 +13,104 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Producer writes the BullMQ 5.63.2 hash/ZSET/list layout consumed by both the
-// NestJS worker (while the worker switch is legacy) and this package's worker.
+// manualJobName is the BullMQ job name of a one-off fetch.
+const manualJobName = "manual-fetch"
+
+// Producer writes the BullMQ 5.63.2 hash/ZSET/list layout consumed by the
+// Go worker and the queue-ops console.
 type Producer struct {
-	redis *redis.Client
+	redis   *redis.Client
+	keys    keySpace
+	scripts queueScripts
 }
 
 // NewProducer wraps an existing Redis client. The client must point at the same
-// database as NestJS's BullMQ connection.
+// database as the BullMQ connection.
 func NewProducer(client *redis.Client) *Producer {
-	return &Producer{redis: client}
+	return newProducerWithName(client, QueueName)
 }
 
-// AddManual queues one manual-fetch job and returns immediately. It never waits
-// for a fetch result.
+func newProducerWithName(client *redis.Client, name string) *Producer {
+	return &Producer{redis: client, keys: newKeySpace(Prefix, name), scripts: defaultQueueScripts}
+}
+
+// AddManual queues one manual-fetch job and returns immediately. It uses
+// addStandardJob so the meta.paused protocol is honored: while the queue is
+// paused the id lands in the paused list, not wait.
 func (p *Producer) AddManual(ctx context.Context, data JobData) (string, error) {
 	if p == nil || p.redis == nil {
 		return "", fmt.Errorf("economicqueue: redis is not configured")
 	}
-	jobID, err := p.redis.Incr(ctx, queueKey("id")).Result()
-	if err != nil {
-		return "", err
-	}
-	id := strconv.FormatInt(jobID, 10)
-	now := time.Now().UnixMilli()
 	rawData, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
-	opts := jobOptions{
-		RemoveOnComplete: json.RawMessage("true"),
-		RemoveOnFail: keepJobs{
-			Age:   FailedJobRetentionAgeSeconds,
-			Count: FailedJobRetentionCount,
-		},
-		Attempts:  0,
-		Timestamp: now,
-	}
-	rawOpts, err := json.Marshal(opts)
+	now := time.Now().UnixMilli()
+	args, err := pack([]any{
+		p.keys.base,
+		"", // let addStandardJob INCR the id
+		manualJobName,
+		now,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	})
 	if err != nil {
 		return "", err
 	}
-	key := queueKey(id)
-	pipe := p.redis.TxPipeline()
-	pipe.HSet(ctx, key, map[string]any{
-		"name":      "manual-fetch",
-		"data":      string(rawData),
-		"opts":      string(rawOpts),
-		"timestamp": now,
-		"delay":     0,
-		"priority":  0,
+	opts, err := pack(manualOptions{
+		RemoveOnComplete: true,
+		RemoveOnFail: KeepJobs{
+			Age:   int64Ptr(FailedJobRetentionAgeSeconds),
+			Count: int64Ptr(FailedJobRetentionCount),
+		},
+		Attempts:  0,
+		Timestamp: now,
 	})
-	pipe.LPush(ctx, queueKey("wait"), id)
-	pipe.XAdd(ctx, &redis.XAddArgs{Stream: queueKey("events"), MaxLen: 10000, Approx: true, Values: []any{"event", "waiting", "jobId", id}})
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err != nil {
 		return "", err
 	}
-	return id, nil
+	keys := []string{
+		p.keys.wait(),
+		p.keys.paused(),
+		p.keys.meta(),
+		p.keys.id(),
+		p.keys.completed(),
+		p.keys.delayed(),
+		p.keys.active(),
+		p.keys.events(),
+		p.keys.marker(),
+	}
+	result, err := p.scripts.addStandardJob.Run(ctx, p.redis, keys,
+		string(args), string(rawData), string(opts)).Result()
+	if err != nil {
+		return "", err
+	}
+	switch value := result.(type) {
+	case string:
+		return value, nil
+	case int64:
+		return "", fmt.Errorf("economicqueue: add manual job failed with code %d", value)
+	default:
+		return "", fmt.Errorf("economicqueue: add manual job returned %T", result)
+	}
+}
+
+// manualOptions is the MessagePack job options addStandardJob stores. The stored
+// hash opts is the JSON cjson.encode of this table, so the worker and the
+// queue-ops console read the same fields the NestJS producer wrote.
+type manualOptions struct {
+	RemoveOnComplete bool     `msgpack:"removeOnComplete"`
+	RemoveOnFail     KeepJobs `msgpack:"removeOnFail"`
+	Attempts         int      `msgpack:"attempts"`
+	Timestamp        int64    `msgpack:"timestamp"`
 }
 
 // AddRepeat creates or updates one repeatable job and its next delayed
-// iteration. Sync removes a changed repeat first, so this function always
-// writes the current pattern and the next occurrence.
+// iteration. Sync removes a changed repeat first, so this function always writes
+// the current pattern and the next occurrence.
 func (p *Producer) AddRepeat(ctx context.Context, name string, data JobData, repeat RepeatOptions) (RepeatableJob, error) {
 	if p == nil || p.redis == nil {
 		return RepeatableJob{}, fmt.Errorf("economicqueue: redis is not configured")
@@ -99,9 +135,13 @@ func (p *Producer) AddRepeat(ctx context.Context, name string, data JobData, rep
 }
 
 // ScheduleNextRepeat adds the next iteration for a job that was just claimed by
-// a worker. BullMQ performs this before running the processor, so a failed fetch
-// does not stop the schedule.
+// a worker. It is a no-op when the scheduler no longer exists or another
+// executor already advanced the iteration, which keeps a deleted/replaced
+// schedule dead and never creates a duplicate next iteration.
 func (p *Producer) ScheduleNextRepeat(ctx context.Context, job Job) error {
+	if p == nil || p.redis == nil {
+		return fmt.Errorf("economicqueue: redis is not configured")
+	}
 	if job.Opts.Repeat == nil || job.RepeatJobKey == "" {
 		return nil
 	}
@@ -123,13 +163,47 @@ func (p *Producer) ScheduleNextRepeat(ctx context.Context, job Job) error {
 		return nil
 	}
 	now := time.Now().UnixMilli()
-	return p.storeRepeat(ctx, job.RepeatJobKey, job.Name, repeat, next, job.Data, now)
+	jobID := repeatIterationJobID(job.RepeatJobKey, next)
+	opts := buildRepeatIterationOptions(repeat, job.RepeatJobKey, jobID, next, now)
+	rawOpts, err := json.Marshal(opts)
+	if err != nil {
+		return err
+	}
+	delay := next - now
+	if delay < 0 {
+		delay = 0
+	}
+	result, err := p.scripts.updateRepeat.Run(ctx, p.redis,
+		[]string{
+			p.keys.repeat(),
+			p.keys.delayed(),
+			p.keys.events(),
+			p.keys.job(jobID),
+		},
+		job.RepeatJobKey,
+		strconv.FormatInt(prev, 10),
+		strconv.FormatInt(next, 10),
+		jobID,
+		job.Name,
+		strconv.FormatInt(delay, 10),
+		string(rawOpts),
+		string(job.Data),
+		strconv.FormatInt(now, 10),
+	).Int64()
+	if err != nil {
+		return err
+	}
+	if result == 0 {
+		// Scheduler gone or iteration already advanced; this is the expected
+		// outcome for a duplicate scan or a deleted repeat.
+		return nil
+	}
+	return nil
 }
 
 func (p *Producer) storeRepeat(ctx context.Context, key, name string, repeat RepeatOptions, next int64, data []byte, now int64) error {
-	hash := queueKey("repeat:" + key)
 	pipe := p.redis.TxPipeline()
-	pipe.ZAdd(ctx, queueKey("repeat"), redis.Z{Score: float64(next), Member: key})
+	pipe.ZAdd(ctx, p.keys.repeat(), redis.Z{Score: float64(next), Member: key})
 	fields := map[string]any{"name": name}
 	if repeat.TZ != "" {
 		fields["tz"] = repeat.TZ
@@ -143,8 +217,36 @@ func (p *Producer) storeRepeat(ctx context.Context, key, name string, repeat Rep
 	if repeat.EndDate != nil {
 		fields["endDate"] = strconv.FormatInt(repeat.EndDate.UnixMilli(), 10)
 	}
-	pipe.HSet(ctx, hash, fields)
-	jobID := "repeat:" + key + ":" + strconv.FormatInt(next, 10)
+	pipe.HSet(ctx, p.keys.repeatHash(key), fields)
+	jobID := repeatIterationJobID(key, next)
+	delay := next - now
+	if delay < 0 {
+		delay = 0
+	}
+	opts := buildRepeatIterationOptions(repeat, key, jobID, next, now)
+	rawOpts, err := json.Marshal(opts)
+	if err != nil {
+		return err
+	}
+	pipe.HSet(ctx, p.keys.job(jobID), map[string]any{
+		"name":      name,
+		"data":      string(data),
+		"opts":      string(rawOpts),
+		"timestamp": now,
+		"delay":     delay,
+		"priority":  0,
+		"rjk":       key,
+	})
+	pipe.ZAdd(ctx, p.keys.delayed(), redis.Z{Score: float64(next * 4096), Member: jobID})
+	pipe.XAdd(ctx, &redis.XAddArgs{Stream: p.keys.events(), MaxLen: 10000, Approx: true, Values: []any{"event", "delayed", "jobId", jobID, "delay", delay}})
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+// buildRepeatIterationOptions builds the stored options of one repeat
+// iteration. PrevMillis is the iteration's own timestamp so the claim-and-advance
+// guard can prove iteration identity.
+func buildRepeatIterationOptions(repeat RepeatOptions, key, jobID string, next, now int64) jobOptions {
 	delay := next - now
 	if delay < 0 {
 		delay = 0
@@ -161,7 +263,7 @@ func (p *Producer) storeRepeat(ctx context.Context, key, name string, repeat Rep
 	if repeat.StartDate != nil {
 		repeatPayload.StartDate = repeat.StartDate.UnixMilli()
 	}
-	opts := jobOptions{
+	return jobOptions{
 		RemoveOnComplete: json.RawMessage("true"),
 		RemoveOnFail: keepJobs{
 			Age:   FailedJobRetentionAgeSeconds,
@@ -175,24 +277,10 @@ func (p *Producer) storeRepeat(ctx context.Context, key, name string, repeat Rep
 		Timestamp:    now,
 		PrevMillis:   next,
 	}
-	rawOpts, err := json.Marshal(opts)
-	if err != nil {
-		return err
-	}
-	jobKey := queueKey(jobID)
-	pipe.HSet(ctx, jobKey, map[string]any{
-		"name":      name,
-		"data":      string(data),
-		"opts":      string(rawOpts),
-		"timestamp": now,
-		"delay":     delay,
-		"priority":  0,
-		"rjk":       key,
-	})
-	pipe.ZAdd(ctx, queueKey("delayed"), redis.Z{Score: float64(next * 4096), Member: jobID})
-	pipe.XAdd(ctx, &redis.XAddArgs{Stream: queueKey("events"), MaxLen: 10000, Approx: true, Values: []any{"event", "delayed", "jobId", jobID, "delay", delay}})
-	_, err = pipe.Exec(ctx)
-	return err
+}
+
+func repeatIterationJobID(key string, next int64) string {
+	return "repeat:" + key + ":" + strconv.FormatInt(next, 10)
 }
 
 // ListRepeatable returns every repeat entry with its next timestamp.
@@ -200,7 +288,7 @@ func (p *Producer) ListRepeatable(ctx context.Context) ([]RepeatableJob, error) 
 	if p == nil || p.redis == nil {
 		return nil, fmt.Errorf("economicqueue: redis is not configured")
 	}
-	values, err := p.redis.ZRangeWithScores(ctx, queueKey("repeat"), 0, -1).Result()
+	values, err := p.redis.ZRangeWithScores(ctx, p.keys.repeat(), 0, -1).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +298,7 @@ func (p *Producer) ListRepeatable(ctx context.Context) ([]RepeatableJob, error) 
 		if !ok {
 			continue
 		}
-		fields, err := p.redis.HGetAll(ctx, queueKey("repeat:"+key)).Result()
+		fields, err := p.redis.HGetAll(ctx, p.keys.repeatHash(key)).Result()
 		if err != nil {
 			return nil, err
 		}
@@ -227,22 +315,23 @@ func (p *Producer) ListRepeatable(ctx context.Context) ([]RepeatableJob, error) 
 }
 
 // RemoveRepeatable removes the repeat entry, its hash and the currently delayed
-// next iteration. It does not remove waiting/manual jobs.
+// next iteration. It does not remove waiting/manual jobs; the claim-side guard
+// keeps those from re-creating the schedule.
 func (p *Producer) RemoveRepeatable(ctx context.Context, key string) error {
 	if p == nil || p.redis == nil {
 		return fmt.Errorf("economicqueue: redis is not configured")
 	}
-	next, err := p.redis.ZScore(ctx, queueKey("repeat"), key).Result()
+	next, err := p.redis.ZScore(ctx, p.keys.repeat(), key).Result()
 	if err != nil && err != redis.Nil {
 		return err
 	}
 	pipe := p.redis.TxPipeline()
-	pipe.ZRem(ctx, queueKey("repeat"), key)
-	pipe.Del(ctx, queueKey("repeat:"+key))
+	pipe.ZRem(ctx, p.keys.repeat(), key)
+	pipe.Del(ctx, p.keys.repeatHash(key))
 	if err == nil {
-		jobID := "repeat:" + key + ":" + strconv.FormatInt(int64(next), 10)
-		pipe.ZRem(ctx, queueKey("delayed"), jobID)
-		pipe.Del(ctx, queueKey(jobID))
+		jobID := repeatIterationJobID(key, int64(next))
+		pipe.ZRem(ctx, p.keys.delayed(), jobID)
+		pipe.Del(ctx, p.keys.job(jobID))
 	}
 	_, err = pipe.Exec(ctx)
 	return err
@@ -255,12 +344,12 @@ func (p *Producer) ClearStaleHighFrequencyQueuedJobs(ctx context.Context, names 
 		return 0, nil
 	}
 	removed := 0
-	waiting, err := p.redis.LRange(ctx, queueKey("wait"), 0, 1999).Result()
+	waiting, err := p.redis.LRange(ctx, p.keys.wait(), 0, 1999).Result()
 	if err != nil {
 		return 0, err
 	}
 	for _, jobID := range waiting {
-		fields, err := p.redis.HGetAll(ctx, queueKey(jobID)).Result()
+		fields, err := p.redis.HGetAll(ctx, p.keys.job(jobID)).Result()
 		if err != nil {
 			return removed, err
 		}
@@ -276,14 +365,14 @@ func (p *Producer) ClearStaleHighFrequencyQueuedJobs(ctx context.Context, names 
 		}
 		removed++
 	}
-	delayed, err := p.redis.ZRangeByScore(ctx, queueKey("delayed"), &redis.ZRangeBy{
+	delayed, err := p.redis.ZRangeByScore(ctx, p.keys.delayed(), &redis.ZRangeBy{
 		Min: "0", Max: strconv.FormatInt((now.UnixMilli()+1)*4096-1, 10), Count: 2000,
 	}).Result()
 	if err != nil {
 		return removed, err
 	}
 	for _, jobID := range delayed {
-		fields, err := p.redis.HGetAll(ctx, queueKey(jobID)).Result()
+		fields, err := p.redis.HGetAll(ctx, p.keys.job(jobID)).Result()
 		if err != nil {
 			return removed, err
 		}
@@ -307,12 +396,12 @@ func (p *Producer) removeQueuedJob(ctx context.Context, state, jobID string) err
 	pipe := p.redis.TxPipeline()
 	switch state {
 	case "wait":
-		pipe.LRem(ctx, queueKey("wait"), 1, jobID)
+		pipe.LRem(ctx, p.keys.wait(), 1, jobID)
 	case "delayed":
-		pipe.ZRem(ctx, queueKey("delayed"), jobID)
+		pipe.ZRem(ctx, p.keys.delayed(), jobID)
 	}
-	pipe.Del(ctx, queueKey(jobID), queueKey(jobID+":lock"))
-	pipe.XAdd(ctx, &redis.XAddArgs{Stream: queueKey("events"), MaxLen: 10000, Approx: true, Values: []any{"event", "removed", "jobId", jobID}})
+	pipe.Del(ctx, p.keys.job(jobID), p.keys.lock(jobID))
+	pipe.XAdd(ctx, &redis.XAddArgs{Stream: p.keys.events(), MaxLen: 10000, Approx: true, Values: []any{"event", "removed", "jobId", jobID}})
 	_, err := pipe.Exec(ctx)
 	return err
 }

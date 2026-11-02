@@ -22,10 +22,7 @@ const AdminLogsKey = "/api/admin/logs"
 // /api/admin/quality/（含 /api/admin/quality/task-logs）、/api/observability/
 // 与 /api/metrics 不在这个开关里；异常上报 POST 也不在这里。默认（空 /
 // legacy）不追加规则。
-func WithAdminLogs(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithAdminLogs(rules []Rule) []Rule {
 	// 更长的路径先登记，语义上更具体；七条互不遮蔽（都是 Exact）。
 	rules = appendExactKeyed(rules, AdminLogsKey, "/api/admin/logs/task/summary", http.MethodGet)
 	rules = appendExactKeyed(rules, AdminLogsKey, "/api/admin/logs/errors/summary", http.MethodGet)

@@ -64,33 +64,16 @@ func dataRuntimeSettingsNestRoutes() []struct{ method, path string } {
 
 // TestDataRuntimeSettingsStayLegacyByDefault locks the default and the explicit
 // legacy value.
-func TestDataRuntimeSettingsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithDataRuntimeSettings(rules, "")
-	rules = WithDataRuntimeSettings(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(dataRuntimeSettingsGoRoutes(), dataRuntimeSettingsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
 
 // TestDataRuntimeSettingsGoOwnsRoutes locks the nine exact rules.
 func TestDataRuntimeSettingsGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithDataRuntimeSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithDataRuntimeSettings(rules)
+	gateway := New(rules)
 	for _, tc := range dataRuntimeSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact {
 			t.Fatalf("%s %s must be an exact rule: %+v", tc.method, tc.path, got)
@@ -103,15 +86,12 @@ func TestDataRuntimeSettingsGoOwnsRoutes(t *testing.T) {
 
 // TestDataRuntimeSettingsUnmigratedRoutesStayNest locks every fallback.
 func TestDataRuntimeSettingsUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithDataRuntimeSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithDataRuntimeSettings(rules)
+	gateway := New(rules)
 	for _, tc := range dataRuntimeSettingsNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
@@ -119,18 +99,15 @@ func TestDataRuntimeSettingsUnmigratedRoutesStayNest(t *testing.T) {
 // TestDataRuntimeSettingsCoexistsWithOtherSwitches locks rule attribution when
 // every settings switch is go at the same time.
 func TestDataRuntimeSettingsCoexistsWithOtherSwitches(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithRuntimeSettings(rules, string(ModeGo))
-	rules = WithInfrastructureSettings(rules, string(ModeGo))
-	rules = WithDataRuntimeSettings(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithRuntimeSettings(rules)
+	rules = WithInfrastructureSettings(rules)
+	rules = WithDataRuntimeSettings(rules)
+	gateway := New(rules)
 	// Neither of the other switches may have taken a data runtime route over.
 	for _, tc := range dataRuntimeSettingsGoRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != DataRuntimeSettingsKey {
+		if got.Prefix == "" || got.HandlerKey != DataRuntimeSettingsKey {
 			t.Fatalf("%s %s = %+v", tc.method, tc.path, got)
 		}
 	}
@@ -145,7 +122,7 @@ func TestDataRuntimeSettingsCoexistsWithOtherSwitches(t *testing.T) {
 		{http.MethodGet, "/api/system-settings/news-source-runtime-secrets", InfrastructureSettingsKey},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != tc.key {
+		if got.Prefix == "" || got.HandlerKey != tc.key {
 			t.Fatalf("%s %s = %+v, want key %s", tc.method, tc.path, got, tc.key)
 		}
 	}

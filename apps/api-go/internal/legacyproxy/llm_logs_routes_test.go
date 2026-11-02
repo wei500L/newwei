@@ -34,32 +34,14 @@ func llmLogNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestLlmLogsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithLlmLogs(rules, "")
-	rules = WithLlmLogs(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(llmLogRoutes(), llmLogNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestLlmLogsGoOwnsRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithLlmLogs(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithLlmLogs(rules)
+	gateway := New(rules)
 	for _, tc := range llmLogRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		if !got.Exact || got.OneSegment || got.TwoSegments || got.Tail != "" || got.TailSegment {
 			t.Fatalf("%s %s rule=%+v, want exact without dynamic segments", tc.method, tc.path, got)
@@ -74,22 +56,19 @@ func TestLlmLogsGoOwnsRoutes(t *testing.T) {
 	}
 	// 预检 OPTIONS 由 Go 路由回答。
 	for _, tc := range llmLogRoutes() {
-		if got := gateway.match(http.MethodOptions, tc.path); got.Mode != ModeGo {
-			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Mode)
+		if got := gateway.match(http.MethodOptions, tc.path); got.Prefix == "" {
+			t.Fatalf("OPTIONS %s mode=%s, want go", tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestLlmLogsUnmigratedRoutesStayNest(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithLlmLogs(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithLlmLogs(rules)
+	gateway := New(rules)
 	for _, tc := range llmLogNestRoutes() {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

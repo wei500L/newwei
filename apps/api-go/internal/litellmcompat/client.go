@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 )
 
 const responseLimit = 8 << 20
@@ -93,7 +94,15 @@ func (c *Client) Completion(ctx context.Context, req CompletionRequest) (Complet
 	}
 	requestedModel := models[0]
 	var lastErr error
-	for _, model := range models {
+	// The fallback operation name depends on the gateway request shape, matching
+	// acompletion's two branches: the chat-completions surface records
+	// "completion_fallback" and the Responses surface records
+	// "responses_fallback".
+	completionFallback := metrics.OperationCompletionFallback
+	if profile.APISurface == APISurfaceResponses {
+		completionFallback = metrics.OperationResponsesFallback
+	}
+	for index, model := range models {
 		response, err := c.completeModel(ctx, profile, model, req, guardrails)
 		if err == nil {
 			response.RequestedModel = requestedModel
@@ -104,14 +113,39 @@ func (c *Client) Completion(ctx context.Context, req CompletionRequest) (Complet
 			return CompletionResponse{}, err
 		}
 		lastErr = err
-		if c.cfg.Logger != nil {
-			c.cfg.Logger("litellmcompat: completion model %s failed, trying the next fallback: %v", model, err)
-		}
+		c.recordFallback(models, index, completionFallback,
+			"litellmcompat: completion model %s failed, trying the next fallback: %v",
+			"litellmcompat: complete model %s failed and no fallback remains: %v",
+			model, err)
 	}
 	if lastErr == nil {
 		lastErr = errors.New("LiteLLM completion failed")
 	}
 	return CompletionResponse{}, lastErr
+}
+
+// recordFallback logs a failed model and, when another model remains, counts the
+// fallback. It ports LitellmService.recordModelFallbackOrWarn: the
+// integration_events_total sample is emitted only for a non-final failure
+// (status "fallback"), because an exhausted model list is a request failure
+// rather than a fallback and NestJS only logs that case.
+//
+// The two log shapes stay distinct for the same reason they are distinct there:
+// the exhausted branch reports the last error without claiming another model was
+// tried.
+func (c *Client) recordFallback(models []string, failedIndex int, operation, fallbackFormat, exhaustedFormat, model string, err error) {
+	if c.cfg.Logger == nil {
+		if failedIndex+1 < len(models) {
+			metrics.RecordLiteLLMFallback(operation)
+		}
+		return
+	}
+	if failedIndex+1 >= len(models) {
+		c.cfg.Logger(exhaustedFormat, model, err)
+		return
+	}
+	metrics.RecordLiteLLMFallback(operation)
+	c.cfg.Logger(fallbackFormat, model, err)
 }
 
 func (c *Client) completeModel(ctx context.Context, profile gatewayProfile, model string, req CompletionRequest, guardrails []string) (CompletionResponse, error) {
@@ -302,7 +336,7 @@ func (c *Client) Rerank(ctx context.Context, req RerankRequest) (RerankResponse,
 		topN = len(req.Documents)
 	}
 	var lastErr error
-	for _, model := range models {
+	for index, model := range models {
 		response, err := c.rerankModel(ctx, profile, model, query, req, topN)
 		if err == nil {
 			if response.Model == "" {
@@ -314,9 +348,10 @@ func (c *Client) Rerank(ctx context.Context, req RerankRequest) (RerankResponse,
 			return RerankResponse{}, err
 		}
 		lastErr = err
-		if c.cfg.Logger != nil {
-			c.cfg.Logger("litellmcompat: rerank model %s failed, trying the next fallback: %v", model, err)
-		}
+		c.recordFallback(models, index, metrics.OperationRerankFallback,
+			"litellmcompat: rerank model %s failed, trying the next fallback: %v",
+			"litellmcompat: rerank model %s failed and no fallback remains: %v",
+			model, err)
 	}
 	lastMessage := "unknown upstream error"
 	if lastErr != nil {

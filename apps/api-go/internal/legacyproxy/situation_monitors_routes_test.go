@@ -5,34 +5,10 @@ import (
 	"testing"
 )
 
-func TestSituationMonitorsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationMonitors(rules, "")
-	rules = WithSituationMonitors(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/api/situation-monitor/monitors"},
-		{http.MethodPost, "/api/situation-monitor/monitors"},
-		{http.MethodPost, "/api/situation-monitor/monitors/preview"},
-		{http.MethodPatch, "/api/situation-monitor/monitors/monitor-1"},
-		{http.MethodDelete, "/api/situation-monitor/monitors/monitor-1"},
-	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestSituationMonitorsGoOnlyOwnsFiveRoutes(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithSituationMonitors(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithSituationMonitors(rules)
+	gateway := New(rules)
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/situation-monitor/monitors"},
 		{http.MethodPost, "/api/situation-monitor/monitors"},
@@ -41,8 +17,8 @@ func TestSituationMonitorsGoOnlyOwnsFiveRoutes(t *testing.T) {
 		{http.MethodDelete, "/api/situation-monitor/monitors/monitor-1"},
 	} {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo {
-			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Mode)
+		if got.Prefix == "" {
+			t.Fatalf("%s %s mode=%s, want go", tc.method, tc.path, got.Prefix)
 		}
 		key := got.Prefix
 		if got.HandlerKey != "" {
@@ -71,10 +47,9 @@ func TestSituationMonitorsGoOnlyOwnsFiveRoutes(t *testing.T) {
 		{http.MethodPut, "/api/situation-monitor/monitors"},
 		{http.MethodPost, "/api/situation-monitor/monitors/monitor-1"},
 		{http.MethodPatch, "/api/situation-monitor/monitors/monitor-1/extra"},
-		{http.MethodGet, "/api/user-settings/ui/situation-monitor"},
 	} {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got := gateway.match(tc.method, tc.path); got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }

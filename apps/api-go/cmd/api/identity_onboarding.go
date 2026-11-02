@@ -16,7 +16,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
-// wireIdentityOnboarding registers the fourteen registration, invitation and
+// wireIdentityOnboarding registers the sixteen registration, invitation and
 // registration-application routes only when
 // API_GO_IDENTITY_ONBOARDING_MODE=go. Every other value (including the default
 // legacy and the empty string) registers nothing, so the routes keep flowing
@@ -29,9 +29,6 @@ import (
 // probe: the SMTP connection is established per message, inside the request that
 // needs it.
 func wireIdentityOnboarding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
-	if cfg.IdentityOnboardingMode != config.IdentityOnboardingModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: identity onboarding go takeover requires mysql, redis, and jwt")
 	}
@@ -63,11 +60,11 @@ func wireIdentityOnboarding(gateway *legacyproxy.Gateway, cfg config.Config, db 
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)
 	})
-	log.Printf("api-go: identity onboarding takeover mode=%s", cfg.IdentityOnboardingMode)
+	log.Printf("api-go: identity onboarding takeover mode=%s", "go")
 	return nil
 }

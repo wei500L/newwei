@@ -19,10 +19,7 @@ const EmailSettingsKey = "/api/system-settings/email#email-settings"
 // matcher sorts by prefix length, so neither can be shadowed by the GET rule.
 //
 // An empty or legacy mode adds nothing, so the default deployment is unchanged.
-func WithEmailSettings(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithEmailSettings(rules []Rule) []Rule {
 	const base = "/api/system-settings/email"
 	rules = appendExactKeyed(rules, EmailSettingsKey, base+"/auth-code", http.MethodPut)
 	rules = appendExactKeyed(rules, EmailSettingsKey, base+"/test", http.MethodPost)

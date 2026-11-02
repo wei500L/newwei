@@ -35,10 +35,6 @@ type gdeltSnapshotUnit struct {
 // Go. It returns nil when both are legacy, which is the default deployment.
 // Config validation guarantees MySQL and Redis for either switch.
 func newGdeltSnapshotUnit(cfg config.Config, db *sql.DB, redisClient *redis.Client) *gdeltSnapshotUnit {
-	if cfg.GdeltSnapshotMode != config.GdeltSnapshotModeGo &&
-		cfg.GdeltSnapshotRefreshMode != config.GdeltSnapshotRefreshModeGo {
-		return nil
-	}
 	if db == nil || redisClient == nil {
 		log.Printf("api-go: GDELT snapshot unit not built (mysql or redis missing)")
 		return nil
@@ -55,7 +51,7 @@ func newGdeltSnapshotUnit(cfg config.Config, db *sql.DB, redisClient *redis.Clie
 // Start launches the quarter-hour scheduler when API_GO_GDELT_SNAPSHOT_MODE=go.
 // It does not run a catch-up tick for boundaries that elapsed before startup.
 func (u *gdeltSnapshotUnit) Start(cfg config.Config) {
-	if u == nil || u.service == nil || cfg.GdeltSnapshotMode != config.GdeltSnapshotModeGo {
+	if u == nil || u.service == nil {
 		return
 	}
 	u.scheduler = gdeltsnapshot.NewScheduler(u.service)
@@ -66,9 +62,6 @@ func (u *gdeltSnapshotUnit) Start(cfg config.Config) {
 // RegisterRoute registers the exact forced-refresh POST when
 // API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go. legacy leaves the route on NestJS.
 func (u *gdeltSnapshotUnit) RegisterRoute(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
-	if cfg.GdeltSnapshotRefreshMode != config.GdeltSnapshotRefreshModeGo {
-		return nil
-	}
 	if u == nil || u.service == nil || db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: GDELT snapshot refresh takeover requires mysql, jwt, and redis")
 	}
@@ -79,7 +72,7 @@ func (u *gdeltSnapshotUnit) RegisterRoute(gateway *legacyproxy.Gateway, cfg conf
 			return
 		}
 		if r.Method == http.MethodOptions {
-			gateway.ServeLegacy(w, r)
+			gateway.Reject(w, r)
 			return
 		}
 		handler.ServeHTTP(w, r)

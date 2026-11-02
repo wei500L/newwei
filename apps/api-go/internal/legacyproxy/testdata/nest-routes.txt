@@ -2,7 +2,7 @@
 # TestAllGoCutoverRoutesAreOwnedByGo. It is generated from the T1 ownership
 # audit (docs/refactor/cutover/ownership-audit.md §2.1) at baseline dcbe563b.
 # 本文件是 T1 审计生成的 A 类 HTTP 路由清单（METHOD + 完整路径，含 /api 前缀）：
-# 每条都必须在全量 go 规则下命中 ModeGo，而不是 /api/ 的 legacy 兜底。
+# 每条都必须在全量 go 规则下命中一条 Go 规则，而不是回落 404。
 # 更新方式：Controller 增删方法、或 legacyproxy/With* 规则变化时，重跑 T1.1
 # 审计并同步 docs/refactor/cutover/ownership-audit.md 与本文件；动态段写
 # Nest 契约的 :param 形式（Go 规则按段匹配，占位符本身即一个段）。

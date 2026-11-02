@@ -2,9 +2,10 @@
 
 > **本批未在部署环境执行任何切换。** 本手册中的所有命令、接口调用、Redis/MySQL/Mongo 查询、重建与重启步骤**均未在本批执行**；本批只做了静态阅读与文本核对。手册不声称任何步骤已通过、已演练或已在生产验证。
 >
+> - **重要（GO-DEFAULT-CUTOVER-001 之后）**：仓库默认已经是全 Go + `reject`，本手册描述的“从 legacy 逐步切到 go”的阶段编排成为**历史演练路径**。默认部署不再需要任何阶段切换；只需要回退时才用 `infra/docker/legacy-rollback.override.yml` + `infra/docker/legacy-rollback.env.sample`。分阶段演练仍可按本手册执行，但每个阶段都要显式写出开关值（省略变量现在是 go，不再等于 legacy）。
 > - 基线：`docs/go-cutover-readiness` 的原始基线是 `dcbe563b`（#136）；三批迁移（#138/#139/#140）合并后本手册按 `integration/merge-open-prs-b138-140` 的口径复核开关总数与阶段拆分，行号仍以各节标注的基线为准。
 > - 事实来源：`apps/api-go/internal/config/config.go`（137 个 `API_GO_*` 开关与全部启动校验）、`apps/api-go/cmd/api/main.go`（路由表、Registry、worker 接线）、`apps/api-go/internal/legacyproxy/`（回落规则）、`infra/docker/docker-compose.yml`、`infra/docker/.env.sample`、`docs/refactor/go-*.md`、`docs/refactor/bug-ledger.md`。行号均来自 `dcbe563b`。
-> - 配套交付：`infra/docker/api-go-cutover.env.sample`（137 个开关：136 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject` 的样例）、`infra/docker/docker-compose.api-go-cutover.sample.yml`（compose override：env_file + 59 个重新声明）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**开关总数 137（三批共新增 7 个：#138 的 `API_GO_HEALTHZ_LIVE_MODE`/`API_GO_VECTOR_DIAGNOSTICS_MODE`/`API_GO_DOCS_MODE`/`API_GO_LEGACY_FALLBACK_MODE`、#139 的 `API_GO_CRAWL_FRONTIER_WRITES_MODE`、#140 的 `API_GO_QUEUE_OPS_MODE`/`API_GO_QUEUE_ORG_STATS_MODE`）；阶段拆分 37+61+18+14+3+4=137。**
+> - 配套交付：`infra/docker/api-go-cutover.env.sample`（137 个开关：136 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject` 的清单，现在与仓库默认一致）、`infra/docker/legacy-rollback.env.sample`（137 个开关：134 个 `legacy` + 2 个合法 `shadow`（onboarding / user-settings-read）+ `proxy`，显式回退）、`infra/docker/legacy-rollback.override.yml`（回退编排：服务集合、依赖、地址、路径）、`docs/refactor/cutover/switch-matrix.md`（逐开关矩阵，T3）、`docs/refactor/cutover/ownership-audit.md`（执行权审计，T1）、`docs/refactor/cutover/README.md`。**开关总数 137（三批共新增 7 个：#138 的 `API_GO_HEALTHZ_LIVE_MODE`/`API_GO_VECTOR_DIAGNOSTICS_MODE`/`API_GO_DOCS_MODE`/`API_GO_LEGACY_FALLBACK_MODE`、#139 的 `API_GO_CRAWL_FRONTIER_WRITES_MODE`、#140 的 `API_GO_QUEUE_OPS_MODE`/`API_GO_QUEUE_ORG_STATS_MODE`）；阶段拆分 37+61+18+14+3+4=137。**
 > - 本手册与 T3 矩阵的阶段归属如不一致，**以 `switch-matrix.md` 为准**；本手册用于演练编排与验证方法。
 
 ---
@@ -24,24 +25,28 @@
 
 ### 0.2 三条必须先知道的硬事实（会直接影响切流可行性）
 
-**H1. compose 中并非 137 个开关都能用环境变量控制。**
-`infra/docker/docker-compose.yml` 的 `api-go` 服务（`profiles: ["api-go-pilot"]`，`docker-compose.yml:776`）对 `API_GO_*` 有三类接线：
+**H1. compose 中 137 个开关现在全部可用环境变量控制（GO-DEFAULT-CUTOVER-001 已修）。**
+`infra/docker/docker-compose.yml` 的 `api-go` 服务（默认启动，不再有 profile）对 `API_GO_*` 只有一种接线：137 条全部形如 `API_GO_X: ${API_GO_X:-go}`（`API_GO_LEGACY_FALLBACK_MODE` 为 `${...:-reject}`）。
 
-| 类别 | 数量 | 能否被 `--env-file` / `.env` 覆盖 | 证据 |
-|---|---:|---|---|
-| `${API_GO_X:-legacy}` 插值 | 78 | 能 | 78 条均形如 `API_GO_*: ${API_GO_*:-legacy}`（含三批新接入的 7 个） |
-| 写死字面量 | 49 | **不能** | 7 个固定 `go`、42 个固定 `legacy` |
-| 完全未注入 | 10 | **不能**（api-go 没有 `env_file`） | 见下 |
+| 类别 | 数量 | 能否被 `--env-file` / `.env` 覆盖 |
+|---|---:|---|
+| `${API_GO_X:-go}` 插值（fallback 为 `:-reject`） | 137 | 能（逐项覆盖） |
+| 写死字面量 | 0 | — |
+| 完全未注入 | 0 | — |
 
-- 固定 `go` 的 7 个：`API_GO_ONBOARDING_MODE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`、`API_GO_PUBLIC_PORTAL_MODE`、`API_GO_DASHBOARD_STATS_MODE`、`API_GO_DASHBOARD_CHARTS_MODE`、`API_GO_DASHBOARD_WAR_MAP_MODE`（`docker-compose.yml:821-837`、`1633`）。
-- 固定 `legacy` 的 42 个：`ACCOUNT_SECURITY`、`ADMIN_LOGS`、`ANALYSIS_BOARDS`、`ANALYSIS_EXPORT`、`ANALYSIS_THREADS`、`ANALYSIS_VIEWS`、`ARCHIVE_READING`、`AVATAR_UPLOAD`、`CLASSIFICATION_RSS_OPS`、`CONTENT_SUBSCRIPTIONS`、`CRAWL_METADATA`、`CRAWL_PROFILES`、`CRAWL_QUEUE_OPS`、`CRAWL_READ_TELEMETRY`、`CRAWL_TASK_WRITE`、`CRAWL_TEMPLATES`、`CRAWL_WORKFLOWS`、`EXCEPTION_INGEST`、`GRAPHQL_ALERT_RULES`、`GRAPHQL_CRAWL_METADATA`、`GRAPHQL_ITEMS_LIST`、`GRAPHQL_KG_IMPACT`、`GRAPHQL_KNOWLEDGE_REVIEW`、`GRAPHQL_NEWS_EVENT_BRIEF`、`GRAPHQL_ORG_ACCESS_WRITE`、`GRAPHQL_RSS_TRANSLATION`、`GRAPHQL_SETTINGS_CRAWL_READ`、`GRAPHQL_SETTINGS_WRITE`、`GRAPHQL_SOURCE_POLICY_WRITE`、`GRAPHQL_WORKSPACE_READ`、`GRAPHQL_WORKSPACE_WRITE`、`ITEMS_READING`、`LLM_LOGS`、`NEWSNOW_CLUSTERING_OPS`、`NEWS_INDICATORS`、`NEWS_SOURCES`、`QUALITY_OVERVIEW`、`RUNTIME_SETTINGS`、`SITUATION_MONITORS`、`USER_DATA_EXPORT`、`USER_DIGEST`、`USER_NEWS_BEHAVIOR`（均带 `_MODE` 后缀）。
-- 完全未注入的 10 个：`API_GO_DASHBOARD_SPACETIME_GEO_MODE`、`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE`、`API_GO_DASHBOARD_STREAM_MODE`、`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE`、`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE`、`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`、`API_GO_GRAPHQL_NEWS_EVENTS_MODE`、`API_GO_GRAPHQL_READ_MODE`、`API_GO_HEALTHZ_MODE`、`API_GO_RBAC_MODE`。
+切默认之前的四类接线（78 插值 + 49 写死 + 10 未注入）是历史事实，记录了当时的限制；本批把它们统一为可插值，因此：
 
-**结论：** 只把 `api-go-cutover.env.sample` 传给 `--env-file`，最多只能改变 78/137 个开关；base compose 的 api-go 环境里共 127 个 `API_GO_*`（78 插值 + 49 写死），另有 10 个完全未注入。三批新增的 7 个开关已全部以 `${VAR:-...}` 插值接入 api-go（`API_GO_QUEUE_ORG_STATS_MODE` 同时接入 api 服务），因此 override 的 59 个重新声明清单不变。本批为此新增了配套 override `infra/docker/docker-compose.api-go-cutover.sample.yml`（同样**不会被默认加载**，必须用 `-f` 显式指定）：它给 `api-go` 服务加 `env_file: ./api-go-cutover.env.sample`（注入全部开关与资源占位符），并把 compose 中**不经过 `${VAR}` 插值的 59 个开关**（49 个写死字面量 + 10 个完全未注入）用 `${VAR:-legacy}` 重新声明（`environment` 优先级高于 `env_file`，不重新声明就改不动）。其余 78 个在 base compose 里已经是 `${API_GO_X:-legacy}`，无需重复。三者合起来，137 个开关才全部可控：
+- 原来固定 `go` 的 7 个（`API_GO_ONBOARDING_MODE`、`API_GO_USER_SETTINGS_READ_MODE`、`API_GO_USER_SETTINGS_WRITE_MODE`、`API_GO_PUBLIC_PORTAL_MODE`、`API_GO_DASHBOARD_STATS_MODE`、`API_GO_DASHBOARD_CHARTS_MODE`、`API_GO_DASHBOARD_WAR_MAP_MODE`）现在默认为 `go`，但可被 env 改回；
+- 原来固定 `legacy` 的 42 个现在默认为 `go`，同样可被 env 改回；
+- 原来未注入的 10 个（`API_GO_DASHBOARD_SPACETIME_GEO_MODE`、`API_GO_DASHBOARD_SPACETIME_PROPAGATION_MODE`、`API_GO_DASHBOARD_STREAM_MODE`、`API_GO_DASHBOARD_WAR_MAP_LAYERS_MODE`、`API_GO_DASHBOARD_WAR_MAP_TRANSPORT_MODE`、`API_GO_GRAPHQL_KNOWLEDGE_GRAPH_MODE`、`API_GO_GRAPHQL_NEWS_EVENTS_MODE`、`API_GO_GRAPHQL_READ_MODE`、`API_GO_HEALTHZ_MODE`、`API_GO_RBAC_MODE`）现在显式出现，避免 compose 与 `config.go` 的默认悄悄分叉。
+
+**结论：** 137 个开关都能通过 `.env` / `--env-file` 逐项控制，`docker-compose.api-go-cutover.sample.yml` 因此不再需要重新声明 59 项，只保留 env_file 注入与凭据显式声明。回退走 `legacy-rollback.env.sample`（134 legacy + 2 合法 shadow + proxy）与 `legacy-rollback.override.yml`：
 
 ```
-infra/docker/api-go-cutover.env.sample                    # 值（137 个开关 + 资源占位）
-infra/docker/docker-compose.api-go-cutover.sample.yml     # 注入方式（env_file + 59 个重新声明）
+infra/docker/api-go-cutover.env.sample                    # 全 Go 终态清单（= 仓库默认）
+infra/docker/docker-compose.api-go-cutover.sample.yml     # 注入方式（env_file + 凭据）
+infra/docker/legacy-rollback.env.sample                   # 显式回退清单（134 legacy + 2 shadow + proxy）
+infra/docker/legacy-rollback.override.yml                 # 显式回退编排
 ```
 
 > **名单差异提醒：** 规划窗口留下的临时名单只有 30 条（未随仓库提交，不作为证据）；按 `dcbe563b` 的 `docker-compose.yml:774-1697` 实测是 **49 个**写死开关（7 个固定 `go` + 42 个固定 `legacy`），临时名单缺的 19 个是：`ACCOUNT_SECURITY_MODE`、`AVATAR_UPLOAD_MODE`、`GRAPHQL_ALERT_RULES_MODE`、`GRAPHQL_CRAWL_METADATA_MODE`、`GRAPHQL_ITEMS_LIST_MODE`、`GRAPHQL_KG_IMPACT_MODE`、`GRAPHQL_KNOWLEDGE_REVIEW_MODE`、`GRAPHQL_NEWS_EVENT_BRIEF_MODE`、`GRAPHQL_ORG_ACCESS_WRITE_MODE`、`GRAPHQL_RSS_TRANSLATION_MODE`、`GRAPHQL_SETTINGS_CRAWL_READ_MODE`、`GRAPHQL_SETTINGS_WRITE_MODE`、`GRAPHQL_SOURCE_POLICY_WRITE_MODE`、`GRAPHQL_WORKSPACE_READ_MODE`、`GRAPHQL_WORKSPACE_WRITE_MODE`、`ITEMS_READING_MODE`、`ONBOARDING_MODE`、`RUNTIME_SETTINGS_MODE`、`USER_DATA_EXPORT_MODE`。override 按「49 个写死 + 10 个未注入 = 59 个」全列，否则这 19 个会静默保持 compose 的 legacy/go，env 文件写了也不生效。核对命令：
@@ -81,7 +86,7 @@ awk 'NR>=774 && NR<=1697' infra/docker/docker-compose.yml \
 > 说明：阶段 2 虽然只改 api-go 的读/写接管，但 47 个开关在 Nest 侧出现（附录 A：35 个有行为、11 个仅 schema、1 个未使用 getter），其中 35 个行为开关必须双侧同值；本手册把它们放在出现的最早阶段处理，后续阶段不再重复。
 > 时间估计的依据仅限：`api-go` healthcheck `start_period 10s / interval 15s`（`docker-compose.yml:1690-1696`）、`api` healthcheck `start_period 300s / interval 15s`（`docker-compose.yml:664-669`）、Web 重建需要 `turbo run build`（`infra/docker/runtime.Dockerfile:51`）。**本批没有计时，均为保守估计。**
 
-**默认部署不变（本批的硬约束）：** 不传本批的 `-f`/`--env-file` 时，行为与 `dcbe563b` 完全一致：137 个开关仍按 compose/config 默认（绝大多数 `legacy`；api-go 服务仍有 7 个写死 `go` 的 pilot 既有行为）、Web 仍指向 NestJS（`API_BASE_URL=http://api:4000`、`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api`）、canary 仍为 0、api-go 仍只在 `api-go-pilot` profile 下启动。本批只新增样例文件，没有修改 `docker-compose.yml`、`infra/docker/.env.sample`、`config.go` 或任何默认值。
+**默认部署（GO-DEFAULT-CUTOVER-001 之后）：** 不传任何 `-f`/`--env-file` 时，137 个开关按 `config.go` 的默认解析为 136 个 `go` + `API_GO_LEGACY_FALLBACK_MODE=reject`；compose 的 api-go 服务把 137 个开关全部写成语义等价的 `${API_GO_X:-go}`（fallback 为 `${...:-reject}`），因此 `.env` 或 `--env-file` 可以逐项覆盖；Web 指向 `http://api-go:4020` 与两个 Go Socket.IO 路径；canary 仍为 0；api-go / vector-go / ais-relay-go 默认启动，Node 三服务只在 `legacy-node` profile 下启动。回退见 `infra/docker/legacy-rollback.override.yml` 与 `infra/docker/legacy-rollback.env.sample`。
 
 ---
 

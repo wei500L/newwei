@@ -32,32 +32,14 @@ func newsSourceOpsNestRoutes() []struct{ method, path string } {
 	}
 }
 
-func TestNewsSourceOpsStayLegacyByDefault(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSourceOps(rules, "")
-	rules = WithNewsSourceOps(rules, "legacy")
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range append(newsSourceOpsRoutes(), newsSourceOpsNestRoutes()...) {
-		if got := gateway.match(tc.method, tc.path); got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
-		}
-	}
-}
-
 func TestNewsSourceOpsGoOwnsOnlyTheFourPosts(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
-	rules = WithNewsSourceOps(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules := BaseRules()
+	rules = WithNewsSourceOps(rules)
+	gateway := New(rules)
 
 	for _, tc := range newsSourceOpsRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != NewsSourceOpsKey {
+		if got.Prefix == "" || got.HandlerKey != NewsSourceOpsKey {
 			t.Fatalf("%s %s = %+v, want the ops handler", tc.method, tc.path, got)
 		}
 		if !got.OneSegment || got.TwoSegments || got.Exact {
@@ -70,37 +52,34 @@ func TestNewsSourceOpsGoOwnsOnlyTheFourPosts(t *testing.T) {
 		if got.HandlerKey == NewsSourceOpsKey {
 			t.Fatalf("%s %s key=%q, want another owner", tc.method, tc.path, got.HandlerKey)
 		}
-		if got.Mode != ModeLegacy {
-			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Mode)
+		if got.Prefix != "" {
+			t.Fatalf("%s %s mode=%s, want legacy", tc.method, tc.path, got.Prefix)
 		}
 	}
 }
 
 func TestNewsSourceOpsDoesNotShadowNewsSources(t *testing.T) {
-	rules := DefaultRules(ModeShadow, "")
+	rules := BaseRules()
 	// The news-sources CRUD unit is registered first on the same prefix; the
 	// method + tail scoped ops rules still win only for their four POSTs.
-	rules = WithNewsSources(rules, string(ModeGo))
-	rules = WithNewsSourceOps(rules, string(ModeGo))
-	gateway, err := New("http://legacy:4000", rules)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rules = WithNewsSources(rules)
+	rules = WithNewsSourceOps(rules)
+	gateway := New(rules)
 
 	for _, tc := range newsSourceOpsRoutes() {
 		got := gateway.match(tc.method, tc.path)
-		if got.Mode != ModeGo || got.HandlerKey != NewsSourceOpsKey {
+		if got.Prefix == "" || got.HandlerKey != NewsSourceOpsKey {
 			t.Fatalf("%s %s = %+v, want the ops handler", tc.method, tc.path, got)
 		}
 	}
-	if got := gateway.match(http.MethodPost, "/api/admin/news-sources/source-1/run"); got.Mode != ModeGo ||
+	if got := gateway.match(http.MethodPost, "/api/admin/news-sources/source-1/run"); got.Prefix == "" ||
 		got.HandlerKey != NewsSourcesKey {
 		t.Fatalf("POST run = %+v, want the news-sources handler", got)
 	}
-	if got := gateway.match(http.MethodGet, "/api/admin/news-sources/source-1/preview"); got.Mode != ModeLegacy {
-		t.Fatalf("GET preview mode=%s, want legacy", got.Mode)
+	if got := gateway.match(http.MethodGet, "/api/admin/news-sources/source-1/preview"); got.Prefix != "" {
+		t.Fatalf("GET preview mode=%s, want legacy", got.Prefix)
 	}
-	if got := gateway.match(http.MethodPatch, "/api/admin/news-sources/source-1"); got.Mode != ModeGo ||
+	if got := gateway.match(http.MethodPatch, "/api/admin/news-sources/source-1"); got.Prefix == "" ||
 		got.HandlerKey != NewsSourcesKey {
 		t.Fatalf("PATCH :id = %+v, want the news-sources handler", got)
 	}

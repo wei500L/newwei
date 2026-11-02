@@ -62,17 +62,17 @@ func TestPlanSubscriptionOwnership(t *testing.T) {
 		{
 			name:     "query operation is legacy",
 			query:    `query Q { alertEvents(limit: 1) { id } }`,
-			expected: KindLegacy,
+			expected: KindSubscriptionError,
 		},
 		{
 			name:     "unregistered subscription root is legacy",
 			query:    `subscription Q { queueEvents { event } }`,
-			expected: KindLegacy,
+			expected: KindSubscriptionError,
 		},
 		{
 			name:     "unregistered selected nested type is legacy",
 			query:    `subscription Q { alertEvents { deliveries { channelName } } }`,
-			expected: KindLegacy,
+			expected: KindSubscriptionError,
 		},
 		{
 			name:     "unknown selected field is a protocol error",
@@ -96,6 +96,12 @@ func TestPlanSubscriptionOwnership(t *testing.T) {
 			plan := engine.PlanSubscription(test.query, test.opName, nil)
 			if plan.Kind != test.expected {
 				t.Fatalf("PlanSubscription() kind = %q, want %q", plan.Kind, test.expected)
+			}
+			if test.expected == KindSubscriptionError {
+				body := string(plan.Result.Body)
+				if !strings.Contains(body, `"errors"`) {
+					t.Fatalf("PlanSubscription() rejection body = %s, want a GraphQL errors entry", body)
+				}
 			}
 		})
 	}

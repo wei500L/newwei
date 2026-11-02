@@ -18,10 +18,7 @@ const NewsClusteringLlmBackfillKey = "/api/system-settings/news-events/clusterin
 // matches one non-empty segment and the exact /llm-backfill tail, so
 // /vector-backfill, /ignore, longer paths and every unlisted method keep
 // falling back to NestJS. The default (empty or legacy) appends no rule.
-func WithNewsClusteringLlmBackfill(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsClusteringLlmBackfill(rules []Rule) []Rule {
 	return appendSegmentRule(rules, NewsClusteringLlmBackfillKey,
 		"/api/system-settings/news-events/clustering/failures/", true, false, "/llm-backfill",
 		http.MethodPost)

@@ -18,10 +18,7 @@ const NewsnowHottestKey = "/api/news-aggregator/hottest-analysis"
 // longer than the source and clustering-ops prefixes, so the longest-prefix match
 // in the gateway cannot shadow them in either direction. The default (empty or
 // legacy) appends no rule at all, so rollback is a single variable change.
-func WithNewsnowHottest(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsnowHottest(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, NewsnowHottestKey, "/api/news-aggregator/hottest-analysis", http.MethodGet)
 	return appendExactKeyed(rules, NewsnowHottestKey, "/api/news-aggregator/recommended", http.MethodGet)
 }

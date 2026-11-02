@@ -32,10 +32,10 @@ func wirePersonalNews(
 	authenticator *authhttp.Authenticator,
 	mongoConn **dashboardstats.Connection,
 ) (*userdigest.Service, error) {
-	behaviorGo := cfg.UserNewsBehaviorMode == config.UserNewsBehaviorModeGo
-	subsGo := cfg.ContentSubscriptionsMode == config.ContentSubscriptionsModeGo
-	digestGo := cfg.UserDigestMode == config.UserDigestModeGo
-	deliveryGo := cfg.UserDigestDeliveryMode == config.UserDigestDeliveryModeGo
+	behaviorGo := true
+	subsGo := true
+	digestGo := true
+	deliveryGo := true
 	if !behaviorGo && !subsGo && !digestGo && !deliveryGo {
 		return nil, nil
 	}
@@ -79,7 +79,7 @@ func wirePersonalNews(
 					return
 				}
 				if r.Method == http.MethodOptions {
-					gateway.ServeLegacy(w, r)
+					gateway.Reject(w, r)
 					return
 				}
 				handler.ServeHTTP(w, r)
@@ -112,6 +112,6 @@ func wirePersonalNews(
 		}
 	}
 	log.Printf("api-go: personal news takeover behavior=%s subscriptions=%s digest=%s delivery=%s",
-		cfg.UserNewsBehaviorMode, cfg.ContentSubscriptionsMode, cfg.UserDigestMode, cfg.UserDigestDeliveryMode)
+		"go", "go", "go", "go")
 	return digestSvc, nil
 }

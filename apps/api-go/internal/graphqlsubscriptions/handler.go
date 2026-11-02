@@ -23,6 +23,7 @@ import (
 )
 
 const (
+	protocolName           = "graphql-transport-ws"
 	defaultInitTimeout     = 3 * time.Second
 	defaultMaxMessageBytes = 16 << 20
 	upstreamErrorPayload   = `{"errors":[{"message":"Internal server error","extensions":{"code":"INTERNAL_SERVER_ERROR","http":{"status":500}}}]}`
@@ -50,7 +51,6 @@ type Options struct {
 	RedisOptions    *redis.Options
 	Queue           *QueueObserver
 	Source          FeedSource
-	LegacyURL       string
 	InitTimeout     time.Duration
 	MaxMessageBytes int64
 }
@@ -144,8 +144,8 @@ func (r *Runtime) Start(ctx context.Context) error {
 }
 
 // Handles reports whether this exact request is a graphql-transport-ws
-// upgrade. Other upgrades (including other subprotocols) keep the existing
-// legacy proxy behavior.
+// upgrade. Other upgrades (including other subprotocols) are not handled here
+// and fall through to the read handler.
 func (r *Runtime) Handles(request *http.Request) bool {
 	if r == nil || request == nil {
 		return false
@@ -231,7 +231,7 @@ func (r *Runtime) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 }
 
 // Close stops new subscriptions, cancels every operation, closes all hijacked
-// WebSocket connections and legacy upstreams, then stops the pub/sub reader
+// WebSocket connections, then stops the pub/sub reader
 // and the queue observer. It is idempotent; the shared Redis/DB clients remain
 // owned by main and are closed afterwards.
 func (r *Runtime) Close(ctx context.Context) error {

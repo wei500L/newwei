@@ -126,13 +126,12 @@ func (l *fakeLimiter) Consume(context.Context, string, policy.Budget) bool {
 	return l.allowed
 }
 
-func newTestRuntime(t *testing.T, source FeedSource, auth Identifier, limiter Limiter, legacyURL string, initTimeout time.Duration) *Runtime {
+func newTestRuntime(t *testing.T, source FeedSource, auth Identifier, limiter Limiter, initTimeout time.Duration) *Runtime {
 	t.Helper()
 	runtime, err := New(Options{
 		Authenticator: auth,
 		Limiter:       limiter,
 		Source:        source,
-		LegacyURL:     legacyURL,
 		InitTimeout:   initTimeout,
 	})
 	if err != nil {

@@ -19,10 +19,7 @@ const NewsSourceOpsKey = "/__go/news-source-ops"
 // (`:id` PATCH/DELETE, `:id/run`, `:id/schedule`), the `:id/preview` GET rule
 // and every longer path keep their existing owners. An empty or legacy mode
 // adds no rules.
-func WithNewsSourceOps(rules []Rule, mode string) []Rule {
-	if mode != string(ModeGo) {
-		return rules
-	}
+func WithNewsSourceOps(rules []Rule) []Rule {
 	base := "/api/admin/news-sources/"
 	rules = appendSegmentRule(rules, NewsSourceOpsKey, base, true, false, "/dispatch",
 		http.MethodPost)
