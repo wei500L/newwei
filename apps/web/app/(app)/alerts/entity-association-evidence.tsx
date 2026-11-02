@@ -152,7 +152,7 @@ export function EntityAssociationEvidence({
                     )}
                     size="small"
                     showInfo={false}
-                    strokeColor="#f97316"
+                    strokeColor="#b45309"
                   />
                 )}
               </Space>

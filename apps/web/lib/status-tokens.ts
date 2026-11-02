@@ -41,12 +41,12 @@ export const CHART_STATE_ACCENT_FALLBACK: Record<ChartStateVariant, string> = {
 
 /** ChartEmptyState 标题文字色，按状态。 */
 export const CHART_STATE_TITLE: Record<ChartStateVariant, string> = {
-  empty: "#0f172a",
-  backfilling: "#0f172a",
-  delayed: "#d97706",
-  offline: "#475569",
+  empty: "#161b26",
+  backfilling: "#161b26",
+  delayed: "#b45309",
+  offline: "#5a6270",
   permission: "#b45309",
-  error: "#dc2626",
+  error: "#b91c1c",
 } as const;
 
 /**
@@ -54,18 +54,18 @@ export const CHART_STATE_TITLE: Record<ChartStateVariant, string> = {
  * stroke/fill 直接写入 SVG presentation 属性，text 写入 inline style，
  * 均不解析 var()，故以 JS 常量集中。
  */
-export const CHART_BORDER_FALLBACK = "rgba(148, 163, 184, 0.4)";
-export const CHART_FILL_FALLBACK = "rgba(148, 163, 184, 0.08)";
-export const CHART_TEXT_FALLBACK = "#94a3b8";
+export const CHART_BORDER_FALLBACK = "rgba(155, 151, 142, 0.4)";
+export const CHART_FILL_FALLBACK = "rgba(155, 151, 142, 0.08)";
+export const CHART_TEXT_FALLBACK = "#9b978e";
 
 /**
  * LLM 网关压力状态色（antd Progress strokeColor，JS prop）。
  * critical=已超额、warning=接近上限、normal=健康。
  */
 export const PRESSURE_STATUS_COLORS = {
-  critical: "#ff4d4f",
-  warning: "#faad14",
-  normal: "#1677ff",
+  critical: "#b91c1c",
+  warning: "#b45309",
+  normal: "#1f3b7b",
 } as const;
 
 /**
@@ -73,10 +73,10 @@ export const PRESSURE_STATUS_COLORS = {
  * neutral=无数据兜底、positive=正向、negative=负向、gray=接近中性。
  */
 export const SENTIMENT_COLORS = {
-  neutral: "#94a3b8",
-  positive: "#16a34a",
-  negative: "#dc2626",
-  gray: "#64748b",
+  neutral: "#9b978e",
+  positive: "#1b9e77",
+  negative: "#d95f02",
+  gray: "#5a6270",
 } as const;
 
 /**
@@ -84,17 +84,17 @@ export const SENTIMENT_COLORS = {
  * track=底轨、range=命中区间、expected=期望标记、observed=观测标记。
  */
 export const RANGE_INDICATOR_COLORS = {
-  track: "#e2e8f0",
-  range: "#93c5fd",
-  expected: "#0f172a",
-  observed: "#dc2626",
+  track: "#e3dfd6",
+  range: "#9fb3d9",
+  expected: "#161b26",
+  observed: "#b91c1c",
 } as const;
 
 /**
  * 告警趋势线色，按严重级别（echarts lineStyle.color，canvas 上下文）。
  */
 export const ALERT_LINE_COLORS = {
-  low: "#16a34a",
-  medium: "#ea580c",
-  high: "#dc2626",
+  low: "#2f7d5b",
+  medium: "#c2410c",
+  high: "#b91c1c",
 } as const;

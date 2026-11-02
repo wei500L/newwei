@@ -112,7 +112,7 @@ export function KnowledgeGraphCanvas({
               ele.data("isSeed") ? 700 : 500,
             "border-width": (ele: NodeSingular) =>
               ele.data("isSeed") ? 3 : 1.5,
-            "border-color": "#e2e8f0",
+            "border-color": isDark ? "#3a414d" : "#faf8f3",
             width: (ele: NodeSingular) =>
               Math.max(28, Math.min(68, 28 + Number(ele.data("degree") ?? 0) * 5)),
             height: (ele: NodeSingular) =>
@@ -130,9 +130,9 @@ export function KnowledgeGraphCanvas({
               Math.max(1.5, Math.min(6, Number(ele.data("weight") ?? 1))),
             "line-color": (ele: EdgeSingular) => {
               const confidence = Number(ele.data("confidence") ?? 0);
-              if (confidence >= 0.85) return "#16a34a";
-              if (confidence >= 0.7) return "#f59e0b";
-              return "#ef4444";
+              if (confidence >= 0.85) return "#2f7d5b";
+              if (confidence >= 0.7) return "#b45309";
+              return "#b91c1c";
             },
             opacity: (ele: EdgeSingular) =>
               Math.max(0.3, Math.min(0.92, Number(ele.data("confidence") ?? 0.5))),
@@ -144,10 +144,10 @@ export function KnowledgeGraphCanvas({
         {
           selector: "node:selected",
           style: {
-            "border-color": "#0f172a",
+            "border-color": isDark ? "#e8e4da" : "#161b26",
             "border-width": 4,
             "overlay-opacity": 0.08,
-            "overlay-color": "#1d4ed8",
+            "overlay-color": "#1f3b7b",
           },
         },
         {
@@ -155,7 +155,7 @@ export function KnowledgeGraphCanvas({
           style: {
             width: 6,
             "overlay-opacity": 0.06,
-            "overlay-color": "#0f172a",
+            "overlay-color": "#161b26",
           },
         },
       ],
