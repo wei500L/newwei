@@ -22,7 +22,7 @@ export function TaskDetailLinkOverview({
     return null;
   }
   return (
-    <Card title={t("crawl.links.title")} style={{ marginTop: 24 }}>
+    <Card title={t("crawl.links.title")} className="content-card">
       <Space size="large" wrap>
         {[
           {
@@ -82,8 +82,8 @@ export function TaskDetailLinkOverview({
           </Space>
         </>
       ) : null}
-      <Space align="start" size="large" style={{ marginTop: 16 }} wrap>
-        <div style={{ minWidth: 280 }}>
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="min-w-0">
           <Typography.Text strong>
             {t("crawl.links.topLinks")}
           </Typography.Text>
@@ -94,7 +94,7 @@ export function TaskDetailLinkOverview({
             renderItem={(link) => (
               <List.Item>
                 <Space direction="vertical" size={0}>
-                  <Typography.Link href={link.href} target="_blank">
+                  <Typography.Link href={link.href} target="_blank" className="break-all">
                     {link.text || link.href}
                   </Typography.Link>
                   <Typography.Text type="secondary">
@@ -108,7 +108,7 @@ export function TaskDetailLinkOverview({
             )}
           />
         </div>
-        <div style={{ minWidth: 280 }}>
+        <div className="min-w-0">
           <Typography.Text strong>
             {t("crawl.links.lowQuality")}
           </Typography.Text>
@@ -119,7 +119,7 @@ export function TaskDetailLinkOverview({
             renderItem={(link) => (
               <List.Item>
                 <Space direction="vertical" size={0}>
-                  <Typography.Link href={link.href} target="_blank">
+                  <Typography.Link href={link.href} target="_blank" className="break-all">
                     {link.text || link.href}
                   </Typography.Link>
                   <Typography.Text type="secondary">
@@ -133,7 +133,7 @@ export function TaskDetailLinkOverview({
             )}
           />
         </div>
-      </Space>
+      </div>
     </Card>
   );
 }

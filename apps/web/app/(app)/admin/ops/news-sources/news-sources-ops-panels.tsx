@@ -108,9 +108,10 @@ export function NewsSourcesOpsPanels({
   );
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+    <>
           <Card
             size="small"
+            className="content-card"
             title={t("newsSources.readiness.title")}
             extra={
               <Button
@@ -216,6 +217,7 @@ export function NewsSourcesOpsPanels({
           </Card>
           <Card
             size="small"
+            className="content-card"
             title={t("newsSources.queue.title")}
             extra={
               <Button
@@ -296,6 +298,7 @@ export function NewsSourcesOpsPanels({
 
           <Card
             size="small"
+            className="content-card"
             title={t("newsSources.quality.title")}
             extra={
               <Space size={8}>
@@ -739,6 +742,6 @@ export function NewsSourcesOpsPanels({
             )}
           </Card>
 
-    </Space>
+    </>
   );
 }

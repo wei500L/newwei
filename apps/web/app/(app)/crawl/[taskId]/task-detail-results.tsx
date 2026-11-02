@@ -10,6 +10,7 @@ import { SearchOutlined } from "@ant-design/icons";
 import { Button, Card, Input, List, Select, Space, Spin } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { FilterBar } from "@/components/filter-bar";
 import type { SupportedLocale } from "@/lib/i18n";
 
 import type { CrawlResultActionController } from "./hooks/use-crawl-result-actions";
@@ -63,12 +64,10 @@ export function TaskDetailResults({
 }: TaskDetailResultsProps) {
   const { t } = useTranslation();
   return (
-    <Card
-      title={t("crawl.detail.results.title")}
-      style={{ marginTop: 24 }}
-      extra={
-        <Space>
-          <Space.Compact style={{ width: 260 }}>
+    <Card title={t("crawl.detail.results.title")} className="content-card">
+      <FilterBar className="mb-3">
+        <FilterBar.Item width="lg">
+          <Space.Compact className="w-full">
             <Input
               id="crawl-task-result-search"
               name="crawlTaskResultSearch"
@@ -84,9 +83,11 @@ export function TaskDetailResults({
               onClick={() => onSearchSubmit()}
             />
           </Space.Compact>
+        </FilterBar.Item>
+        <FilterBar.Item width="sm">
           <Select
             value={limit}
-            style={{ width: 140 }}
+            className="w-full"
             onChange={onLimitChange}
             options={limitOptions.map((option) => ({
               value: option.value,
@@ -95,9 +96,8 @@ export function TaskDetailResults({
               }),
             }))}
           />
-        </Space>
-      }
-    >
+        </FilterBar.Item>
+      </FilterBar>
       {loading && results.length === 0 ? (
         <Spin />
       ) : (

@@ -11,7 +11,7 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Alert, Card, Collapse, Empty, Spin } from "antd";
+import { Alert, Collapse, Empty, Spin } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { ComponentType } from "react";
@@ -232,7 +232,7 @@ export function AdminContent() {
       <section
         key={group.key}
         data-tone={group.key}
-        className={styles.groupSection}
+        className={`${styles.groupSection} section-rule`}
       >
         <div className={styles.groupHeader}>
           <div className={styles.groupSummary}>
@@ -298,7 +298,7 @@ export function AdminContent() {
         </div>
       </div>
 
-      <Card className={`content-card ${styles.mainCard}`}>
+      <>
         {visibleLinks.length ? (
           <>
             <div className={styles.groupStack}>
@@ -394,7 +394,7 @@ export function AdminContent() {
         ) : (
           <Empty description={t("common.empty")} />
         )}
-      </Card>
+      </>
     </div>
   );
 }

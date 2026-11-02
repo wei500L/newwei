@@ -24,6 +24,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
@@ -2014,15 +2016,7 @@ export function CrawlMonitorContent({
   const ssrfProxyStatus = getCrawl4aiSsrfProxyStatus(ssrfProxyState);
 
   if (status === "loading") {
-    return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Typography.Text type="secondary">
-          {t("common.loading")}
-        </Typography.Text>
-      </div>
-    );
+    return <DataStateBoundary state={{ kind: "initialLoading" }} />;
   }
 
   if (!canView) {
@@ -2075,13 +2069,8 @@ export function CrawlMonitorContent({
         description={t("crawl.monitor.subtitle")}
       />
 
-      <Card
-        className="content-card"
-        title={t("crawl.monitor.dashboardTitle")}
-      >
-        <FilterBar
-          className="mb-4"
-          actions={
+      <FilterBar
+        actions={
             <>
               <Button onClick={handleRefreshNow} loading={refreshing}>
                 {t("common.refresh")}
@@ -2172,7 +2161,7 @@ export function CrawlMonitorContent({
           />
         ) : null}
 
-        <Typography.Paragraph style={{ marginBottom: 12, marginTop: 12 }}>
+        <Typography.Paragraph>
           <Typography.Text type="secondary">
             {t("crawl.monitor.lastUpdate")}{" "}
             {receivedAtLabel}
@@ -2201,12 +2190,13 @@ export function CrawlMonitorContent({
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
+                        className="content-card"
                         title={t("crawl.monitor.overview.container")}
                       >
                         <Row gutter={[16, 12]}>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
-                              title="CPU"
+                              title={t("crawl.monitor.overview.cpu")}
                               value={overviewCpu ?? "-"}
                               suffix={
                                 typeof overviewCpu === "number"
@@ -2215,9 +2205,9 @@ export function CrawlMonitorContent({
                               }
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
-                              title="Memory"
+                              title={t("crawl.monitor.overview.memory")}
                               value={overviewMemory ?? "-"}
                               suffix={
                                 typeof overviewMemory === "number"
@@ -2226,9 +2216,9 @@ export function CrawlMonitorContent({
                               }
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
-                              title="Uptime (s)"
+                              title={t("crawl.monitor.overview.uptime")}
                               value={overviewUptime ?? "-"}
                             />
                           </Col>
@@ -2238,28 +2228,29 @@ export function CrawlMonitorContent({
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
+                        className="content-card"
                         title={t("crawl.monitor.overview.pool")}
                       >
                         <Row gutter={[16, 12]}>
-                          <Col span={8}>
+                          <Col xs={24} sm={8}>
                             <Statistic
-                              title="Permanent"
+                              title={t("crawl.monitor.overview.permanent")}
                               value={poolPermanent ?? "-"}
                             />
                           </Col>
-                          <Col span={8}>
-                            <Statistic title="Hot" value={poolHot ?? "-"} />
+                          <Col xs={24} sm={8}>
+                            <Statistic title={t("crawl.monitor.overview.hot")} value={poolHot ?? "-"} />
                           </Col>
-                          <Col span={8}>
-                            <Statistic title="Cold" value={poolCold ?? "-"} />
+                          <Col xs={24} sm={8}>
+                            <Statistic title={t("crawl.monitor.overview.cold")} value={poolCold ?? "-"} />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.totalBrowsers")}
                               value={browserTotal ?? "-"}
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.reuseRate")}
                               value={browserReuseRate ?? "-"}
@@ -2276,22 +2267,23 @@ export function CrawlMonitorContent({
                     <Col xs={24} md={8}>
                       <Card
                         size="small"
+                        className="content-card"
                         title={t("crawl.monitor.overview.requests")}
                       >
                         <Row gutter={[16, 12]}>
-                          <Col span={8}>
+                          <Col xs={24} sm={8}>
                             <Statistic
                               title={t("crawl.monitor.overview.active")}
                               value={activeRequests.length}
                             />
                           </Col>
-                          <Col span={8}>
+                          <Col xs={24} sm={8}>
                             <Statistic
                               title={t("crawl.monitor.overview.completed")}
                               value={completedRequests.length}
                             />
                           </Col>
-                          <Col span={8}>
+                          <Col xs={24} sm={8}>
                             <Statistic
                               title={t("crawl.monitor.overview.errors")}
                               value={
@@ -2301,13 +2293,13 @@ export function CrawlMonitorContent({
                               }
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.totalRequests")}
                               value={overviewTotalRequests ?? "-"}
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.avgLatency")}
                               value={overviewAvgLatency ?? "-"}
@@ -2318,7 +2310,7 @@ export function CrawlMonitorContent({
                               }
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.successRate")}
                               value={overviewSuccessRate ?? "-"}
@@ -2329,7 +2321,7 @@ export function CrawlMonitorContent({
                               }
                             />
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} sm={12}>
                             <Statistic
                               title={t("crawl.monitor.overview.browserMemory")}
                               value={browserMemoryMb ?? "-"}
@@ -2347,6 +2339,7 @@ export function CrawlMonitorContent({
 
                   <Card
                     size="small"
+                    className="content-card"
                     title={t("crawl.monitor.overview.runtime")}
                     extra={
                       runtimeProbe?.xvfb?.supported === true ? (
@@ -2377,14 +2370,14 @@ export function CrawlMonitorContent({
                           <Col xs={24} md={8}>
                             <Statistic
                               title={t("crawl.monitor.runtime.headless")}
-                              value={runtimeProbe.headless.ok ? "OK" : "FAILED"}
+                              value={runtimeProbe.headless.ok ? t("crawl.monitor.overview.ok") : t("crawl.monitor.overview.failed")}
                               suffix={`${runtimeProbe.headless.durationMs}ms`}
                             />
                           </Col>
                           <Col xs={24} md={8}>
                             <Statistic
                               title={t("crawl.monitor.runtime.headed")}
-                              value={runtimeProbe.headed.ok ? "OK" : "FAILED"}
+                              value={runtimeProbe.headed.ok ? t("crawl.monitor.overview.ok") : t("crawl.monitor.overview.failed")}
                               suffix={
                                 typeof runtimeProbe.headed.durationMs ===
                                 "number"
@@ -2398,11 +2391,11 @@ export function CrawlMonitorContent({
                               title={t("crawl.monitor.runtime.ssrfProxy")}
                               value={
                                 ssrfProxyStatus === "healthy"
-                                  ? "OK"
+                                  ? t("crawl.monitor.overview.ok")
                                   : ssrfProxyStatus === "disabled"
-                                    ? "OFF"
+                                    ? t("crawl.monitor.overview.off")
                                     : ssrfProxyStatus === "failing"
-                                      ? "FAILED"
+                                      ? t("crawl.monitor.overview.failed")
                                       : "-"
                               }
                               suffix={
@@ -2557,6 +2550,7 @@ export function CrawlMonitorContent({
                   {canManage ? (
                     <Card
                       size="small"
+                      className="content-card"
                       title={t("crawl.monitor.actions.title")}
                     >
                       <Space wrap>
@@ -2601,6 +2595,7 @@ export function CrawlMonitorContent({
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Card
                     size="small"
+                    className="content-card"
                     title={t("crawl.monitor.requests.activeTitle")}
                   >
                     <Table
@@ -2703,6 +2698,7 @@ export function CrawlMonitorContent({
 
                   <Card
                     size="small"
+                    className="content-card"
                     title={t("crawl.monitor.requests.completedTitle")}
                     extra={
                       <Segmented
@@ -2745,7 +2741,7 @@ export function CrawlMonitorContent({
               key: "browsers",
               label: t("crawl.monitor.tabs.browsers"),
               children: (
-                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <div className="content-card flex flex-col gap-3">
                   <Alert
                     type="info"
                     showIcon
@@ -2762,14 +2758,14 @@ export function CrawlMonitorContent({
                     columns={browserColumns}
                     scroll={{ x: "max-content" }}
                   />
-                </Space>
+                </div>
               ),
             },
             {
               key: "endpoints",
               label: t("crawl.monitor.tabs.endpoints"),
               children: (
-                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <div className="content-card flex flex-col gap-3">
                   <Alert
                     type="info"
                     showIcon
@@ -2777,13 +2773,13 @@ export function CrawlMonitorContent({
                     description={t("crawl.monitor.endpoints.hint.description")}
                   />
                   {endpointsChartOption ? (
-                    <Card size="small">
+                    <div className="surface-inset">
                       <DashboardChart
                         option={endpointsChartOption}
                         height={320}
                         theme={chartTheme.echartsTheme}
                       />
-                    </Card>
+                    </div>
                   ) : null}
                   <Table
                     size="small"
@@ -2792,16 +2788,16 @@ export function CrawlMonitorContent({
                     columns={endpointColumns}
                     scroll={{ x: "max-content" }}
                   />
-                </Space>
+                </div>
               ),
             },
             {
               key: "timeline",
               label: t("crawl.monitor.tabs.timeline"),
               children: (
-                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                <div className="content-card flex flex-col gap-3">
                   {memorySeries ? (
-                    <Card size="small">
+                    <div className="surface-inset">
                       <DashboardChart
                         option={buildLineOption(
                           t("crawl.monitor.timeline.memory"),
@@ -2813,17 +2809,15 @@ export function CrawlMonitorContent({
                         height={280}
                         theme={chartTheme.echartsTheme}
                       />
-                    </Card>
+                    </div>
                   ) : (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      message={t("crawl.monitor.timeline.missing")}
+                    <ChartEmptyState
+                      description={t("crawl.monitor.timeline.missing")}
                     />
                   )}
 
                   {requestSeries ? (
-                    <Card size="small">
+                    <div className="surface-inset">
                       <DashboardChart
                         option={buildLineOption(
                           t("crawl.monitor.timeline.requests"),
@@ -2835,11 +2829,11 @@ export function CrawlMonitorContent({
                         height={280}
                         theme={chartTheme.echartsTheme}
                       />
-                    </Card>
+                    </div>
                   ) : null}
 
                   {browserSeries ? (
-                    <Card size="small">
+                    <div className="surface-inset">
                       <DashboardChart
                         option={buildBrowserOption(
                           t("crawl.monitor.timeline.browsers"),
@@ -2859,9 +2853,9 @@ export function CrawlMonitorContent({
                         height={280}
                         theme={chartTheme.echartsTheme}
                       />
-                    </Card>
+                    </div>
                   ) : null}
-                </Space>
+                </div>
               ),
             },
             {
@@ -2872,6 +2866,7 @@ export function CrawlMonitorContent({
                   <Col xs={24} md={12}>
                     <Card
                       size="small"
+                      className="content-card"
                       title={t("crawl.monitor.logs.errors")}
                     >
                       <List
@@ -2895,6 +2890,7 @@ export function CrawlMonitorContent({
                   <Col xs={24} md={12}>
                     <Card
                       size="small"
+                      className="content-card"
                       title={t("crawl.monitor.logs.janitor")}
                     >
                       <List
@@ -2922,7 +2918,7 @@ export function CrawlMonitorContent({
               key: "builtin",
               label: t("crawl.monitor.tabs.builtin"),
               children: normalizedDashboardUrl ? (
-                <>
+                <div className="content-card">
                   <Typography.Paragraph style={{ marginBottom: 12 }}>
                     <Typography.Text type="secondary">
                       {t("crawl.monitor.currentUrl")}{" "}
@@ -2946,7 +2942,7 @@ export function CrawlMonitorContent({
                     }}
                     referrerPolicy="no-referrer"
                   />
-                </>
+                </div>
               ) : (
                 <Alert
                   type="warning"
@@ -2959,7 +2955,7 @@ export function CrawlMonitorContent({
               key: "raw",
               label: t("crawl.monitor.tabs.raw"),
               children: (
-                <Card size="small">
+                <Card size="small" className="content-card">
                   <Typography.Paragraph
                     type="secondary"
                     style={{ marginBottom: 12 }}
@@ -2993,7 +2989,6 @@ export function CrawlMonitorContent({
             },
           ]}
         />
-      </Card>
     </div>
   );
 }

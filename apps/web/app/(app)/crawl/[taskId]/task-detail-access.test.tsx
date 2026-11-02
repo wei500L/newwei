@@ -56,7 +56,7 @@ describe("CrawlTaskDetail access（权限 fail-closed）", () => {
   it("session loading：显示加载态且不发起任何 GraphQL 请求", async () => {
     const { apollo } = renderCrawlTaskDetail({ sessionStatus: "loading" });
 
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
     await act(async () => {
       await Promise.resolve();
     });

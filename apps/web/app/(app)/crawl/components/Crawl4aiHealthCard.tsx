@@ -542,7 +542,7 @@ export function Crawl4aiHealthCard({
     <Card
       size="small"
       className={className}
-      style={{ marginBottom: 16, ...style }}
+      style={style}
       title={
         <Space size={8}>
           <Typography.Text>

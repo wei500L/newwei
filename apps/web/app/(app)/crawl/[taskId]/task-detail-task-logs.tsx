@@ -113,7 +113,7 @@ export function TaskDetailTaskLogs({
     <Card
       title={t("quality.taskLogs.title")}
       size="small"
-      style={{ marginTop: 24 }}
+      className="content-card"
       extra={
         <Button size="small" onClick={onReload} loading={loading}>
           {t("common.refresh")}

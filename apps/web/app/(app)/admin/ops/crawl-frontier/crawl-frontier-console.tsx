@@ -1632,11 +1632,17 @@ export function CrawlFrontierConsole() {
             label: t("crawlFrontier.console.tabs.profiles"),
             children: (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
-                <Row gutter={[16, 16]}>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.profiles")} value={profiles.length} /></Card></Col>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.active")} value={activeProfileCount} /></Card></Col>
-                  <Col xs={24} md={8}><Card className="content-card"><Statistic title={t("crawlFrontier.console.stats.shadow")} value={shadowProfileCount} /></Card></Col>
-                </Row>
+                <Card className="content-card">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                    <Statistic title={t("crawlFrontier.console.stats.profiles")} value={profiles.length} />
+                    <div className="md:border-l md:border-[var(--border)] md:pl-4">
+                      <Statistic title={t("crawlFrontier.console.stats.active")} value={activeProfileCount} />
+                    </div>
+                    <div className="md:border-l md:border-[var(--border)] md:pl-4">
+                      <Statistic title={t("crawlFrontier.console.stats.shadow")} value={shadowProfileCount} />
+                    </div>
+                  </div>
+                </Card>
                 <Card
                   className="content-card"
                   extra={canManage ? <Button type="primary" onClick={openCreateProfile}>{t("crawlFrontier.console.actions.newProfile")}</Button> : null}
@@ -1767,7 +1773,7 @@ export function CrawlFrontierConsole() {
                     <Col xs={24}>
                       <Card size="small" title={t("crawlFrontier.console.profileEditor.cards.matchPreview")}>
                         <Space wrap style={{ display: "flex" }}>
-                          <Form.Item name="previewUrl" label={t("crawlFrontier.console.profileEditor.fields.previewUrl")} style={{ flex: 1, minWidth: 360, marginBottom: 0 }}><Input placeholder={t("crawlFrontier.console.placeholders.previewUrl")} /></Form.Item>
+                          <Form.Item name="previewUrl" label={t("crawlFrontier.console.profileEditor.fields.previewUrl")} className="min-w-0 flex-1 md:min-w-[360px]"><Input placeholder={t("crawlFrontier.console.placeholders.previewUrl")} /></Form.Item>
                           <Button loading={profilePreviewLoading} onClick={() => void previewProfileMatch()}>{t("crawlFrontier.console.actions.previewMatch")}</Button>
                         </Space>
                         {profileMatchPreview ? (
@@ -1922,24 +1928,26 @@ export function CrawlFrontierConsole() {
                       <Row gutter={[16, 16]}>
                         {(["home", "category", "list", "article", "deny"] as const).map((key) => (
                           <Col xs={24} lg={12} key={`signal-${key}`}>
-                            <Card size="small" type="inner" title={`${key} signals`}>
+                            <div className="surface-inset">
+                              <div className="kicker mb-2">{`${key} signals`}</div>
                               <Form.Item name={["config", "pageTypeSignals", key, "patterns"]} label="Patterns">
                                 <Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} />
                               </Form.Item>
                               <Form.Item name={["config", "pageTypeSignals", key, "keywords"]} label="Keywords">
                                 <Select mode="tags" disabled={profileRawMode} tokenSeparators={[","]} />
                               </Form.Item>
-                            </Card>
+                            </div>
                           </Col>
                         ))}
                         <Col xs={24}>
-                          <Card size="small" type="inner" title={t("crawlFrontier.console.profileEditor.cards.freshnessRules")}>
+                          <div className="surface-inset">
+                            <div className="kicker mb-2">{t("crawlFrontier.console.profileEditor.cards.freshnessRules")}</div>
                             <Row gutter={[16, 16]}>
                               <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "recentHours"]} label="Recent hours"><InputNumber min={1} max={24 * 30} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                               <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "weekHours"]} label="Week hours"><InputNumber min={1} max={24 * 90} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                               <Col xs={24} md={8}><Form.Item name={["config", "freshnessRules", "monthHours"]} label="Month hours"><InputNumber min={1} max={24 * 365} disabled={profileRawMode} style={{ width: "100%" }} /></Form.Item></Col>
                             </Row>
-                          </Card>
+                          </div>
                         </Col>
                       </Row>
                     </Card>
@@ -2004,19 +2012,19 @@ export function CrawlFrontierConsole() {
               <Space direction="vertical" size="small" style={{ width: "100%" }}>
                 <Space wrap size={[4, 4]}>
                   <Tag color={runStatusColors[selectedRun.status]}>{selectedRun.status}</Tag>
-                  {selectedRunDiagnostics?.runRole ? <Tag color="blue">{selectedRunDiagnostics.runRole}</Tag> : null}
-                  {selectedRunDiagnostics?.failureKind ? <Tag color="red">{selectedRunDiagnostics.failureKind}</Tag> : null}
-                  {selectedRunDiagnostics?.seedStrategy ? <Tag color="green">{`seed:${selectedRunDiagnostics.seedStrategy}`}</Tag> : null}
-                  {selectedRunDiagnostics?.seedMethod ? <Tag color="lime">{selectedRunDiagnostics.seedMethod}</Tag> : null}
-                  {selectedRunDiagnostics?.fallbackStage ? <Tag color="gold">{selectedRunDiagnostics.fallbackStage}</Tag> : null}
-                  {selectedRunDiagnostics?.pendingLlmJobs ? <Tag color="magenta">{`pending:${selectedRunDiagnostics.pendingLlmJobs}`}</Tag> : null}
+                  {selectedRunDiagnostics?.runRole ? <Tag>{selectedRunDiagnostics.runRole}</Tag> : null}
+                  {selectedRunDiagnostics?.failureKind ? <Tag>{selectedRunDiagnostics.failureKind}</Tag> : null}
+                  {selectedRunDiagnostics?.seedStrategy ? <Tag>{`seed:${selectedRunDiagnostics.seedStrategy}`}</Tag> : null}
+                  {selectedRunDiagnostics?.seedMethod ? <Tag>{selectedRunDiagnostics.seedMethod}</Tag> : null}
+                  {selectedRunDiagnostics?.fallbackStage ? <Tag>{selectedRunDiagnostics.fallbackStage}</Tag> : null}
+                  {selectedRunDiagnostics?.pendingLlmJobs ? <Tag>{`pending:${selectedRunDiagnostics.pendingLlmJobs}`}</Tag> : null}
                   {selectedWorkflowRun?.workflowOrigin ? (
-                    <Tag color={selectedWorkflowRun.workflowOrigin === "bound" ? "geekblue" : "default"}>
+                    <Tag>
                       {selectedWorkflowRun.workflowOrigin}
                     </Tag>
                   ) : null}
                   {selectedWorkflowRun?.workflowVersion ? (
-                    <Tag color="cyan">{`workflow:v${selectedWorkflowRun.workflowVersion.version}`}</Tag>
+                    <Tag>{`workflow:v${selectedWorkflowRun.workflowVersion.version}`}</Tag>
                   ) : null}
                   {selectedRunDiagnostics?.warningFlags.map((flag) => <Tag key={`run-${flag}`} color="gold">{flag}</Tag>)}
                 </Space>
@@ -2191,7 +2199,7 @@ export function CrawlFrontierConsole() {
                         <Card size="small" title={t("crawlFrontier.console.runDrawer.workflow.stepTimeline")}>
                           <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                             {selectedWorkflowRun.stepResults.map((step) => (
-                              <Card key={step.stepKey ?? step.nodeId} size="small">
+                              <div key={step.stepKey ?? step.nodeId} className="surface-inset">
                                 <Space direction="vertical" size={4} style={{ width: "100%" }}>
                                   <Space wrap size={[6, 6]}>
                                     <Tag color={workflowStepColor(step.status)}>
@@ -2215,7 +2223,7 @@ export function CrawlFrontierConsole() {
                                     <Alert type="error" showIcon message={step.error} />
                                   ) : null}
                                 </Space>
-                              </Card>
+                              </div>
                             ))}
                           </Space>
                         </Card>
@@ -2504,7 +2512,7 @@ export function CrawlFrontierConsole() {
                   const entry = step.entry;
                   const diffRows = buildWorkflowTraceEntryDiffRows(entry);
                   return (
-                  <Card key={step.key} size="small">
+                  <div key={step.key} className="surface-inset">
                     <Space direction="vertical" size={8} style={{ width: "100%" }}>
                       <Space wrap size={[6, 6]}>
                         <Tag>{entry.nodeType}</Tag>
@@ -2576,7 +2584,8 @@ export function CrawlFrontierConsole() {
                             children: (
                               <Row gutter={[12, 12]}>
                                 <Col xs={24} md={12}>
-                                  <Card size="small" title={t("crawlFrontier.console.workflowCandidate.before")}>
+                                  <div className="hairline-b pb-3">
+                                    <div className="kicker mb-1">{t("crawlFrontier.console.workflowCandidate.before")}</div>
                                     <Typography.Paragraph
                                       style={{
                                         marginBottom: 0,
@@ -2586,10 +2595,11 @@ export function CrawlFrontierConsole() {
                                     >
                                       {stringifyJson(entry.beforeSnapshot ?? {})}
                                     </Typography.Paragraph>
-                                  </Card>
+                                  </div>
                                 </Col>
                                 <Col xs={24} md={12}>
-                                  <Card size="small" title={t("crawlFrontier.console.workflowCandidate.after")}>
+                                  <div className="hairline-b pb-3">
+                                    <div className="kicker mb-1">{t("crawlFrontier.console.workflowCandidate.after")}</div>
                                     <Typography.Paragraph
                                       style={{
                                         marginBottom: 0,
@@ -2599,7 +2609,7 @@ export function CrawlFrontierConsole() {
                                     >
                                       {stringifyJson(entry.afterSnapshot ?? {})}
                                     </Typography.Paragraph>
-                                  </Card>
+                                  </div>
                                 </Col>
                               </Row>
                             ),
@@ -2618,7 +2628,7 @@ export function CrawlFrontierConsole() {
                             </Typography.Paragraph>
                           ) : null}
                         </Space>
-                      </Card>
+                      </div>
                 )})}
               </Space>
             </Card>
@@ -2689,7 +2699,8 @@ export function CrawlFrontierConsole() {
                   {selectedNode.article ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Article URL">{selectedNode.article.url}</Descriptions.Item><Descriptions.Item label="Crawl at">{formatDateTime(selectedNode.article.crawlAt)}</Descriptions.Item><Descriptions.Item label="Title guess">{selectedNode.article.titleGuess ?? "-"}</Descriptions.Item><Descriptions.Item label="Source label">{selectedNode.article.sourceLabel ?? "-"}</Descriptions.Item><Descriptions.Item label="Language">{selectedNode.article.language ?? "-"}</Descriptions.Item><Descriptions.Item label="Repair applied">{asRecord(selectedNode.article.llmRepair)?.applied === true ? "yes" : "no"}</Descriptions.Item></Descriptions> : null}
                   {selectedNode.processedArticle ? <Descriptions size="small" column={2} bordered><Descriptions.Item label="Processed title">{selectedNode.processedArticle.title ?? "-"}</Descriptions.Item><Descriptions.Item label="Published at">{formatDateTime(selectedNode.processedArticle.publishedAt)}</Descriptions.Item><Descriptions.Item label="Author">{selectedNode.processedArticle.author ?? "-"}</Descriptions.Item><Descriptions.Item label="Category">{selectedNode.processedArticle.category ?? "-"}</Descriptions.Item><Descriptions.Item label="Quality score">{formatNumber(selectedNode.processedArticle.qualityScore)}</Descriptions.Item><Descriptions.Item label="LLM model">{selectedNode.processedArticle.llmModel ?? "-"}</Descriptions.Item></Descriptions> : null}
                   {selectedNode.extractionSummary ? (
-                    <Card size="small" type="inner" title={t("crawlFrontier.console.nodeDrawer.cards.extractionSummary")}>
+                    <div className="surface-inset">
+                      <div className="kicker mb-2">{t("crawlFrontier.console.nodeDrawer.cards.extractionSummary")}</div>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Processed status">{selectedNode.extractionSummary.processedStatus ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label="Quality score">{formatNumber(selectedNode.extractionSummary.qualityScore)}</Descriptions.Item>
@@ -2697,10 +2708,11 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Missing fields" span={2}><Space wrap>{selectedNode.extractionSummary.missingFields.map((field) => <Tag key={`missing-${field}`} color="orange">{field}</Tag>)}{selectedNode.extractionSummary.missingFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
                         <Descriptions.Item label="Removed noise" span={2}><Space wrap>{(selectedNode.extractionSummary.removedNoiseTypes ?? []).map((field) => <Tag key={`noise-${field}`} color="purple">{field}</Tag>)}{(selectedNode.extractionSummary.removedNoiseTypes ?? []).length === 0 ? "-" : null}</Space></Descriptions.Item>
                       </Descriptions>
-                    </Card>
+                    </div>
                   ) : null}
                   {selectedNode.repairSummary ? (
-                    <Card size="small" type="inner" title={t("crawlFrontier.console.nodeDrawer.cards.repairSummary")}>
+                    <div className="surface-inset">
+                      <div className="kicker mb-2">{t("crawlFrontier.console.nodeDrawer.cards.repairSummary")}</div>
                       <Descriptions size="small" column={2} bordered>
                         <Descriptions.Item label="Attempted">{selectedNode.repairSummary.attempted ? "yes" : "no"}</Descriptions.Item>
                         <Descriptions.Item label="Applied">{selectedNode.repairSummary.applied ? "yes" : "no"}</Descriptions.Item>
@@ -2710,7 +2722,7 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label="Repaired fields" span={2}><Space wrap>{selectedNode.repairSummary.repairedFields.map((field) => <Tag key={`repair-applied-${field}`} color="green">{field}</Tag>)}{selectedNode.repairSummary.repairedFields.length === 0 ? "-" : null}</Space></Descriptions.Item>
                         <Descriptions.Item label="Error" span={2}>{selectedNode.repairSummary.error ?? "-"}</Descriptions.Item>
                       </Descriptions>
-                    </Card>
+                    </div>
                   ) : null}
                   {selectedNode.article?.llmRepair ? <Collapse items={[{ key: "repair", label: "Repair diagnostics JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.article.llmRepair)}</Typography.Paragraph> }]} /> : null}
                 </Space>

@@ -4,7 +4,6 @@ import { sanitizeCrawlOptions } from "@modular/utils";
 import {
   Alert,
   Button,
-  Card,
   Checkbox,
   Divider,
   Form,
@@ -1058,6 +1057,18 @@ export function NewsSourcesContent() {
         <PageHeader
           kicker={t("nav.groups.admin")}
           title={t("newsSources.title")}
+          meta={
+            lastUpdatedAt ? (
+              <span>
+                {t("newsSources.autoRefresh.updatedAt", {
+                  time: formatDateTime(lastUpdatedAt, locale, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  }),
+                })}
+              </span>
+            ) : undefined
+          }
           actions={
             canManage ? (
               <Space>
@@ -1071,9 +1082,7 @@ export function NewsSourcesContent() {
             ) : undefined
           }
         />
-        <Card className="content-card">
-          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-            <FilterBar>
+        <FilterBar>
               <Button
                 size="small"
                 onClick={() => void refreshAll()}
@@ -1142,11 +1151,12 @@ export function NewsSourcesContent() {
                   </Popover>
                 ) : null}
               </Space>
-            </FilterBar>
-            <Crawl4aiHealthCard
-              onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
-            />
-          <NewsSourcesOpsPanels
+        </FilterBar>
+        <Crawl4aiHealthCard
+          className="content-card"
+          onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
+        />
+        <NewsSourcesOpsPanels
             t={t}
             locale={locale}
             router={router}
@@ -1166,17 +1176,7 @@ export function NewsSourcesContent() {
             openCreate={openCreate}
             openOpmlImport={openOpmlImport}
           />
-          {lastUpdatedAt ? (
-            <Typography.Text type="secondary">
-              {t("newsSources.autoRefresh.updatedAt", {
-                time: formatDateTime(lastUpdatedAt, locale, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                }),
-              })}
-            </Typography.Text>
-          ) : null}
-
+        <div className="content-card">
           <NewsSourcesTable
             t={t}
             locale={locale}
@@ -1219,8 +1219,7 @@ export function NewsSourcesContent() {
             openSchedule={openSchedule}
             openBatchSchedule={openBatchSchedule}
           />
-          </Space>
-        </Card>
+        </div>
       </div>
       <NewsSourcesModals
         t={t}

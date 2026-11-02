@@ -21,7 +21,7 @@ export function TaskDetailMultiUrl({ config }: { config: CrawlTaskConfig }) {
     return null;
   }
   return (
-    <Card title={t("crawl.multiUrl.title")} style={{ marginTop: 24 }}>
+    <Card title={t("crawl.multiUrl.title")} className="content-card">
       <List
         dataSource={multiConfigs}
         renderItem={(item, index) => {

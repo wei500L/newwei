@@ -30,7 +30,7 @@ function NavButton({
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      className={`settings-nav-button block w-full rounded-2xl px-4 py-3 text-left no-underline ${
+      className={`settings-nav-button block w-full rounded px-4 py-3 text-left no-underline ${
         active ? 'settings-nav-button--active' : ''
       }`}
     >
@@ -118,12 +118,9 @@ export function AdminSettingsWorkspaceLayout({
           <Card className="content-card">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <Typography.Title level={5} style={{ margin: 0 }}>
-                  {t('adminSettings.workspace.title')}
-                </Typography.Title>
                 <Typography.Paragraph
                   type="secondary"
-                  style={{ marginBottom: 0, marginTop: 8 }}
+                  style={{ marginBottom: 0 }}
                 >
                   {t('adminSettings.workspace.description')}
                 </Typography.Paragraph>

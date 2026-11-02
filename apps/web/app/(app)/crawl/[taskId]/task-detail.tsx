@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { resolveLocale } from "@/lib/i18n";
@@ -155,15 +156,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   });
 
   if (status === "loading") {
-    return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Typography.Text type="secondary">
-          {t("common.loading")}
-        </Typography.Text>
-      </div>
-    );
+    return <DataStateBoundary state={{ kind: "initialLoading" }} />;
   }
 
   if (!canView) {
@@ -204,7 +197,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const results = task.results ?? [];
 
   return (
-    <div className="content-card flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <TaskDetailHeader
         task={task}
         liveStatus={opsLiveStatus}

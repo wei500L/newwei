@@ -79,24 +79,18 @@
 .groupSection,
 .mobileGroupLabel,
 .mobileGroupBody {
-  --tone-border: rgba(148, 163, 184, 0.44);
-  --tone-icon-bg: rgba(241, 245, 249, 0.96);
-  --tone-icon-border: rgba(148, 163, 184, 0.45);
-  --tone-icon-fg: var(--foreground);
-  --tone-counter-bg: rgba(255, 255, 255, 0.92);
-  --tone-counter-border: rgba(148, 163, 184, 0.5);
+  --tone-border: var(--border);
+  --tone-icon-bg: var(--surface-muted);
+  --tone-icon-border: var(--border);
+  --tone-icon-fg: var(--primary);
+  --tone-counter-bg: var(--surface);
+  --tone-counter-border: var(--border);
   --tone-counter-fg: var(--foreground);
-  --tone-link-hover-border: rgba(100, 116, 139, 0.62);
+  --tone-link-hover-border: var(--border-strong);
 }
 
 .groupSection {
   position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--tone-border);
-  background: var(--surface);
-  padding: 1rem;
-  box-shadow: var(--shadow-surface);
 }
 
 .groupHeader {
@@ -330,108 +324,4 @@
 
 .adminCollapse :global(.ant-collapse-content-box) {
   padding: 0 0.9rem 0.9rem !important;
-}
-
-.groupSection[data-tone="operations"],
-.mobileGroupLabel[data-tone="operations"],
-.mobileGroupBody[data-tone="operations"] {
-  --tone-border: rgba(14, 165, 233, 0.45);
-  --tone-icon-bg: rgba(224, 242, 254, 0.96);
-  --tone-icon-border: rgba(125, 211, 252, 0.68);
-  --tone-icon-fg: #075985;
-  --tone-counter-bg: rgba(240, 249, 255, 0.96);
-  --tone-counter-border: rgba(125, 211, 252, 0.7);
-  --tone-counter-fg: #075985;
-  --tone-link-hover-border: rgba(56, 189, 248, 0.72);
-}
-
-.groupSection[data-tone="monitoring"],
-.mobileGroupLabel[data-tone="monitoring"],
-.mobileGroupBody[data-tone="monitoring"] {
-  --tone-border: rgba(16, 185, 129, 0.44);
-  --tone-icon-bg: rgba(209, 250, 229, 0.96);
-  --tone-icon-border: rgba(110, 231, 183, 0.7);
-  --tone-icon-fg: #065f46;
-  --tone-counter-bg: rgba(236, 253, 245, 0.95);
-  --tone-counter-border: rgba(110, 231, 183, 0.72);
-  --tone-counter-fg: #065f46;
-  --tone-link-hover-border: rgba(45, 212, 191, 0.7);
-}
-
-.groupSection[data-tone="governance"],
-.mobileGroupLabel[data-tone="governance"],
-.mobileGroupBody[data-tone="governance"] {
-  --tone-border: rgba(245, 158, 11, 0.43);
-  --tone-icon-bg: rgba(254, 243, 199, 0.96);
-  --tone-icon-border: rgba(252, 211, 77, 0.72);
-  --tone-icon-fg: #92400e;
-  --tone-counter-bg: rgba(255, 251, 235, 0.95);
-  --tone-counter-border: rgba(252, 211, 77, 0.74);
-  --tone-counter-fg: #92400e;
-  --tone-link-hover-border: rgba(251, 191, 36, 0.7);
-}
-
-.groupSection[data-tone="platform"],
-.mobileGroupLabel[data-tone="platform"],
-.mobileGroupBody[data-tone="platform"] {
-  --tone-border: rgba(148, 163, 184, 0.46);
-  --tone-icon-bg: rgba(226, 232, 240, 0.95);
-  --tone-icon-border: rgba(148, 163, 184, 0.72);
-  --tone-icon-fg: var(--secondary-foreground);
-  --tone-counter-bg: rgba(248, 250, 252, 0.95);
-  --tone-counter-border: rgba(148, 163, 184, 0.74);
-  --tone-counter-fg: var(--secondary-foreground);
-  --tone-link-hover-border: rgba(100, 116, 139, 0.68);
-}
-
-:global(.dark) .groupSection[data-tone="operations"],
-:global(.dark) .mobileGroupLabel[data-tone="operations"],
-:global(.dark) .mobileGroupBody[data-tone="operations"] {
-  --tone-border: rgba(56, 189, 248, 0.38);
-  --tone-icon-bg: rgba(56, 189, 248, 0.18);
-  --tone-icon-border: rgba(125, 211, 252, 0.38);
-  --tone-icon-fg: #e0f2fe;
-  --tone-counter-bg: rgba(56, 189, 248, 0.18);
-  --tone-counter-border: rgba(125, 211, 252, 0.42);
-  --tone-counter-fg: #e0f2fe;
-  --tone-link-hover-border: rgba(125, 211, 252, 0.7);
-}
-
-:global(.dark) .groupSection[data-tone="monitoring"],
-:global(.dark) .mobileGroupLabel[data-tone="monitoring"],
-:global(.dark) .mobileGroupBody[data-tone="monitoring"] {
-  --tone-border: rgba(52, 211, 153, 0.38);
-  --tone-icon-bg: rgba(52, 211, 153, 0.17);
-  --tone-icon-border: rgba(110, 231, 183, 0.36);
-  --tone-icon-fg: #d1fae5;
-  --tone-counter-bg: rgba(52, 211, 153, 0.17);
-  --tone-counter-border: rgba(110, 231, 183, 0.4);
-  --tone-counter-fg: #d1fae5;
-  --tone-link-hover-border: rgba(110, 231, 183, 0.66);
-}
-
-:global(.dark) .groupSection[data-tone="governance"],
-:global(.dark) .mobileGroupLabel[data-tone="governance"],
-:global(.dark) .mobileGroupBody[data-tone="governance"] {
-  --tone-border: rgba(251, 191, 36, 0.38);
-  --tone-icon-bg: rgba(251, 191, 36, 0.17);
-  --tone-icon-border: rgba(252, 211, 77, 0.36);
-  --tone-icon-fg: #fef3c7;
-  --tone-counter-bg: rgba(251, 191, 36, 0.16);
-  --tone-counter-border: rgba(252, 211, 77, 0.4);
-  --tone-counter-fg: #fef3c7;
-  --tone-link-hover-border: rgba(252, 211, 77, 0.64);
-}
-
-:global(.dark) .groupSection[data-tone="platform"],
-:global(.dark) .mobileGroupLabel[data-tone="platform"],
-:global(.dark) .mobileGroupBody[data-tone="platform"] {
-  --tone-border: rgba(148, 163, 184, 0.38);
-  --tone-icon-bg: rgba(148, 163, 184, 0.16);
-  --tone-icon-border: rgba(148, 163, 184, 0.34);
-  --tone-icon-fg: var(--foreground);
-  --tone-counter-bg: rgba(148, 163, 184, 0.16);
-  --tone-counter-border: rgba(148, 163, 184, 0.38);
-  --tone-counter-fg: var(--foreground);
-  --tone-link-hover-border: rgba(148, 163, 184, 0.62);
 }

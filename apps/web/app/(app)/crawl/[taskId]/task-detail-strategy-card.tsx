@@ -70,7 +70,7 @@ export function TaskDetailStrategyCard({ config, strategy }: StrategyCardProps) 
   return (
     <Card
       size="small"
-      style={{ marginBottom: 16 }}
+      className="content-card"
       title={t("crawl.detail.strategy.title")}
     >
       <Space wrap size={[4, 6]}>

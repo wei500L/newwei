@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { PageHeader } from '@/components/page-header';
+import { SectionHeader } from '@/components/section-header';
 
 import {
   buildAdminSettingsPanelSelectionHref,
@@ -155,14 +156,14 @@ function SettingsPanelSection({
     <section
       id={panel.id}
       ref={sectionRef}
-      className={`settings-section-shell scroll-mt-28 rounded-[28px] p-5 ${
+      className={`settings-section-shell scroll-mt-28 rounded-lg p-5 ${
         active ? 'settings-section-shell--active' : ''
       }`}
     >
       <div className="mb-5">
-        <Typography.Title level={5} style={{ marginBottom: 6 }}>
-          {t(panel.titleKey, { defaultValue: panel.defaultTitle })}
-        </Typography.Title>
+        <SectionHeader
+          title={t(panel.titleKey, { defaultValue: panel.defaultTitle })}
+        />
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
           {t(getAdminSettingsPanelDescriptionKey(panel.id), {
             defaultValue: panel.defaultDescription,

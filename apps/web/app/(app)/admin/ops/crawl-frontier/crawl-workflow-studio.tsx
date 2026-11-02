@@ -29,6 +29,7 @@ import {
   Select,
   Space,
   Spin,
+  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -1190,12 +1191,12 @@ function WorkflowStudioInner({
                         </Descriptions>
                         {(compareResult!.definitionDiff.settings ?? []).length >
                         0 ? (
-                          <Card
-                            size="small"
-                            title={t(
-                              "crawlFrontier.workflowStudio.compare.cards.settingsDiff",
-                            )}
-                          >
+                          <div className="surface-inset">
+                            <div className="kicker mb-2">
+                              {t(
+                                "crawlFrontier.workflowStudio.compare.cards.settingsDiff",
+                              )}
+                            </div>
                             <Space
                               direction="vertical"
                               size={8}
@@ -1204,7 +1205,7 @@ function WorkflowStudioInner({
                               {(
                                 compareResult!.definitionDiff.settings ?? []
                               ).map((entry) => (
-                                <Card key={entry.key} size="small">
+                                <div key={entry.key} className="hairline-b py-2">
                                   <Space
                                     direction="vertical"
                                     size={4}
@@ -1217,17 +1218,17 @@ function WorkflowStudioInner({
                                       {`${JSON.stringify(entry.left)} -> ${JSON.stringify(entry.right)}`}
                                     </Typography.Text>
                                   </Space>
-                                </Card>
+                                </div>
                               ))}
                             </Space>
-                          </Card>
+                          </div>
                         ) : null}
-                        <Card
-                          size="small"
-                          title={t(
-                            "crawlFrontier.workflowStudio.compare.cards.nodeDiff",
-                          )}
-                        >
+                        <div className="surface-inset">
+                          <div className="kicker mb-2">
+                            {t(
+                              "crawlFrontier.workflowStudio.compare.cards.nodeDiff",
+                            )}
+                          </div>
                           <Space
                             direction="vertical"
                             size={8}
@@ -1236,7 +1237,7 @@ function WorkflowStudioInner({
                             {(
                               compareResult!.definitionDiff.nodes?.added ?? []
                             ).map((node) => (
-                              <Card key={`added-${node.id}`} size="small">
+                              <div key={`added-${node.id}`} className="hairline-b py-2">
                                 <Space wrap size={[6, 6]}>
                                   <Tag color="green">
                                     {t(
@@ -1248,12 +1249,12 @@ function WorkflowStudioInner({
                                     {node.label}
                                   </Typography.Text>
                                 </Space>
-                              </Card>
+                              </div>
                             ))}
                             {(
                               compareResult!.definitionDiff.nodes?.removed ?? []
                             ).map((node) => (
-                              <Card key={`removed-${node.id}`} size="small">
+                              <div key={`removed-${node.id}`} className="hairline-b py-2">
                                 <Space wrap size={[6, 6]}>
                                   <Tag color="red">
                                     {t(
@@ -1265,12 +1266,12 @@ function WorkflowStudioInner({
                                     {node.label}
                                   </Typography.Text>
                                 </Space>
-                              </Card>
+                              </div>
                             ))}
                             {(
                               compareResult!.definitionDiff.nodes?.changed ?? []
                             ).map((node) => (
-                              <Card key={`changed-${node.id}`} size="small">
+                              <div key={`changed-${node.id}`} className="hairline-b py-2">
                                 <Space
                                   direction="vertical"
                                   size={4}
@@ -1291,7 +1292,7 @@ function WorkflowStudioInner({
                                     {`fields: ${node.changedFields.join(", ")}`}
                                   </Typography.Text>
                                 </Space>
-                              </Card>
+                              </div>
                             ))}
                             {(compareResult!.definitionDiff.nodes?.added
                               .length ?? 0) === 0 &&
@@ -1306,7 +1307,7 @@ function WorkflowStudioInner({
                               </Typography.Text>
                             ) : null}
                           </Space>
-                        </Card>
+                        </div>
                         <Card
                           size="small"
                           title={t(
@@ -2005,44 +2006,25 @@ function WorkflowStudioInner({
           />
         ) : (
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
-            <Row gutter={[16, 16]}>
-              <Col xs={24} md={8}>
-                <Card size="small">
-                  <Typography.Text type="secondary">Workflow</Typography.Text>
-                  <Typography.Title
-                    level={5}
-                    style={{ marginTop: 8, marginBottom: 0 }}
-                  >
-                    {trialResult.workflow.name}
-                  </Typography.Title>
-                  <Typography.Text type="secondary">
-                    {`v${trialResult.workflow.version}`}
-                  </Typography.Text>
-                </Card>
-              </Col>
-              <Col xs={24} md={8}>
-                <Card size="small">
-                  <Typography.Text type="secondary">Candidates</Typography.Text>
-                  <Typography.Title
-                    level={5}
-                    style={{ marginTop: 8, marginBottom: 0 }}
-                  >
-                    {trialResult.candidates.length}
-                  </Typography.Title>
-                </Card>
-              </Col>
-              <Col xs={24} md={8}>
-                <Card size="small">
-                  <Typography.Text type="secondary">Selected</Typography.Text>
-                  <Typography.Title
-                    level={5}
-                    style={{ marginTop: 8, marginBottom: 0 }}
-                  >
-                    {trialResult.selectedCandidates.length}
-                  </Typography.Title>
-                </Card>
-              </Col>
-            </Row>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <Statistic
+                title={t("crawlFrontier.workflowStudio.trial.workflow")}
+                value={trialResult.workflow.name}
+                suffix={`v${trialResult.workflow.version}`}
+              />
+              <div className="md:border-l md:border-[var(--border)] md:pl-4">
+                <Statistic
+                  title={t("crawlFrontier.workflowStudio.trial.candidates")}
+                  value={trialResult.candidates.length}
+                />
+              </div>
+              <div className="md:border-l md:border-[var(--border)] md:pl-4">
+                <Statistic
+                  title={t("crawlFrontier.workflowStudio.trial.selected")}
+                  value={trialResult.selectedCandidates.length}
+                />
+              </div>
+            </div>
             <Row gutter={[16, 16]}>
               <Col xs={24} xl={9}>
                 <Card
@@ -2060,7 +2042,7 @@ function WorkflowStudioInner({
                       <Card
                         key={step.nodeId}
                         size="small"
-                        style={{ background: "#fffdf8" }}
+                        className="bg-surface-muted"
                       >
                         <Space
                           direction="vertical"

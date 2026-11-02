@@ -5,7 +5,6 @@ import type {
   message} from "antd";
 import {
   Button,
-  Card,
   Dropdown,
   Input,
   Modal,
@@ -1230,7 +1229,7 @@ export function NewsSourcesTable({
   return (
     <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           {canManage && selectedSourceIds.length > 0 ? (
-            <Card size="small">
+            <div className="surface-inset">
               <Space wrap>
                 <Typography.Text strong>
                   {t("newsSources.selection.count", {
@@ -1287,7 +1286,7 @@ export function NewsSourcesTable({
                   {t("common.clear")}
                 </Button>
               </Space>
-            </Card>
+            </div>
           ) : null}
           <Input
             id="news-sources-search"
