@@ -14,34 +14,6 @@ export const PAPER_BACKGROUND_GRADIENT =
   'radial-gradient(120% 60% at 50% -10%, var(--aura-color-1) 0%, transparent 60%)';
 
 /**
- * AuraBackground 三层径向渐变的主题配色。
- * 每套包含 color1 / color2 / color3，分别注入三个光晕层。
- * default 兜底沿用 CSS 变量（前两层）+ 白色微光（第三层）。
- */
-/** @deprecated FE-UI 批0 后无消费方，留待 UI-5 删除 */
-export const AURA_BACKGROUND_COLORS = {
-  finance: {
-    color1: 'rgba(245, 158, 11, 0.2)',
-    color2: 'rgba(217, 119, 6, 0.16)',
-    color3: 'rgba(252, 211, 77, 0.12)',
-  },
-  tech: {
-    color1: 'rgba(59, 130, 246, 0.16)',
-    color2: 'rgba(139, 92, 246, 0.12)',
-    color3: 'rgba(56, 189, 248, 0.1)',
-  },
-  default: {
-    color1: 'var(--aura-color-1)',
-    color2: 'var(--aura-color-2)',
-    color3: 'rgba(255, 255, 255, 0.06)',
-  },
-} as const;
-
-/** AuraBentoCard 鼠标跟随光晕（radial-gradient 中心色）。 */
-/** @deprecated FE-UI 批0 后无消费方，留待 UI-5 删除 */
-export const AURA_CARD_GLOW = 'rgba(255,255,255,0.1)';
-
-/**
  * EmptyDigestSvg 各图元的 SVG 颜色。
  * shadow: feDropShadow floodColor；aura*: 光晕圆形 fill / 图标 fill / stroke；
  * placeholder: bento 占位条 rect fill。
