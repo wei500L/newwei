@@ -36,6 +36,29 @@ vi.mock("@/lib/api-client", () => ({
   createApiClient: () => apiMock,
 }));
 
+// ChartEmptyState（DataStateBoundary 的空态）消费 useChartTheme，jsdom 无
+// 完整 ThemeProvider token 上下文，走确定性替身（与 data-state-boundary 测试一致）。
+vi.mock("@/hooks/use-chart-theme", () => ({
+  useChartTheme: () => ({
+    echartsTheme: "smart-light",
+    colors: {
+      primary: "#1f3b7b",
+      bullish: "#1b9e77",
+      bearish: "#d95f02",
+      destructive: "#dc2626",
+      accent: "#d97706",
+      background: "transparent",
+      foreground: "#475569",
+      border: "#e2e8f0",
+      grid: "rgba(15, 23, 42, 0.08)",
+      tooltipBg: "#0f172a",
+      tooltipText: "#f8fafc",
+      secondary: "#e2e8f0",
+    },
+    fontFamily: "var(--font-mono), monospace",
+  }),
+}));
+
 interface RecordedRequest {
   url: string;
   body: unknown;

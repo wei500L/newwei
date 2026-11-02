@@ -14,7 +14,6 @@ import {
   Button,
   Card,
   Checkbox,
-  Empty,
   Form,
   Input,
   List,
@@ -35,6 +34,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { createApiClient } from "@/lib/api-client";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
 import { safeHttpUrl } from "@/lib/url";
@@ -784,6 +784,7 @@ export function SituationMonitorMonitorsPanel({
       <Card
         title={t("situationMonitor.monitors.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+        classNames={{ body: "rail-scrollbar" }}
       >
         <Typography.Text type="secondary">
           {t("common.unauthorized")}
@@ -796,6 +797,7 @@ export function SituationMonitorMonitorsPanel({
     <Card
       title={t("situationMonitor.monitors.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       extra={
         <Space size="small">
           <Button
@@ -840,13 +842,11 @@ export function SituationMonitorMonitorsPanel({
               ),
               children:
                 monitorsLoading && monitors.length === 0 ? (
-                  <div className="py-6 text-center">
-                    <Spin />
-                  </div>
+                  <DataStateBoundary state={{ kind: "initialLoading" }} />
                 ) : sortedMonitors.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("situationMonitor.monitors.empty")}
+                  <DataStateBoundary
+                    state={{ kind: "empty" }}
+                    emptyDescription={t("situationMonitor.monitors.empty")}
                   />
                 ) : (
                   <List
@@ -914,25 +914,19 @@ export function SituationMonitorMonitorsPanel({
                             <Typography.Text strong>
                               {monitor.name}
                             </Typography.Text>
-                            <Tag
-                              color={
-                                monitor.kind === "system_sync"
-                                  ? "purple"
-                                  : "blue"
-                              }
-                            >
+                            <Tag>
                               {monitor.kind === "system_sync"
                                 ? t("situationMonitor.monitors.systemSync")
                                 : t("situationMonitor.monitors.manual")}
                             </Tag>
-                            <Tag color={monitor.enabled ? "green" : "default"}>
+                            <Tag color={monitor.enabled ? "success" : "default"}>
                               {monitor.enabled
                                 ? t("common.enabled")
                                 : t("common.disabled")}
                             </Tag>
-                            <Tag color="geekblue">
+                            <span className="font-mono text-xs text-muted-foreground">
                               {matchCounts[monitor.id] ?? 0}
-                            </Tag>
+                            </span>
                             {monitor.queryEmbeddingModel ? (
                               <Tag>{monitor.queryEmbeddingModel}</Tag>
                             ) : null}
@@ -949,11 +943,8 @@ export function SituationMonitorMonitorsPanel({
                           {monitor.approvedTopics.length > 0 ? (
                             <Space size={6} wrap>
                               {monitor.approvedTopics.map((topic) => (
-                                <Tag
-                                  key={`${monitor.id}:topic:${topic}`}
-                                  color="blue"
-                                >
-                                  {topic}
+                                <Tag key={`${monitor.id}:topic:${topic}`}>
+                                  {t("situationMonitor.monitors.dimension.topic")}·{topic}
                                 </Tag>
                               ))}
                             </Space>
@@ -961,11 +952,8 @@ export function SituationMonitorMonitorsPanel({
                           {monitor.approvedEntities.length > 0 ? (
                             <Space size={6} wrap>
                               {monitor.approvedEntities.map((entity) => (
-                                <Tag
-                                  key={`${monitor.id}:entity:${entity}`}
-                                  color="purple"
-                                >
-                                  {entity}
+                                <Tag key={`${monitor.id}:entity:${entity}`}>
+                                  {t("situationMonitor.monitors.dimension.entity")}·{entity}
                                 </Tag>
                               ))}
                             </Space>
@@ -973,11 +961,8 @@ export function SituationMonitorMonitorsPanel({
                           {monitor.approvedSources.length > 0 ? (
                             <Space size={6} wrap>
                               {monitor.approvedSources.map((source) => (
-                                <Tag
-                                  key={`${monitor.id}:source:${source}`}
-                                  color="gold"
-                                >
-                                  {source}
+                                <Tag key={`${monitor.id}:source:${source}`}>
+                                  {t("situationMonitor.monitors.dimension.source")}·{source}
                                 </Tag>
                               ))}
                             </Space>
@@ -985,11 +970,8 @@ export function SituationMonitorMonitorsPanel({
                           {monitor.approvedGeos.length > 0 ? (
                             <Space size={6} wrap>
                               {monitor.approvedGeos.map((geo) => (
-                                <Tag
-                                  key={`${monitor.id}:geo:${geo}`}
-                                  color="cyan"
-                                >
-                                  {geo}
+                                <Tag key={`${monitor.id}:geo:${geo}`}>
+                                  {t("situationMonitor.monitors.dimension.geo")}·{geo}
                                 </Tag>
                               ))}
                             </Space>
@@ -1026,9 +1008,9 @@ export function SituationMonitorMonitorsPanel({
               ),
               children:
                 sortedMatches.length === 0 ? (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description={t("situationMonitor.monitors.noMatches")}
+                  <DataStateBoundary
+                    state={{ kind: "empty" }}
+                    emptyDescription={t("situationMonitor.monitors.noMatches")}
                   />
                 ) : (
                   <List

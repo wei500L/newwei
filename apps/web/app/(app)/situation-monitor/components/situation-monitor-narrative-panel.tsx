@@ -7,6 +7,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { formatDateTime, type SupportedLocale } from "@/lib/i18n";
 
 import type {
@@ -346,7 +347,7 @@ export function SituationMonitorNarrativePanel(
 
         return (
           <Row gutter={[12, 12]}>
-            <Col xs={24} lg={8}>
+            <Col xs={24}>
               <Typography.Text strong>
                 {t("situationMonitor.narrative.path")}
               </Typography.Text>
@@ -394,7 +395,7 @@ export function SituationMonitorNarrativePanel(
                 </Space>
               </div>
             </Col>
-            <Col xs={24} lg={8}>
+            <Col xs={24}>
               <Typography.Text strong>
                 {t("situationMonitor.narrative.radarDetail")}
               </Typography.Text>
@@ -465,7 +466,7 @@ export function SituationMonitorNarrativePanel(
                 </div>
               ) : null}
             </Col>
-            <Col xs={24} lg={8}>
+            <Col xs={24}>
               <Typography.Text strong>
                 {t("situationMonitor.narrative.citations")}
               </Typography.Text>
@@ -584,15 +585,18 @@ export function SituationMonitorNarrativePanel(
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Typography.Text type="secondary">
         {t("situationMonitor.narrative.hint")}
       </Typography.Text>
       <div className="mt-3">
-        <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.crossing")}
-        </Typography.Title>
+        <SectionHeader
+          as="h3"
+          title={t("situationMonitor.narrative.crossing")}
+          className="mb-2"
+        />
         <Table
           rowKey="id"
           size="small"
@@ -604,9 +608,11 @@ export function SituationMonitorNarrativePanel(
         />
       </div>
       <div className="mt-5">
-        <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.emerging")}
-        </Typography.Title>
+        <SectionHeader
+          as="h3"
+          title={t("situationMonitor.narrative.emerging")}
+          className="mb-2"
+        />
         <Table
           rowKey="id"
           size="small"
@@ -618,9 +624,11 @@ export function SituationMonitorNarrativePanel(
         />
       </div>
       <div className="mt-5">
-        <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.watch")}
-        </Typography.Title>
+        <SectionHeader
+          as="h3"
+          title={t("situationMonitor.narrative.watch")}
+          className="mb-2"
+        />
         <Table
           rowKey="id"
           size="small"
@@ -632,9 +640,11 @@ export function SituationMonitorNarrativePanel(
         />
       </div>
       <div className="mt-5">
-        <Typography.Title level={5} style={{ marginBottom: 8 }}>
-          {t("situationMonitor.narrative.disinfo")}
-        </Typography.Title>
+        <SectionHeader
+          as="h3"
+          title={t("situationMonitor.narrative.disinfo")}
+          className="mb-2"
+        />
         <Table
           rowKey="id"
           size="small"
@@ -689,6 +699,7 @@ export function SituationMonitorMainCharacterPanel(props: {
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Table

@@ -42,6 +42,7 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={
         initialLoading ||
         (refreshStage === "external" && fedSnapshot === undefined)

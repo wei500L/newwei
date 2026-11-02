@@ -88,6 +88,7 @@ export function SituationMonitorLiveWebcamsPanel() {
       <Card
         title={t("situationMonitor.liveWebcams.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+        classNames={{ body: "rail-scrollbar" }}
         size="small"
       >
         <Space wrap size={6} style={{ marginBottom: 10 }}>
@@ -106,7 +107,7 @@ export function SituationMonitorLiveWebcamsPanel() {
         {!activation.active ? (
           <Alert type="info" showIcon message={inactiveReason} />
         ) : (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
             {feeds.map((feed) => (
               <div key={feed.id}>
                 <Space size={6} wrap style={{ marginBottom: 6 }}>
@@ -118,13 +119,7 @@ export function SituationMonitorLiveWebcamsPanel() {
                   src={buildYoutubeEmbedUrl(feed.videoId)}
                   allow="autoplay; encrypted-media; picture-in-picture"
                   referrerPolicy="strict-origin-when-cross-origin"
-                  style={{
-                    width: "100%",
-                    height: 180,
-                    border: "1px solid var(--border)",
-                    borderRadius: 8,
-                    background: "#000",
-                  }}
+                  className="aspect-video w-full rounded border border-[var(--border)] bg-black"
                 />
               </div>
             ))}

@@ -27,6 +27,33 @@ export function useSituationMonitorHeadlines(
   const { t } = useTranslation();
   const { translateToZh, monitorMatchesByKey, monitorColorById } = options;
 
+  const openTopicSearch = (topic: string) => {
+    window.open(
+      `/search?q=${encodeURIComponent(topic)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  const renderTopicTag = (topic: string, key: string) => (
+    <Tag
+      key={key}
+      color="default"
+      className="cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={() => openTopicSearch(topic)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openTopicSearch(topic);
+        }
+      }}
+    >
+      {topic}
+    </Tag>
+  );
+
   const renderHeadlineSummary = (entry: SituationMonitorHeadline) => {
     const rawSummary = translateToZh
       ? (entry.summaryZh ?? entry.summary)
@@ -53,22 +80,7 @@ export function useSituationMonitorHeadlines(
           .slice(0, limit)
       : [];
     if (topics.length === 0) return null;
-    return topics.map((topic) => (
-      <Tag
-        key={`${entry.id}:${topic}`}
-        color="default"
-        className="cursor-pointer"
-        onClick={() =>
-          window.open(
-            `/search?q=${encodeURIComponent(topic)}`,
-            "_blank",
-            "noopener,noreferrer",
-          )
-        }
-      >
-        {topic}
-      </Tag>
-    ));
+    return topics.map((topic) => renderTopicTag(topic, `${entry.id}:${topic}`));
   };
 
   const renderHeadlineDetails = (entry: SituationMonitorHeadline) => {
@@ -125,22 +137,7 @@ export function useSituationMonitorHeadlines(
             ) : null}
             {topics.length > 0 ? (
               <Space size={4} wrap>
-                {topics.map((topic) => (
-                  <Tag
-                    key={topic}
-                    color="default"
-                    className="cursor-pointer"
-                    onClick={() =>
-                      window.open(
-                        `/search?q=${encodeURIComponent(topic)}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
-                  >
-                    {topic}
-                  </Tag>
-                ))}
+                {topics.map((topic) => renderTopicTag(topic, topic))}
               </Space>
             ) : null}
           </Space>
@@ -209,22 +206,12 @@ export function useSituationMonitorHeadlines(
                 <Tag color={monitorColorById.get(match.monitorId)}>
                   {match.monitorName}
                 </Tag>
-                {match.matchedTerms.map((term) => (
-                  <Tag
-                    key={`${match.itemKey}:${match.monitorId}:${term}`}
-                    color="default"
-                    className="cursor-pointer"
-                    onClick={() =>
-                      window.open(
-                        `/search?q=${encodeURIComponent(term)}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      )
-                    }
-                  >
-                    {term}
-                  </Tag>
-                ))}
+                {match.matchedTerms.map((term) =>
+                  renderTopicTag(
+                    term,
+                    `${match.itemKey}:${match.monitorId}:${term}`,
+                  ),
+                )}
                 {match.reasons.map((reason) => (
                   <Tag
                     key={`${match.itemKey}:${match.monitorId}:${reason.code}`}

@@ -104,6 +104,7 @@ export function SituationMonitorTelegramFeedPanel(
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={signalsLoadingTelegram && !telegramFeed}
     >
       {telegramFeed?.error ? (
@@ -293,6 +294,7 @@ export function SituationMonitorOrefAlertsPanel(
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={signalsLoadingOref && !orefAlerts}
     >
       {orefAlerts?.error ? (

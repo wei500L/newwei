@@ -268,7 +268,7 @@ function LiveNewsVideoTile(props: {
 
   if (!active) {
     return (
-      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/20 text-xs text-[var(--text-muted)]">
+      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-surface-muted text-xs text-muted-foreground">
         {unavailableLabel}
       </div>
     );
@@ -299,7 +299,7 @@ function LiveNewsVideoTile(props: {
 
   if (!shouldTryHls && resolvingYoutube) {
     return (
-      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
+      <div className="flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-surface-muted text-xs text-muted-foreground">
         {resolvingYoutubeLabel}
       </div>
     );
@@ -318,7 +318,7 @@ function LiveNewsVideoTile(props: {
       channel.sourceMode === "youtube-only" ? "default" : cooldownActive ? "orange" : "red";
 
     return (
-      <div className="relative flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-black/30 text-xs text-[var(--text-muted)]">
+      <div className="relative flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-surface-muted text-xs text-muted-foreground">
         <Tag color={statusColor} style={{ position: "absolute", top: 8, left: 8 }}>
           {statusLabel}
         </Tag>
@@ -530,6 +530,7 @@ export function SituationMonitorLiveNewsPanel() {
       <Card
         title={t("situationMonitor.liveNews.title")}
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+        classNames={{ body: "rail-scrollbar" }}
         size="small"
       >
         <Space wrap size={6} style={{ marginBottom: 10 }}>
@@ -574,7 +575,7 @@ export function SituationMonitorLiveNewsPanel() {
             message={t("situationMonitor.liveNews.noChannelSelected")}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
             {channels.map((channel) => (
               <div key={channel.id}>
                 <Typography.Text strong style={{ display: "block", marginBottom: 6 }}>
@@ -645,7 +646,7 @@ export function SituationMonitorLiveNewsPanel() {
                       style={{
                         cursor: "grab",
                         fontSize: 12,
-                        color: "var(--text-muted)",
+                        color: "var(--muted-foreground)",
                         userSelect: "none",
                       }}
                     >

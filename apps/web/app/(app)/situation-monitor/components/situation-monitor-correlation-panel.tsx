@@ -7,6 +7,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { safeHttpUrl } from "@/lib/url";
 
 import type {
@@ -680,6 +681,7 @@ export function SituationMonitorCorrelationPanel(
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Row gutter={[12, 12]}>
@@ -705,9 +707,11 @@ export function SituationMonitorCorrelationPanel(
           />
         </Col>
         <Col span={24}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.crossSourceTitle")}
-          </Typography.Title>
+          <SectionHeader
+            as="h3"
+            title={t("situationMonitor.correlation.crossSourceTitle")}
+            className="mb-2"
+          />
           <Table
             rowKey="id"
             size="small"
@@ -724,9 +728,11 @@ export function SituationMonitorCorrelationPanel(
           />
         </Col>
         <Col span={24}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.momentumTitle")}
-          </Typography.Title>
+          <SectionHeader
+            as="h3"
+            title={t("situationMonitor.correlation.momentumTitle")}
+            className="mb-2"
+          />
           <Table
             rowKey="id"
             size="small"
@@ -743,9 +749,11 @@ export function SituationMonitorCorrelationPanel(
           />
         </Col>
         <Col span={24}>
-          <Typography.Title level={5} style={{ marginBottom: 8 }}>
-            {t("situationMonitor.correlation.predictiveTitle")}
-          </Typography.Title>
+          <SectionHeader
+            as="h3"
+            title={t("situationMonitor.correlation.predictiveTitle")}
+            className="mb-2"
+          />
           <Table
             rowKey="id"
             size="small"

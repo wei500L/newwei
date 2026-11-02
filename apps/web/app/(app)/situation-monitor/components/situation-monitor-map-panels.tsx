@@ -43,6 +43,7 @@ export function SituationMonitorMapPanel(props: SituationMonitorMapPanelProps) {
     <Card
       title={t("situationMonitor.map.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       styles={{ body: { padding: 0, overflow: "hidden" } }}
     >
       <WarMap
@@ -136,6 +137,7 @@ export function SituationMonitorRealtimeSnapshotPanel(
     <Card
       title={t("situationMonitor.realtimeSnapshot.title")}
       className="sm-panel-card sm-realtime-snapshot-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       styles={{ body: { padding: 16 } }}
       loading={initialLoading}
     >
@@ -172,48 +174,48 @@ export function SituationMonitorRealtimeSnapshotPanel(
                   : "—"}
               </Typography.Text>
             </Space>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
+              <div className="surface-inset">
                 <Typography.Text
                   type="secondary"
                   className="block text-[11px] uppercase tracking-[0.08em]"
                 >
                   {t("situationMonitor.realtimeSnapshot.adjustedScore")}
                 </Typography.Text>
-                <Typography.Text strong>
+                <Typography.Text strong className="font-mono">
                   {data.pizzint.adjustedScore}
                 </Typography.Text>
               </div>
-              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+              <div className="surface-inset">
                 <Typography.Text
                   type="secondary"
                   className="block text-[11px] uppercase tracking-[0.08em]"
                 >
                   {t("situationMonitor.realtimeSnapshot.openLocations")}
                 </Typography.Text>
-                <Typography.Text strong>
+                <Typography.Text strong className="font-mono">
                   {data.pizzint.openLocations}
                 </Typography.Text>
               </div>
-              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+              <div className="surface-inset">
                 <Typography.Text
                   type="secondary"
                   className="block text-[11px] uppercase tracking-[0.08em]"
                 >
                   {t("situationMonitor.realtimeSnapshot.activeSpikes")}
                 </Typography.Text>
-                <Typography.Text strong>
+                <Typography.Text strong className="font-mono">
                   {data.pizzint.activeSpikes}
                 </Typography.Text>
               </div>
-              <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/30 px-3 py-2 dark:bg-white/5">
+              <div className="surface-inset">
                 <Typography.Text
                   type="secondary"
                   className="block text-[11px] uppercase tracking-[0.08em]"
                 >
                   {t("situationMonitor.realtimeSnapshot.avgPop")}
                 </Typography.Text>
-                <Typography.Text strong>{data.pizzint.avgPop}</Typography.Text>
+                <Typography.Text strong className="font-mono">{data.pizzint.avgPop}</Typography.Text>
               </div>
             </div>
           </Space>

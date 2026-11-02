@@ -14,7 +14,6 @@ import type { SituationMonitorMatchResult } from "../types/situation-monitor-mon
 import {
   formatWindowCompactLabel,
   formatWindowOptionLabel,
-  getCoverageModeColor,
   getCoverageModeLabel,
   getExternalSnapshotStatusColor,
   getExternalSnapshotStatusLabel,
@@ -53,41 +52,42 @@ export function SituationMonitorSummaryPanel(
       size="small"
       title={t("situationMonitor.summary.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Space direction="vertical" size={6} style={{ width: "100%" }}>
         <Space wrap size={8}>
-          <Tag color="geekblue">
+          <span className="font-mono text-xs text-muted-foreground">
             {t("situationMonitor.summary.articles", {
               count: coverageSummary?.articleCount ?? data?.analyzedItems ?? 0,
             })}
-          </Tag>
-          <Tag color="cyan">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t("situationMonitor.summary.clusters", {
               count: coverageSummary?.clusterCount ?? 0,
             })}
-          </Tag>
-          <Tag color="blue">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t("situationMonitor.summary.internal", {
               count: coverageSummary?.internalAnalyzedItems ?? 0,
             })}
-          </Tag>
-          <Tag color="purple">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t("situationMonitor.summary.external", {
               count: coverageSummary?.externalAnalyzedItems ?? 0,
             })}
-          </Tag>
-          <Tag color="green">
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
             {t("situationMonitor.summary.mixedClusters", {
               count: coverageSummary?.mixedSourceClusterCount ?? 0,
             })}
-          </Tag>
+          </span>
         </Space>
         <Space wrap size={8}>
           <Tag color="default">
             {formatWindowCompactLabel(windowHours, t, locale)}
           </Tag>
-          <Tag color={getCoverageModeColor(coverageSummary?.mode ?? "empty")}>
+          <Tag>
             {getCoverageModeLabel(coverageSummary?.mode ?? "empty", t)}
           </Tag>
         </Space>
@@ -123,6 +123,7 @@ export function SituationMonitorCoveragePanel(
       size="small"
       title={t("situationMonitor.coverage.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Space direction="vertical" size={6} style={{ width: "100%" }}>
@@ -219,6 +220,7 @@ export function SituationMonitorNextActionsPanel(
       size="small"
       title={t("situationMonitor.actions.title")}
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Space direction="vertical" size={8} style={{ width: "100%" }}>
@@ -287,10 +289,11 @@ export function SituationMonitorAlertsPanel(
           <span>
             {t("situationMonitor.alerts.title")}
           </span>
-          <Tag color="geekblue">{data?.alerts?.length ?? 0}</Tag>
+          <span className="font-mono text-xs text-muted-foreground">{data?.alerts?.length ?? 0}</span>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       {data?.alerts?.length ? (
@@ -307,11 +310,11 @@ export function SituationMonitorAlertsPanel(
                 <Space direction="vertical" size={2} style={{ width: "100%" }}>
                   <Space size={8} wrap>
                     <Tag
-                      color={entry.severity === "critical" ? "red" : "orange"}
+                      color={entry.severity === "critical" ? "error" : "warning"}
                     >
                       {entry.severity.toUpperCase()}
                     </Tag>
-                    <Tag color="blue">{categoryLabels[entry.category]}</Tag>
+                    <Tag>{categoryLabels[entry.category]}</Tag>
                     {renderHeadlineMonitorMatches(entry)}
                     {href ? (
                       <Typography.Link

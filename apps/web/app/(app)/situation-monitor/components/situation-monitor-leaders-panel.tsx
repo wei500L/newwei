@@ -37,6 +37,7 @@ export function SituationMonitorLeadersPanel(
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={initialLoading}
     >
       <Table
@@ -154,6 +155,7 @@ export function SituationMonitorSituationCard(
           </Space>
         }
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+        classNames={{ body: "rail-scrollbar" }}
         loading={initialLoading}
       >
         {panel?.subtitle ? (

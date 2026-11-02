@@ -42,6 +42,7 @@ export function SituationMonitorMarketsPanel(props: SharedProps) {
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={
         initialLoading ||
         (refreshStage === "external" && marketsSnapshot === undefined)
@@ -170,6 +171,7 @@ export function SituationMonitorCryptoPanel(props: SharedProps) {
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+      classNames={{ body: "rail-scrollbar" }}
       loading={
         initialLoading ||
         (refreshStage === "external" && cryptoSnapshot === undefined)

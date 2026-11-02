@@ -10745,6 +10745,12 @@
         "country_match": "Country matched",
         "conflict": "Location conflict",
         "unresolved": "Geo unresolved"
+      },
+      "dimension": {
+        "topic": "Topic",
+        "entity": "Entity",
+        "source": "Source",
+        "geo": "Region"
       }
     },
     "feeds": {

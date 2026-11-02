@@ -30,6 +30,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -793,6 +794,37 @@ export function SituationMonitorContent() {
     }
   };
 
+  const showSyncStatus = Boolean(session?.accessToken) || uiSync.state !== "idle";
+  const syncError = uiSync.state === "error";
+  const showRealtime = Boolean(session?.accessToken);
+  const realtimeError =
+    showRealtime && !realtimeState.connected && Boolean(realtimeState.error);
+  const statusTone =
+    syncError || realtimeError
+      ? "destructive"
+      : uiSync.state === "syncing" ||
+          uiSync.state === "loading" ||
+          (showRealtime && !realtimeState.connected)
+        ? "accent"
+        : "bullish";
+  const statusDotClass =
+    statusTone === "destructive"
+      ? "bg-[var(--destructive)]"
+      : statusTone === "accent"
+        ? "bg-[var(--accent)]"
+        : "bg-[var(--bullish)]";
+  const statusLabel = syncError
+    ? t("common.syncError")
+    : uiSync.state === "syncing"
+      ? t("common.syncing")
+      : uiSync.state === "loading"
+        ? t("common.loading")
+        : showRealtime && !realtimeState.connected
+          ? realtimeError
+            ? t("situationMonitor.realtime.error")
+            : t("situationMonitor.realtime.disconnected")
+          : t("common.synced");
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
@@ -802,183 +834,138 @@ export function SituationMonitorContent() {
           description={t("pages.situationMonitor.subtitle")}
         />
 
-        <Space wrap align="center" style={{ width: "100%" }}>
-          <Select
-            value={windowHours}
-            onChange={(value) => setWindowHours(value)}
-            options={[
-              {
-                label: t("situationMonitor.window.6h"),
-                value: 6,
-              },
-              {
-                label: t("situationMonitor.window.24h"),
-                value: 24,
-              },
-              {
-                label: t("situationMonitor.window.72h"),
-                value: 72,
-              },
-              {
-                label: t("situationMonitor.window.168h"),
-                value: 168,
-              },
-            ]}
-            style={{ width: 160 }}
-          />
-          <Select
-            value={scope}
-            onChange={(value) => setScope(value)}
-            options={[
-              {
-                label: t("situationMonitor.scope.tagged"),
-                value: "tagged",
-              },
-              {
-                label: t("situationMonitor.scope.all"),
-                value: "all",
-              },
-            ]}
-            style={{ width: 160 }}
-          />
-          <Tag color="default">{getScopeBadgeLabel(effectiveScope, t)}</Tag>
-          <Button
-            onClick={handleManualRefresh}
-            loading={loading || manualRefreshPending}
-          >
-            {t("situationMonitor.actions.refreshPageData")}
-          </Button>
-          <Button
-            icon={<SettingOutlined />}
-            onClick={() => setPanelsOpen(true)}
-          >
-            {t("situationMonitor.panels.title")}
-          </Button>
-          <Popover
-            placement="bottom"
-            content={
-              <Space direction="vertical" size={6}>
-                <Space wrap size={8}>
-                  <Tag color="default">
-                    {t("situationMonitor.shared.label")}
-                  </Tag>
-                  <Typography.Text type="secondary">
-                    {t("situationMonitor.notice.globalSignals")}
-                  </Typography.Text>
-                </Space>
-                <Space wrap size={8}>
-                  <Tag color="blue">
-                    {t("situationMonitor.notice.internalLabel")}
-                  </Tag>
-                  <Typography.Text type="secondary">
-                    {t("situationMonitor.notice.internalDescription")}
-                  </Typography.Text>
-                  <Tag color="purple">
-                    {t("situationMonitor.notice.gdeltLabel")}
-                  </Tag>
-                  <Typography.Text type="secondary">
-                    {t("situationMonitor.notice.gdeltDescription")}
-                  </Typography.Text>
-                </Space>
-              </Space>
-            }
-          >
-            <Button icon={<InfoCircleOutlined />}>
-              {t("situationMonitor.notice.title")}
-            </Button>
-          </Popover>
-          <Button
-            type={canEditLayout ? "primary" : "default"}
-            icon={<DragOutlined />}
-            onClick={toggleLayoutEdit}
-          >
-            {canEditLayout
-              ? t("situationMonitor.layout.done")
-              : t("situationMonitor.layout.edit")}
-          </Button>
-          {session?.accessToken ? (
-            <Space size={6} align="center">
-              {uiSync.state === "error" ? (
-                uiSync.lastErrorMessage ? (
-                  <Popover content={uiSync.lastErrorMessage}>
-                    <Tag color="red">
-                      {t("common.syncError")}
-                    </Tag>
-                  </Popover>
-                ) : (
-                  <Tag color="red">
-                    {t("common.syncError")}
-                  </Tag>
-                )
-              ) : uiSync.state === "syncing" ? (
-                <Tag color="processing">
-                  {t("common.syncing")}
-                </Tag>
-              ) : uiSync.state === "loading" ? (
-                <Tag color="processing">
-                  {t("common.loading")}
-                </Tag>
+        <FilterBar
+          actions={
+            <>
+              <Button
+                onClick={handleManualRefresh}
+                loading={loading || manualRefreshPending}
+              >
+                {t("situationMonitor.actions.refreshPageData")}
+              </Button>
+              <Button
+                icon={<SettingOutlined />}
+                onClick={() => setPanelsOpen(true)}
+              >
+                {t("situationMonitor.panels.title")}
+              </Button>
+              <Popover
+                placement="bottom"
+                content={
+                  <Space direction="vertical" size={6}>
+                    <Space wrap size={8}>
+                      <Tag>{t("situationMonitor.shared.label")}</Tag>
+                      <Typography.Text type="secondary">
+                        {t("situationMonitor.notice.globalSignals")}
+                      </Typography.Text>
+                    </Space>
+                    <Space wrap size={8}>
+                      <Tag>{t("situationMonitor.notice.internalLabel")}</Tag>
+                      <Typography.Text type="secondary">
+                        {t("situationMonitor.notice.internalDescription")}
+                      </Typography.Text>
+                      <Tag>{t("situationMonitor.notice.gdeltLabel")}</Tag>
+                      <Typography.Text type="secondary">
+                        {t("situationMonitor.notice.gdeltDescription")}
+                      </Typography.Text>
+                    </Space>
+                  </Space>
+                }
+              >
+                <Button icon={<InfoCircleOutlined />}>
+                  {t("situationMonitor.notice.title")}
+                </Button>
+              </Popover>
+              <Button
+                type={canEditLayout ? "primary" : "default"}
+                icon={<DragOutlined />}
+                onClick={toggleLayoutEdit}
+              >
+                {canEditLayout
+                  ? t("situationMonitor.layout.done")
+                  : t("situationMonitor.layout.edit")}
+              </Button>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch checked={autoRefresh} onChange={setAutoRefresh} />
+                <span>{t("situationMonitor.autoRefresh")}</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch checked={translateToZh} onChange={setTranslateToZh} />
+                <span>{t("situationMonitor.translateToZh")}</span>
+              </label>
+            </>
+          }
+        >
+          <FilterBar.Item width="sm">
+            <Select
+              className="w-full"
+              value={windowHours}
+              onChange={(value) => setWindowHours(value)}
+              options={[
+                { label: t("situationMonitor.window.6h"), value: 6 },
+                { label: t("situationMonitor.window.24h"), value: 24 },
+                { label: t("situationMonitor.window.72h"), value: 72 },
+                { label: t("situationMonitor.window.168h"), value: 168 },
+              ]}
+            />
+          </FilterBar.Item>
+          <FilterBar.Item width="sm">
+            <Select
+              className="w-full"
+              value={scope}
+              onChange={(value) => setScope(value)}
+              options={[
+                { label: t("situationMonitor.scope.tagged"), value: "tagged" },
+                { label: t("situationMonitor.scope.all"), value: "all" },
+              ]}
+            />
+          </FilterBar.Item>
+        </FilterBar>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="font-mono">
+            {getScopeBadgeLabel(effectiveScope, t)}
+          </span>
+          {showSyncStatus ? (
+            <span className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className={`inline-block h-2 w-2 rounded-full ${statusDotClass}`}
+              />
+              {realtimeError ? (
+                <Popover content={realtimeState.error}>
+                  <span>{statusLabel}</span>
+                </Popover>
               ) : (
-                <Tag color="green">
-                  {t("common.synced")}
-                </Tag>
+                <span>{statusLabel}</span>
               )}
-              {uiSync.state === "error" ? (
-                <Button size="small" onClick={() => requestUiSyncReload()}>
+              {syncError ? (
+                <Button
+                  type="link"
+                  size="small"
+                  className="h-auto p-0 text-xs"
+                  onClick={() => requestUiSyncReload()}
+                >
                   {t("common.retry")}
                 </Button>
               ) : null}
-            </Space>
+            </span>
           ) : null}
-          {session?.accessToken ? (
-            <Space size={6} align="center">
-              <Tag color={realtimeState.connected ? "green" : "default"}>
-                {realtimeState.connected
-                  ? t("situationMonitor.realtime.connected")
-                  : t("situationMonitor.realtime.disconnected")}
-              </Tag>
-              {!realtimeState.connected && realtimeState.error ? (
-                <Popover content={realtimeState.error}>
-                  <Tag color="orange">
-                    {t("situationMonitor.realtime.error")}
-                  </Tag>
-                </Popover>
-              ) : null}
-            </Space>
-          ) : null}
-          <Space size={8} align="center">
-            <Switch
-              checked={autoRefresh}
-              onChange={(checked) => setAutoRefresh(checked)}
-            />
-            <Typography.Text type="secondary">
-              {t("situationMonitor.autoRefresh")}
-            </Typography.Text>
-          </Space>
-          <Space size={8} align="center">
-            <Switch
-              checked={translateToZh}
-              onChange={(checked) => setTranslateToZh(checked)}
-            />
-            <Typography.Text type="secondary">
-              {t("situationMonitor.translateToZh")}
-            </Typography.Text>
-          </Space>
           {translateToZh && data?.translation && !data.translation.applied ? (
             data.translation.error ? (
               <Popover content={data.translation.error}>
-                <Tag color="red">
+                <span className="text-[var(--destructive)]">
                   {t("situationMonitor.translateError")}
-                </Tag>
+                </span>
               </Popover>
             ) : (
-              <Tag color="red">
+              <span className="text-[var(--destructive)]">
                 {t("situationMonitor.translateError")}
-              </Tag>
+              </span>
             )
           ) : null}
           {updatedAt ? (
-            <Typography.Text type="secondary">
+            <span>
               {t("situationMonitor.updatedAt", {
                 time: formatDateTime(updatedAt, locale, {
                   year: "numeric",
@@ -988,27 +975,27 @@ export function SituationMonitorContent() {
                   minute: "2-digit",
                 }),
               })}
-            </Typography.Text>
+            </span>
           ) : null}
           {refreshStage !== "idle" ? (
-            <Tag color="processing">
+            <span>
               {refreshStage === "core"
                 ? t("situationMonitor.refresh.core")
                 : t("situationMonitor.refresh.external")}
-            </Tag>
+            </span>
           ) : null}
           {typeof data?.analyzedItems === "number" ? (
-            <Typography.Text type="secondary">
+            <span>
               {t("situationMonitor.sampleSize", {
                 count: data.analyzedItems,
               })}
-            </Typography.Text>
+            </span>
           ) : null}
-        </Space>
+        </div>
       </div>
 
       {insightsWarnings.map((warning) => (
-        <div className="mt-3" key={`${warning.source}:${warning.code}`}>
+        <div key={`${warning.source}:${warning.code}`}>
           <Alert
             type={toAlertType(warning.severity)}
             showIcon
@@ -1019,7 +1006,7 @@ export function SituationMonitorContent() {
       ))}
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {taggedScopeNoResults ? (
-        <div className="mt-3">
+        <div>
           <Alert
             type="warning"
             showIcon
@@ -1041,7 +1028,7 @@ export function SituationMonitorContent() {
         </div>
       ) : null}
       {allScopeNoResults ? (
-        <div className="mt-3">
+        <div>
           <Alert
             type={allScopeEmptyState?.type ?? "warning"}
             showIcon
@@ -1073,7 +1060,7 @@ export function SituationMonitorContent() {
         </div>
       ) : null}
       {feedbackNotice ? (
-        <div className="mt-3">
+        <div>
           <Alert
             showIcon
             type={feedbackNotice.type}

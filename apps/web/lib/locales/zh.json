@@ -10745,6 +10745,12 @@
         "country_match": "国家命中",
         "conflict": "地点冲突",
         "unresolved": "地理未解析"
+      },
+      "dimension": {
+        "topic": "主题",
+        "entity": "实体",
+        "source": "来源",
+        "geo": "地区"
       }
     },
     "feeds": {

@@ -152,7 +152,7 @@ export function SituationMonitorFeedsPanel(
                 </Tag>
               </Popover>
             ) : null}
-            <Tag color="geekblue">
+            <Tag>
               {t("situationMonitor.feeds.clusterCount", {
                 count: diagnostics?.clusterCount ?? clusters.length,
               })}
@@ -164,7 +164,7 @@ export function SituationMonitorFeedsPanel(
             </Tag>
             {diagnostics ? (
               <Popover content={internalFeedTooltip}>
-                <Tag color="blue" className="cursor-help">
+                <Tag className="cursor-help">
                   {t("situationMonitor.feeds.internalCount", {
                     count: diagnostics.internalCount,
                   })}
@@ -173,7 +173,7 @@ export function SituationMonitorFeedsPanel(
             ) : null}
             {diagnostics ? (
               <Popover content={gdeltFeedTooltip}>
-                <Tag color="purple" className="cursor-help">
+                <Tag className="cursor-help">
                   {t("situationMonitor.feeds.externalCount", {
                     count: diagnostics.gdeltFallbackCount,
                   })}
@@ -183,6 +183,7 @@ export function SituationMonitorFeedsPanel(
           </Space>
         }
         className="sm-panel-card glass-panel border border-[var(--border)] h-full"
+        classNames={{ body: "rail-scrollbar" }}
         size="small"
         loading={initialLoading}
       >
@@ -218,7 +219,7 @@ export function SituationMonitorFeedsPanel(
             ) : null}
           </Space>
         ) : (
-          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <div className="flex flex-col">
             {clusters.slice(0, clusterItemsPerCategory).map((cluster) => {
               const lead = cluster.lead;
               const href = lead.link ? safeHttpUrl(lead.link) : null;
@@ -227,10 +228,9 @@ export function SituationMonitorFeedsPanel(
                 : null;
               const expanded = expandedClusterIds.includes(cluster.id);
               return (
-                <Card
+                <div
                   key={cluster.id}
-                  size="small"
-                  className="border border-[var(--border)]"
+                  className="hairline-b py-3 last:border-b-0"
                 >
                   <Space
                     direction="vertical"
@@ -248,12 +248,12 @@ export function SituationMonitorFeedsPanel(
                           {t("situationMonitor.feeds.mixedCluster")}
                         </Tag>
                       ) : null}
-                      <Tag color="blue">
+                      <Tag>
                         {t("situationMonitor.feeds.internalCount", {
                           count: cluster.internalCount,
                         })}
                       </Tag>
-                      <Tag color="purple">
+                      <Tag>
                         {t("situationMonitor.feeds.externalCount", {
                           count: cluster.externalCount,
                         })}
@@ -290,7 +290,7 @@ export function SituationMonitorFeedsPanel(
 
                     {renderHeadlineSummary(lead)}
 
-                    <div className="rounded-[var(--radius)] border border-[var(--border)] bg-white/20 px-3 py-2 dark:bg-white/[0.03]">
+                    <div className="surface-inset">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <Space wrap size={[8, 8]} style={{ flex: 1 }}>
                           <Typography.Text type="secondary">
@@ -418,10 +418,10 @@ export function SituationMonitorFeedsPanel(
                       />
                     ) : null}
                   </Space>
-                </Card>
+                </div>
               );
             })}
-          </Space>
+          </div>
         )}
       </Card>
     );
