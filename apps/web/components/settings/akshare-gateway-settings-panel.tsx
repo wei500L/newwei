@@ -399,12 +399,12 @@ export function AkshareGatewaySettingsPanel() {
       : null;
   const stageColor =
     stage === "failed"
-      ? "red"
+      ? "error"
       : stage === "restarting" || stage === "running" || stage === "queued"
-        ? "orange"
+        ? "processing"
         : stage === "idle"
-          ? "green"
-          : "default";
+          ? "success"
+          : undefined;
 
   useEffect(() => {
     if (!statusPolling || !presetStatus) {
@@ -505,10 +505,10 @@ export function AkshareGatewaySettingsPanel() {
     : t("common.notAvailable");
   const presetStatusColor =
     presetStatus?.lastStatus === "success"
-      ? "green"
+      ? "success"
       : presetStatus?.lastStatus === "failed"
-        ? "red"
-        : "default";
+        ? "error"
+        : undefined;
 
   const providerRows = useMemo(() => {
     const configs = fetchConfigsData?.economicDataFetchConfigs ?? [];
@@ -880,7 +880,7 @@ export function AkshareGatewaySettingsPanel() {
                     );
                   }
                   return (
-                    <Tag color={row.secretConfigured ? "green" : "orange"}>
+                    <Tag color={row.secretConfigured ? "success" : "warning"}>
                       {row.requiresSecret}
                       {" · "}
                       {row.secretConfigured
@@ -940,10 +940,10 @@ export function AkshareGatewaySettingsPanel() {
                     <Tag
                       color={
                         row.lastStatus === "success"
-                          ? "green"
+                          ? "success"
                           : row.lastStatus === "failed"
-                            ? "red"
-                            : "default"
+                            ? "error"
+                            : undefined
                       }
                     >
                       {row.lastStatus ?? t("common.notAvailable")}

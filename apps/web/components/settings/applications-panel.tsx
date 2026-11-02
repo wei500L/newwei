@@ -97,9 +97,9 @@ interface RecoverOrgFormValues {
 }
 
 const STATUS_TAG_COLORS: Record<RegistrationApplicationItem['status'], string> = {
-  pending: 'gold',
-  approved: 'green',
-  rejected: 'red',
+  pending: 'warning',
+  approved: 'success',
+  rejected: 'error',
 };
 
 // Derive the platform application's next step from its approval progress and

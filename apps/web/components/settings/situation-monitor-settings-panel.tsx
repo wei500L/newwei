@@ -311,21 +311,21 @@ type SituationMonitorProviderReadiness = "configured" | "missing" | "disabled";
 function getProviderReadinessMeta(
   readiness: SituationMonitorProviderReadiness,
   t: (key: string, options?: { defaultValue?: string }) => string,
-): { color: string; label: string } {
+): { color: string | undefined; label: string } {
   switch (readiness) {
     case "configured":
       return {
-        color: "green",
+        color: "success",
         label: t("systemSettings.situationMonitor.status.configured"),
       };
     case "disabled":
       return {
-        color: "default",
+        color: undefined,
         label: t("systemSettings.situationMonitor.status.disabled"),
       };
     default:
       return {
-        color: "orange",
+        color: "warning",
         label: t("systemSettings.situationMonitor.status.notConfigured"),
       };
   }
@@ -698,20 +698,19 @@ export function SituationMonitorSettingsPanel() {
     }
   };
 
-  const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
       ? t("systemSettings.situationMonitor.status.saved")
       : t("systemSettings.situationMonitor.status.env");
-  const translationEnabledColor = settings.translationApiEnabled ? "green" : "default";
+  const translationEnabledColor = settings.translationApiEnabled ? "success" : undefined;
   const translationEnabledLabel = settings.translationApiEnabled
     ? t("systemSettings.situationMonitor.status.enabled")
     : t("systemSettings.situationMonitor.status.disabled");
-  const telegramEnabledColor = settings.telegramEnabled ? "green" : "default";
+  const telegramEnabledColor = settings.telegramEnabled ? "success" : undefined;
   const telegramEnabledLabel = settings.telegramEnabled
     ? t("systemSettings.situationMonitor.status.enabled")
     : t("systemSettings.situationMonitor.status.disabled");
-  const fallbackEnabledColor = settings.translationFallbackApiEnabled ? "green" : "default";
+  const fallbackEnabledColor = settings.translationFallbackApiEnabled ? "success" : undefined;
   const fallbackEnabledLabel = settings.translationFallbackApiEnabled
     ? t("systemSettings.situationMonitor.status.enabled")
     : t("systemSettings.situationMonitor.status.disabled");
@@ -782,14 +781,12 @@ export function SituationMonitorSettingsPanel() {
   const qualitySummary = settings.qualitySummary;
   const externalSnapshotStatusColor =
     externalSnapshotStatus.status === "completed"
-      ? "green"
+      ? "success"
       : externalSnapshotStatus.status === "partial"
-        ? "gold"
+        ? "warning"
         : externalSnapshotStatus.status === "failed"
-          ? "red"
-          : externalSnapshotStatus.status === "disabled"
-            ? "default"
-            : "blue";
+          ? "error"
+          : undefined;
 
   if (loading && !loadedOnce) {
     return (
@@ -1048,7 +1045,7 @@ export function SituationMonitorSettingsPanel() {
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.situationMonitor.status.label")}</Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
           <Tag color={translationEnabledColor}>{translationEnabledLabel}</Tag>
           <Tag>{providerLabel}</Tag>
           <Tag color={telegramEnabledColor}>{telegramEnabledLabel}</Tag>
@@ -1062,7 +1059,7 @@ export function SituationMonitorSettingsPanel() {
           <Typography.Text type="secondary">
             {t("systemSettings.situationMonitor.status.translationApiKeySource")}
           </Typography.Text>
-          <Tag color={settings.hasTranslationApiKey ? "blue" : "default"}>{translationKeySourceLabel}</Tag>
+          <Tag>{translationKeySourceLabel}</Tag>
           <Tag>{settings.translationApiBaseUrl}</Tag>
         </Space>
         <Space wrap>
@@ -1078,7 +1075,7 @@ export function SituationMonitorSettingsPanel() {
           <Typography.Text type="secondary">
             {t("systemSettings.situationMonitor.status.liveHlsProxyCnn")}
           </Typography.Text>
-          <Tag color={settings.liveHlsProxyCnnConfigured ? "green" : "default"}>
+          <Tag color={settings.liveHlsProxyCnnConfigured ? "success" : undefined}>
             {settings.liveHlsProxyCnnConfigured
               ? t("systemSettings.situationMonitor.status.configured")
               : t("systemSettings.situationMonitor.status.notConfigured")}
@@ -1092,7 +1089,7 @@ export function SituationMonitorSettingsPanel() {
           <Typography.Text type="secondary">
             {t("systemSettings.situationMonitor.status.liveHlsProxyCnbc")}
           </Typography.Text>
-          <Tag color={settings.liveHlsProxyCnbcConfigured ? "green" : "default"}>
+          <Tag color={settings.liveHlsProxyCnbcConfigured ? "success" : undefined}>
             {settings.liveHlsProxyCnbcConfigured
               ? t("systemSettings.situationMonitor.status.configured")
               : t("systemSettings.situationMonitor.status.notConfigured")}
@@ -1106,24 +1103,24 @@ export function SituationMonitorSettingsPanel() {
           <Typography.Text type="secondary">
             {t("systemSettings.situationMonitor.status.finnhubApiKeySource")}
           </Typography.Text>
-          <Tag color={settings.hasFinnhubApiKey ? "blue" : "default"}>{finnhubKeySourceLabel}</Tag>
+          <Tag>{finnhubKeySourceLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.situationMonitor.status.fredApiKeySource")}</Typography.Text>
-          <Tag color={settings.hasFredApiKey ? "blue" : "default"}>{fredKeySourceLabel}</Tag>
+          <Tag>{fredKeySourceLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.situationMonitor.status.telegramApiIdSource")}</Typography.Text>
-          <Tag color={settings.hasTelegramApiId ? "blue" : "default"}>{telegramApiIdSourceLabel}</Tag>
+          <Tag>{telegramApiIdSourceLabel}</Tag>
           <Tag>{settings.telegramApiId || t("systemSettings.situationMonitor.status.notConfigured")}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.situationMonitor.status.telegramApiHashSource")}</Typography.Text>
-          <Tag color={settings.hasTelegramApiHash ? "blue" : "default"}>{telegramApiHashSourceLabel}</Tag>
+          <Tag>{telegramApiHashSourceLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.situationMonitor.status.telegramSessionSource")}</Typography.Text>
-          <Tag color={settings.hasTelegramSession ? "blue" : "default"}>{telegramSessionSourceLabel}</Tag>
+          <Tag>{telegramSessionSourceLabel}</Tag>
           <Tag>{settings.telegramChannelSet}</Tag>
           <Tag>{t("systemSettings.situationMonitor.status.telegramPollInterval", { ms: settings.telegramPollIntervalMs })}</Tag>
         </Space>
@@ -1147,7 +1144,7 @@ export function SituationMonitorSettingsPanel() {
           <InputNumber min={1} max={5_000} step={1} style={{ width: "100%" }} />
         </Form.Item>
 
-        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Typography.Title level={5} className="!mt-4 !mb-2">
           {t("systemSettings.situationMonitor.sections.translationApi")}
         </Typography.Title>
 
@@ -1193,14 +1190,14 @@ export function SituationMonitorSettingsPanel() {
           <Input placeholder={t("systemSettings.situationMonitor.placeholders.translationFallbackApiBaseUrl")} />
         </Form.Item>
 
-        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Typography.Title level={5} className="!mt-4 !mb-2">
           {t("systemSettings.situationMonitor.sections.externalApis")}
         </Typography.Title>
 
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={t("systemSettings.situationMonitor.sharedProviders.title")}
           description={t("systemSettings.situationMonitor.sharedProviders.description")}
         />
@@ -1256,7 +1253,7 @@ export function SituationMonitorSettingsPanel() {
           </Form.Item>
         </Space>
 
-        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Typography.Title level={5} className="!mt-4 !mb-2">
           {t("systemSettings.situationMonitor.sections.liveHlsProxy")}
         </Typography.Title>
 
@@ -1312,7 +1309,7 @@ export function SituationMonitorSettingsPanel() {
           <Input placeholder={t("systemSettings.situationMonitor.placeholders.liveHlsProxyAllowedHosts")} />
         </Form.Item>
 
-        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Typography.Title level={5} className="!mt-4 !mb-2">
           {t("systemSettings.situationMonitor.sections.telegram")}
         </Typography.Title>
 
@@ -1406,7 +1403,7 @@ export function SituationMonitorSettingsPanel() {
           </Form.Item>
         </Space>
 
-        <Typography.Title level={5} style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Typography.Title level={5} className="!mt-4 !mb-2">
           {t("systemSettings.situationMonitor.sections.telegramAuth")}
         </Typography.Title>
 
@@ -1446,7 +1443,7 @@ export function SituationMonitorSettingsPanel() {
           <Alert
             type="info"
             showIcon
-            style={{ marginBottom: "1rem" }}
+            className="!mb-4"
             message={t("systemSettings.situationMonitor.messages.telegramAuthRequestReady")}
             description={
               <Space direction="vertical" size={2}>
@@ -1491,7 +1488,7 @@ export function SituationMonitorSettingsPanel() {
           />
         </Form.Item>
 
-        <Space wrap style={{ marginBottom: "1rem" }}>
+        <Space wrap className="!mb-4">
           <Button
             onClick={handleTelegramCompleteAuth}
             loading={telegramAuthCompleting}

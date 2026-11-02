@@ -52,7 +52,7 @@ export function AuthCacheSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-6">
         {t("settings.authCache.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>

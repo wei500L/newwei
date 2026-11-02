@@ -207,7 +207,7 @@ export function StorageSettingsContent() {
           type="error"
           message={error}
           showIcon
-          style={{ marginBottom: 16 }}
+          className="!mb-4"
         />
       ) : null}
       {connectionResult ? (
@@ -223,18 +223,18 @@ export function StorageSettingsContent() {
             <div>
               <Typography.Paragraph
                 type="secondary"
-                style={{ marginBottom: 8 }}
+                className="!mb-2"
               >
                 {connectionResult.error
                   ? connectionResult.error
                   : t("storageSettings.testResult.noError")}
               </Typography.Paragraph>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+              <pre className="m-0" style={{ whiteSpace: "pre-wrap" }}>
                 {JSON.stringify(connectionResult, null, 2)}
               </pre>
             </div>
           }
-          style={{ marginBottom: 16 }}
+          className="!mb-4"
         />
       ) : null}
       <Form form={form} layout="vertical" onFinish={handleSave}>

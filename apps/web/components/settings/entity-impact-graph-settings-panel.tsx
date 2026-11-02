@@ -60,14 +60,14 @@ export function EntityImpactGraphSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-6">
         {t("settings.entityImpactGraph.description")}
       </Typography.Paragraph>
       <Alert
         type="info"
         showIcon
         message={t("settings.entityImpactGraph.hints.note")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Form.Item
@@ -154,7 +154,7 @@ export function EntityImpactGraphSettingsPanel() {
         </Form.Item>
       </Form>
 
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mb-0">
         {t("settings.entityImpactGraph.hints.allowedCategories", { values: CATEGORY_VALUES.join(", ") })}
       </Typography.Paragraph>
     </>

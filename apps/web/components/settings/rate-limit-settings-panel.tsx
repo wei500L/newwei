@@ -153,9 +153,9 @@ export function RateLimitSettingsPanel() {
             </Link>
           </span>
         }
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-6">
         {t("settings.rateLimits.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>

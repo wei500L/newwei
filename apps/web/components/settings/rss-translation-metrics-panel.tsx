@@ -357,7 +357,7 @@ export function RssTranslationMetricsPanel() {
         key: "provider",
         width: 110,
         render: (value: RssTranslationProvider) => (
-          <Tag color={value === "llm" ? "geekblue" : "blue"}>{value.toUpperCase()}</Tag>
+          <Tag>{value.toUpperCase()}</Tag>
         )
       },
       {
@@ -570,7 +570,6 @@ export function RssTranslationMetricsPanel() {
               title={t("settings.rssTranslationMetrics.table.title")}
             />
             <Table<RssTranslationMetricsDailyRow>
-              style={{ marginTop: 8 }}
               rowKey={(row) => `${row.date}:${row.provider}:${row.targetLanguage}`}
               loading={loading}
               columns={columns}

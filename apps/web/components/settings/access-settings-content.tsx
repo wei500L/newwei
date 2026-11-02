@@ -28,6 +28,7 @@ import { useSession } from 'next-auth/react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ChartEmptyState } from '@/components/chart-empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeader } from '@/components/section-header';
 import {
@@ -1017,7 +1018,7 @@ export function AccessSettingsContent() {
             onSave={handleRoleSave}
           />
         ) : (
-          <Empty description={t('settings.roles.empty')} />
+          <ChartEmptyState presentation="banner" description={t('settings.roles.empty')} />
         ),
     },
     {
@@ -1031,7 +1032,7 @@ export function AccessSettingsContent() {
         permissions.length > 0 ? (
           <PermissionsPanel permissions={permissions} roles={roles} />
         ) : (
-          <Empty description={t('settings.permissions.empty')} />
+          <ChartEmptyState presentation="banner" description={t('settings.permissions.empty')} />
         ),
     },
   ];
@@ -1151,12 +1152,12 @@ export function AccessSettingsContent() {
             selectedPanel === section.key ? 'settings-section-shell--active' : ''
           }`}
         >
-          <Typography.Title level={5} style={{ marginBottom: 6 }}>
+          <Typography.Title level={5} className="!mb-2">
             {section.title}
           </Typography.Title>
           <Typography.Paragraph
             type="secondary"
-            style={{ marginBottom: '1rem' }}
+            className="!mb-4"
           >
             {section.description}
           </Typography.Paragraph>
@@ -1433,18 +1434,18 @@ function RoleInlineEditor({
       onFinish={(values) => void onSave(role.id, values)}
     >
       <div
+        className="mb-2"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '0.5rem',
-          marginBottom: '0.5rem',
           flexWrap: 'wrap',
         }}
       >
-        <Typography.Title level={5} style={{ margin: 0 }}>
+        <Typography.Title level={5} className="!m-0">
           {localizedRole.label}
         </Typography.Title>
-        <Tag color={role.isSystem ? 'gold' : 'default'}>
+        <Tag>
           {role.isSystem ? t('settings.roles.system') : t('settings.roles.custom')}
         </Tag>
         <Tag>{t('settings.roles.permissionCount', { count: role.permissions.length })}</Tag>
@@ -1578,7 +1579,6 @@ function PermissionsPanel({
                 .map((role) => (
                   <Tag
                     key={`${record.id}-${role.id}`}
-                    color={role.isAdmin ? 'gold' : 'default'}
                     title={role.name}
                   >
                     {localizeAccessRole(
@@ -1673,7 +1673,7 @@ function UsersPanel({
                   <Tag>{t('settings.members.readOnlySelf')}</Tag>
                 ) : null}
                 {readOnlyReason === 'admin' ? (
-                  <Tag color="gold">{t('settings.members.readOnlyAdmin')}</Tag>
+                  <Tag>{t('settings.members.readOnlyAdmin')}</Tag>
                 ) : null}
               </Space>
               <Typography.Text type="secondary">{record.email}</Typography.Text>
@@ -1687,7 +1687,7 @@ function UsersPanel({
         key: 'status',
         width: 150,
         render: (value) => (
-          <Tag color={value ? 'green' : 'volcano'}>
+          <Tag color={value ? 'success' : undefined}>
             {value ? t('settings.members.status.active') : t('settings.members.status.inactive')}
           </Tag>
         ),
@@ -1699,7 +1699,7 @@ function UsersPanel({
         width: 180,
         render: (value) =>
           value ? (
-            <Tag color="cyan">{t('settings.members.verification.verified')}</Tag>
+            <Tag color="success">{t('settings.members.verification.verified')}</Tag>
           ) : (
             <Tag>{t('settings.members.verification.unverified')}</Tag>
           ),
@@ -1717,7 +1717,6 @@ function UsersPanel({
           const role = roleMap.get(value);
           return (
             <Tag
-              color={adminRoleIds.includes(value) ? 'gold' : role?.isSystem ? 'blue' : 'default'}
               title={role?.name ?? value}
             >
               {role ? localizeAccessRole(role, t).label : value}
@@ -1744,13 +1743,6 @@ function UsersPanel({
                   <Tag
                     key={`${record.id}-${roleId}-${index}`}
                     title={role?.name ?? roleId}
-                    color={
-                      adminRoleIds.includes(roleId)
-                        ? 'gold'
-                        : role?.isSystem
-                          ? 'blue'
-                          : 'default'
-                    }
                   >
                     {role
                       ? localizeAccessRole(role, t).label
@@ -2011,7 +2003,7 @@ function UserAccessDrawer({
           />
 
           <div>
-            <Typography.Title level={5} style={{ marginBottom: '0.5rem' }}>
+            <Typography.Title level={5} className="!mb-2">
               {getUserDisplayName(user)}
             </Typography.Title>
             <Typography.Text type="secondary">{user.email}</Typography.Text>
@@ -2045,7 +2037,7 @@ function UserAccessDrawer({
           </Form>
 
           <div>
-            <Typography.Title level={5} style={{ marginBottom: '0.5rem' }}>
+            <Typography.Title level={5} className="!mb-2">
               {t('settings.members.permissionPreviewTitle')}
             </Typography.Title>
             {permissionPreview.length > 0 ? (
@@ -2065,7 +2057,7 @@ function UserAccessDrawer({
                 )}
               />
             ) : (
-              <Empty description={t('settings.members.permissionPreviewEmpty')} />
+              <ChartEmptyState presentation="banner" description={t('settings.members.permissionPreviewEmpty')} />
             )}
           </div>
         </Space>
@@ -2113,7 +2105,7 @@ function UserLoginRecordsDrawer({
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: '1rem' }}
+          className="!mb-4"
           message={t('settings.members.loginRecordsLoadFailed')}
         />
       ) : null}
@@ -2132,7 +2124,7 @@ function UserLoginRecordsDrawer({
                   <Typography.Text strong>
                     {formatOptionalDateTime(record.createdAt, locale) ?? record.createdAt}
                   </Typography.Text>
-                  <Tag color={record.method === 'password' ? 'blue' : 'cyan'}>
+                  <Tag>
                     {getLoginMethodLabel(record.method, t)}
                   </Tag>
                 </Space>
@@ -2151,7 +2143,7 @@ function UserLoginRecordsDrawer({
           )}
         />
       ) : (
-        <Empty description={t('settings.members.loginRecordsEmpty')} />
+        <ChartEmptyState presentation="banner" description={t('settings.members.loginRecordsEmpty')} />
       )}
     </Drawer>
   );

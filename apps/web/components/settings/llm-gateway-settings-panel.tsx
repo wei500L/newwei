@@ -2,6 +2,7 @@
 
 import { Alert, Button, Space, Tag, Typography } from "antd";
 import type { ReactElement } from "react";
+import { useTranslation } from "react-i18next";
 
 import { SectionHeader } from "@/components/section-header";
 import { formatTimestamp, resolveLocale } from "@/lib/i18n";
@@ -97,14 +98,14 @@ export function LlmGatewaySettingsPanel(): ReactElement {
   return (
     <div className="flex flex-col gap-6">
       {contextHolder}
-    <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+    <Typography.Paragraph type="secondary" className="!mb-0">
       {t("settings.llmGateway.description")}
     </Typography.Paragraph>
 
     <section className="flex flex-col gap-3">
       <SectionHeader title={t("settings.llmGateway.guardrails.title")} />
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.guardrails.scope")}
         </Typography.Paragraph>
 
@@ -115,7 +116,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           description={
             <Typography.Paragraph
               type="secondary"
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
             >
               {t("settings.llmGateway.guardrails.howItWorks.body")}
             </Typography.Paragraph>
@@ -126,7 +127,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           as="h3"
           title={t("settings.llmGateway.guardrails.setup.title")}
         />
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
+        <ul className="m-0" style={{ paddingLeft: 18 }}>
           <li>
             <Typography.Text type="secondary">
               {t("settings.llmGateway.guardrails.setup.proxyConfigPrefix")}{" "}
@@ -152,7 +153,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           </li>
         </ul>
 
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.guardrails.notes")}
         </Typography.Paragraph>
       </Space>
@@ -174,7 +175,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
 
           <Typography.Paragraph
             type="secondary"
-            style={{ marginBottom: 0 }}
+            className="!mb-0"
           >
             {t("settings.llmGateway.fields.apiBase")}:{" "}
             <Typography.Text code copyable>
@@ -227,7 +228,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
           {proxyHealthProfileId === statusProfile.id && proxyHealth ? (
             <>
               <Space wrap>
-                <Tag color={proxyHealth.liveliness.ok ? "green" : "red"}>
+                <Tag color={proxyHealth.liveliness.ok ? "success" : "error"}>
                   {t("settings.llmGateway.proxyStatus.liveliness")}{" "}
                   {proxyHealth.liveliness.ok
                     ? t("common.success")
@@ -236,7 +237,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                     ? ` (HTTP ${proxyHealth.liveliness.status})`
                     : ""}
                 </Tag>
-                <Tag color={proxyHealth.readiness.ok ? "green" : "red"}>
+                <Tag color={proxyHealth.readiness.ok ? "success" : "error"}>
                   {t("settings.llmGateway.proxyStatus.readiness")}{" "}
                   {proxyHealth.readiness.ok
                     ? t("common.success")
@@ -306,7 +307,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                         </Typography.Text>
                         <Typography.Title
                           level={5}
-                          style={{ margin: "8px 0 4px" }}
+                          className="!mt-2 !mb-1"
                         >
                           {card.value}
                         </Typography.Title>
@@ -314,7 +315,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                           {card.description}
                         </Typography.Text>
                         {card.tagLabel ? (
-                          <div style={{ marginTop: 8 }}>
+                          <div className="mt-2">
                             <Tag color={card.tagColor}>{card.tagLabel}</Tag>
                           </div>
                         ) : null}
@@ -325,8 +326,8 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                     <Tag
                       color={
                         proxyGovernanceSettings.enabled
-                          ? "green"
-                          : "default"
+                          ? "success"
+                          : undefined
                       }
                     >
                       {proxyGovernanceSettings.enabled
@@ -337,7 +338,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                             "settings.llmGateway.proxyGovernance.summary.disabled",
                           )}
                     </Tag>
-                    <Tag color="blue">
+                    <Tag>
                       {t(
                         "settings.llmGateway.proxyGovernance.summary.targetProfile",
                         {
@@ -358,7 +359,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                         },
                       )}
                     </Tag>
-                    <Tag color="cyan">
+                    <Tag>
                       {t(
                         "settings.llmGateway.proxyGovernance.summary.parallel",
                         {
@@ -367,7 +368,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                         },
                       )}
                     </Tag>
-                    <Tag color="blue">
+                    <Tag>
                       {t(
                         "settings.llmGateway.proxyGovernance.summary.dayBudget",
                         {
@@ -378,7 +379,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                         },
                       )}
                     </Tag>
-                    <Tag color="purple">
+                    <Tag>
                       {t(
                         "settings.llmGateway.proxyGovernance.summary.monthBudget",
                         {
@@ -393,7 +394,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                   <Space wrap>
                     {governanceHasTrafficBindings ? (
                       governanceTrafficLabels.map((label) => (
-                        <Tag color="geekblue" key={label}>
+                        <Tag key={label}>
                           {t(
                             "settings.llmGateway.proxyGovernance.summary.binding",
                             {
@@ -403,7 +404,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                         </Tag>
                       ))
                     ) : (
-                      <Tag color="orange">
+                      <Tag color="warning">
                         {t(
                           "settings.llmGateway.proxyGovernance.summary.bindingMissing",
                         )}
@@ -505,8 +506,8 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                 <Tag
                   color={
                     statusProfileProxyModelInfo.loadBalancedGroups > 0
-                      ? "green"
-                      : "default"
+                      ? "success"
+                      : undefined
                   }
                 >
                   {t("settings.llmGateway.proxyStatus.loadBalancing")}
@@ -524,7 +525,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                   : {statusProfileProxyModelInfo.deployments}
                 </Tag>
                 {statusProfileProxyModelInfo.loadBalancedGroups > 0 ? (
-                  <Tag color="green">
+                  <Tag color="success">
                     {t(
                       "settings.llmGateway.proxyStatus.loadBalancedGroups",
                     )}
@@ -556,7 +557,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
               <Space wrap>
                 <Tag
                   color={
-                    statusProfileProxyLbTest.failed > 0 ? "red" : "green"
+                    statusProfileProxyLbTest.failed > 0 ? "error" : "success"
                   }
                 >
                   {t("settings.llmGateway.proxyLbTest.summary.title")}
@@ -571,7 +572,7 @@ export function LlmGatewaySettingsPanel(): ReactElement {
                 </Tag>
                 <Tag
                   color={
-                    statusProfileProxyLbTest.failed > 0 ? "red" : "default"
+                    statusProfileProxyLbTest.failed > 0 ? "error" : undefined
                   }
                 >
                   {t("settings.llmGateway.proxyLbTest.summary.failed")}

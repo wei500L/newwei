@@ -76,11 +76,11 @@ export function LlmGatewayEmbeddingRerankPanel({
               </Typography.Text>
               {settings.embeddingActiveId ? (
                 settings.embeddingActiveId === settings.activeId ? (
-                  <Tag color="purple">
+                  <Tag>
                     {t("settings.llmGateway.embeddingActive.lockedSame")}
                   </Tag>
                 ) : (
-                  <Tag color="purple">
+                  <Tag>
                     {t("settings.llmGateway.embeddingActive.independent")}
                   </Tag>
                 )
@@ -104,7 +104,7 @@ export function LlmGatewayEmbeddingRerankPanel({
                   )}
                 </Tag>
               ) : (
-                <Tag color="red">
+                <Tag color="error">
                   {t(
                     "settings.llmGateway.embeddingActive.missingEmbeddingModel",
                   )}
@@ -176,15 +176,15 @@ export function LlmGatewayEmbeddingRerankPanel({
                     <Space size={6} wrap>
                       <Typography.Text>{profile.name}</Typography.Text>
                       {!profile.enabled ? (
-                        <Tag color="red">{t("common.disabled")}</Tag>
+                        <Tag>{t("common.disabled")}</Tag>
                       ) : !profile.embeddingModel ? (
-                        <Tag color="red">
+                        <Tag color="error">
                           {t(
                             "settings.llmGateway.embeddingActive.missingEmbeddingModelShort",
                           )}
                         </Tag>
                       ) : (
-                        <Tag color="purple">
+                        <Tag>
                           {t("settings.llmGateway.embeddingActive.tag")}
                         </Tag>
                       )}
@@ -212,7 +212,7 @@ export function LlmGatewayEmbeddingRerankPanel({
           <>
             <Typography.Paragraph
               type="secondary"
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
             >
               {t("settings.llmGateway.fields.apiBase")}:{" "}
               <Typography.Text code copyable>
@@ -220,14 +220,14 @@ export function LlmGatewayEmbeddingRerankPanel({
               </Typography.Text>
             </Typography.Paragraph>
             <Space wrap>
-              <Tag color={embeddingActiveProfile.enabled ? "green" : "red"}>
+              <Tag color={embeddingActiveProfile.enabled ? "success" : "error"}>
                 {embeddingActiveProfile.enabled
                   ? t("common.enabled")
                   : t("common.disabled")}
               </Tag>
               <Tag
                 color={
-                  embeddingActiveProfile.hasApiKey ? "green" : "default"
+                  embeddingActiveProfile.hasApiKey ? "success" : undefined
                 }
               >
                 {embeddingActiveProfile.hasApiKey
@@ -291,11 +291,11 @@ export function LlmGatewayEmbeddingRerankPanel({
               <Typography.Text>{rerankActiveProfile.name}</Typography.Text>
               {settings.rerankActiveId ? (
                 settings.rerankActiveId === settings.activeId ? (
-                  <Tag color="gold">
+                  <Tag>
                     {t("settings.llmGateway.rerankActive.lockedSame")}
                   </Tag>
                 ) : (
-                  <Tag color="gold">
+                  <Tag>
                     {t("settings.llmGateway.rerankActive.independent")}
                   </Tag>
                 )
@@ -313,7 +313,7 @@ export function LlmGatewayEmbeddingRerankPanel({
                   {rerankActiveProfile.rerankModel}
                 </Typography.Text>
               ) : (
-                <Tag color="red">
+                <Tag color="error">
                   {t(
                     "settings.llmGateway.rerankActive.missingRerankModel",
                   )}
@@ -379,15 +379,15 @@ export function LlmGatewayEmbeddingRerankPanel({
                     <Space size={6} wrap>
                       <Typography.Text>{profile.name}</Typography.Text>
                       {!profile.enabled ? (
-                        <Tag color="red">{t("common.disabled")}</Tag>
+                        <Tag>{t("common.disabled")}</Tag>
                       ) : !profile.rerankModel ? (
-                        <Tag color="red">
+                        <Tag color="error">
                           {t(
                             "settings.llmGateway.rerankActive.missingRerankModelShort",
                           )}
                         </Tag>
                       ) : (
-                        <Tag color="gold">
+                        <Tag>
                           {t("settings.llmGateway.rerankActive.tag")}
                         </Tag>
                       )}
@@ -415,7 +415,7 @@ export function LlmGatewayEmbeddingRerankPanel({
           <>
             <Typography.Paragraph
               type="secondary"
-              style={{ marginBottom: 0 }}
+              className="!mb-0"
             >
               {t("settings.llmGateway.fields.apiBase")}:{" "}
               <Typography.Text code copyable>
@@ -423,13 +423,13 @@ export function LlmGatewayEmbeddingRerankPanel({
               </Typography.Text>
             </Typography.Paragraph>
             <Space wrap>
-              <Tag color={rerankActiveProfile.enabled ? "green" : "red"}>
+              <Tag color={rerankActiveProfile.enabled ? "success" : "error"}>
                 {rerankActiveProfile.enabled
                   ? t("common.enabled")
                   : t("common.disabled")}
               </Tag>
               <Tag
-                color={rerankActiveProfile.hasApiKey ? "green" : "default"}
+                color={rerankActiveProfile.hasApiKey ? "success" : undefined}
               >
                 {rerankActiveProfile.hasApiKey
                   ? t("settings.llmGateway.keySet")

@@ -32,7 +32,7 @@ export function LlmGatewayProxyLbTestResult({
 
   return (
     <Space direction="vertical" size="small" style={{ display: "flex" }}>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mb-0">
         {t("settings.llmGateway.fields.apiBase")}:{" "}
         <Typography.Text code copyable>
           {result.apiBase}
@@ -40,14 +40,14 @@ export function LlmGatewayProxyLbTestResult({
       </Typography.Paragraph>
 
       <Space wrap>
-        <Tag color="blue">{result.model}</Tag>
-        <Tag color={result.failed > 0 ? "red" : "green"}>
+        <Tag>{result.model}</Tag>
+        <Tag color={result.failed > 0 ? "error" : "success"}>
           {t("settings.llmGateway.proxyLbTest.summary.success", {
             n: result.succeeded,
           })}
           : {result.succeeded}
         </Tag>
-        <Tag color={result.failed > 0 ? "red" : "default"}>
+        <Tag color={result.failed > 0 ? "error" : undefined}>
           {t("settings.llmGateway.proxyLbTest.summary.failed")}
           : {result.failed}
         </Tag>

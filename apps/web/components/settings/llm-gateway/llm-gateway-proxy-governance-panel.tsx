@@ -20,6 +20,7 @@ import type { MessageInstance } from "antd/es/message/interface";
 import type { GlobalToken } from "antd/es/theme/interface";
 import type { TFunction } from "i18next";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useTranslation } from "react-i18next";
 
 import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -836,13 +837,7 @@ export function LlmGatewayProxyGovernancePanel({
                   </Typography.Text>
                   <Space wrap>
                     <Tag>{proxyGovernanceSettings.source}</Tag>
-                    <Tag
-                      color={
-                        proxyGovernanceSettings.targetProfileEnabled
-                          ? "geekblue"
-                          : "orange"
-                      }
-                    >
+                    <Tag>
                       {t(
                         "settings.llmGateway.proxyGovernance.status.targetProfile",
                         {
@@ -881,7 +876,7 @@ export function LlmGatewayProxyGovernancePanel({
                         </Typography.Text>
                         <Typography.Title
                           level={5}
-                          style={{ margin: "8px 0 4px" }}
+                          className="!mt-2 !mb-1"
                         >
                           {card.value}
                         </Typography.Title>
@@ -889,7 +884,7 @@ export function LlmGatewayProxyGovernancePanel({
                           {card.description}
                         </Typography.Text>
                         {card.tagLabel ? (
-                          <div style={{ marginTop: 8 }}>
+                          <div className="mt-2">
                             <Tag color={card.tagColor}>{card.tagLabel}</Tag>
                           </div>
                         ) : null}
@@ -977,9 +972,7 @@ export function LlmGatewayProxyGovernancePanel({
                 {t("settings.llmGateway.proxyGovernance.preflight.hint")}
               </Typography.Text>
               <Space wrap>
-                <Tag
-                  color={selectedGovernanceProfile ? "geekblue" : "default"}
-                >
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.preflight.targetProfile",
                     {
@@ -989,7 +982,7 @@ export function LlmGatewayProxyGovernancePanel({
                     },
                   )}
                 </Tag>
-                <Tag color={selectedGovernanceProfile ? "blue" : "default"}>
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.preflight.apiBase",
                     {
@@ -1000,15 +993,7 @@ export function LlmGatewayProxyGovernancePanel({
                     },
                   )}
                 </Tag>
-                <Tag
-                  color={
-                    proxyGovernancePreflight?.trafficBindings.completion ||
-                    proxyGovernancePreflight?.trafficBindings.embedding ||
-                    proxyGovernancePreflight?.trafficBindings.rerank
-                      ? "green"
-                      : "orange"
-                  }
-                >
+                <Tag>
                   {t(
                     "settings.llmGateway.proxyGovernance.preflight.bindings",
                     {
@@ -1204,13 +1189,7 @@ export function LlmGatewayProxyGovernancePanel({
               ) : null}
               {proxyGovernancePreflight?.health ? (
                 <Space wrap>
-                  <Tag
-                    color={
-                      proxyGovernancePreflight.health.liveliness.ok
-                        ? "green"
-                        : "red"
-                    }
-                  >
+                  <Tag color={proxyGovernancePreflight.health.liveliness.ok ? "success" : "error"}>
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.liveliness",
                       {
@@ -1220,13 +1199,7 @@ export function LlmGatewayProxyGovernancePanel({
                       },
                     )}
                   </Tag>
-                  <Tag
-                    color={
-                      proxyGovernancePreflight.health.readiness.ok
-                        ? "green"
-                        : "red"
-                    }
-                  >
+                  <Tag color={proxyGovernancePreflight.health.readiness.ok ? "success" : "error"}>
                     {t(
                       "settings.llmGateway.proxyGovernance.preflight.readiness",
                       {
@@ -1366,7 +1339,7 @@ export function LlmGatewayProxyGovernancePanel({
                       "settings.llmGateway.proxyGovernance.observed.cards.governedRatio",
                     )}
                   </Typography.Text>
-                  <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                  <Typography.Title level={5} className="!mt-2 !mb-1">
                     {formatObservedPercent(governanceObservedGovernedRatio)}
                   </Typography.Title>
                   <Typography.Text type="secondary">
@@ -1387,7 +1360,7 @@ export function LlmGatewayProxyGovernancePanel({
                       "settings.llmGateway.proxyGovernance.observed.cards.managedKeyRequests",
                     )}
                   </Typography.Text>
-                  <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                  <Typography.Title level={5} className="!mt-2 !mb-1">
                     {governanceUsage24h.governanceBreakdown.managedRuntimeKeyRequestCount.toLocaleString()}
                   </Typography.Title>
                   <Typography.Text type="secondary">
@@ -1402,7 +1375,7 @@ export function LlmGatewayProxyGovernancePanel({
                       "settings.llmGateway.proxyGovernance.observed.cards.profileKeyRequests",
                     )}
                   </Typography.Text>
-                  <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                  <Typography.Title level={5} className="!mt-2 !mb-1">
                     {governanceUsage24h.governanceBreakdown.profileKeyRequestCount.toLocaleString()}
                   </Typography.Title>
                   <Typography.Text type="secondary">
@@ -1417,7 +1390,7 @@ export function LlmGatewayProxyGovernancePanel({
                       "settings.llmGateway.proxyGovernance.observed.cards.successRate",
                     )}
                   </Typography.Text>
-                  <Typography.Title level={5} style={{ margin: "8px 0 4px" }}>
+                  <Typography.Title level={5} className="!mt-2 !mb-1">
                     {formatObservedPercent(
                       governanceUsage24h.statusBreakdown.successRate * 100,
                       2,

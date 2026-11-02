@@ -6,7 +6,6 @@ import {
   Alert,
   Button,
   Divider,
-  Empty,
   Form,
   Input,
   InputNumber,
@@ -21,6 +20,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
 
@@ -501,7 +501,7 @@ export function NewsDedupeSettingsPanel() {
                     <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} placeholder="…" />
                   </Form.Item>
 
-                  <Divider style={{ margin: "0.75rem 0" }} />
+                  <Divider />
 
                   <Form.Item
                     label={t("settings.newsDedupe.fields.llmJudgePromptVersion")}
@@ -545,12 +545,12 @@ export function NewsDedupeSettingsPanel() {
             <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
           </Form.Item>
 
-          <Divider style={{ margin: "0.75rem 0" }} />
+          <Divider />
 
           <Form.List name="scopedThresholds">
             {(fields, { add, remove }) => (
               <>
-                <Space wrap style={{ marginBottom: "0.75rem" }}>
+                <Space wrap>
                   <Tag>
                     {t("settings.newsDedupe.fields.defaultThreshold")}:{" "}
                     {formatThreshold(effectiveDefaultThreshold)}
@@ -563,7 +563,7 @@ export function NewsDedupeSettingsPanel() {
                 </Space>
 
                 {fields.length > 0 ? (
-                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8 }}>
                     <Typography.Text type="secondary" style={{ width: 220 }}>
                       {t("settings.newsDedupe.fields.sourceId")}
                     </Typography.Text>
@@ -581,11 +581,11 @@ export function NewsDedupeSettingsPanel() {
                 ) : null}
 
                 {fields.map((field) => (
-                  <Space key={field.key} align="baseline" style={{ display: "flex", marginBottom: 8 }}>
+                  <Space key={field.key} align="baseline" style={{ display: "flex" }}>
                     <Form.Item
                       {...field}
                       name={[field.name, "sourceId"]}
-                      style={{ width: 220, marginBottom: 0 }}
+                      className="!mb-0" style={{ width: 220 }}
                     >
                       <Input
                         placeholder={t("settings.newsDedupe.placeholders.sourceId")}
@@ -595,7 +595,7 @@ export function NewsDedupeSettingsPanel() {
                     <Form.Item
                       {...field}
                       name={[field.name, "language"]}
-                      style={{ width: 160, marginBottom: 0 }}
+                      className="!mb-0" style={{ width: 160 }}
                     >
                       <Input placeholder={t("settings.newsDedupe.placeholders.language")} />
                     </Form.Item>
@@ -603,7 +603,7 @@ export function NewsDedupeSettingsPanel() {
                     <Form.Item
                       {...field}
                       name={[field.name, "categoryPath"]}
-                      style={{ flex: 1, minWidth: 220, marginBottom: 0 }}
+                      className="!mb-0" style={{ flex: 1, minWidth: 220 }}
                     >
                       <Input
                         placeholder={t("settings.newsDedupe.placeholders.categoryPath")}
@@ -619,7 +619,7 @@ export function NewsDedupeSettingsPanel() {
                           message: t("settings.newsDedupe.validation.threshold")
                         }
                       ]}
-                      style={{ width: 220, marginBottom: 0 }}
+                      className="!mb-0" style={{ width: 220 }}
                     >
                       <InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} />
                     </Form.Item>
@@ -634,7 +634,7 @@ export function NewsDedupeSettingsPanel() {
                   </Space>
                 ))}
 
-                <Form.Item style={{ marginBottom: 0, marginTop: "0.5rem" }}>
+                <Form.Item className="!mb-0">
                   <Button
                     type="dashed"
                     onClick={() =>
@@ -701,7 +701,7 @@ export function NewsDedupeSettingsPanel() {
               scroll={{ x: "max-content" }}
             />
           ) : (
-            <Empty description={t("settings.newsDedupe.preview.empty")} />
+            <ChartEmptyState presentation="banner" description={t("settings.newsDedupe.preview.empty")} />
           )}
         </section>
 
@@ -715,7 +715,7 @@ export function NewsDedupeSettingsPanel() {
             <Space wrap style={{ display: "flex" }}>
               <Form.Item
                 label={t("settings.newsDedupe.tester.fields.sourceId")}
-                style={{ minWidth: 220, flex: 1, marginBottom: 0 }}
+                className="!mb-0" style={{ minWidth: 220, flex: 1 }}
               >
                 <Input
                   value={probeSourceId}
@@ -726,7 +726,7 @@ export function NewsDedupeSettingsPanel() {
 
               <Form.Item
                 label={t("settings.newsDedupe.tester.fields.language")}
-                style={{ minWidth: 160, marginBottom: 0 }}
+                className="!mb-0" style={{ minWidth: 160 }}
               >
                 <Input
                   value={probeLanguage}
@@ -737,7 +737,7 @@ export function NewsDedupeSettingsPanel() {
 
               <Form.Item
                 label={t("settings.newsDedupe.tester.fields.categoryPath")}
-                style={{ minWidth: 260, flex: 1, marginBottom: 0 }}
+                className="!mb-0" style={{ minWidth: 260, flex: 1 }}
               >
                 <Input
                   value={probeCategoryPath}
@@ -748,7 +748,7 @@ export function NewsDedupeSettingsPanel() {
 
               <Form.Item
                 label={t("settings.newsDedupe.tester.fields.summaryLength")}
-                style={{ width: 220, marginBottom: 0 }}
+                className="!mb-0" style={{ width: 220 }}
               >
                 <InputNumber
                   min={1}
@@ -770,7 +770,7 @@ export function NewsDedupeSettingsPanel() {
                     })`
                   : ` (${t("settings.newsDedupe.tester.results.default")})`}
               </Tag>
-              <Tag color="green">
+              <Tag>
                 {t("settings.newsDedupe.tester.results.final")}:{" "}
                 {formatThreshold(probeResult.finalThreshold)}
               </Tag>

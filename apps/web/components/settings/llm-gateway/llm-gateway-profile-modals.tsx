@@ -743,7 +743,7 @@ export function LlmGatewayProfileModals({
           void runTest(testProfile.id, values);
         }}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        <Typography.Paragraph type="secondary" className="!mb-3">
           {t("settings.llmGateway.fields.apiBase")}:{" "}
           <Typography.Text code copyable>
             {testProfile?.apiBase ?? "-"}
@@ -939,12 +939,12 @@ export function LlmGatewayProfileModals({
           type="error"
           showIcon
           message={testErrorMessage}
-          style={{ marginTop: 12 }}
+          className="!mt-3"
         />
       ) : null}
 
       {testResult ? (
-        <div style={{ marginTop: 12 }}>{renderTestResult(testResult)}</div>
+        <div className="mt-3">{renderTestResult(testResult)}</div>
       ) : null}
     </Modal>
 

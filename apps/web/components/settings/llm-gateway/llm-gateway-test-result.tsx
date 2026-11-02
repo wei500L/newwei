@@ -23,9 +23,9 @@ export function renderGatewayErrorMeta(error: {
 }): ReactElement {
   return (
     <Space wrap>
-      {error.code ? <Tag color="orange">code: {error.code}</Tag> : null}
+      {error.code ? <Tag>code: {error.code}</Tag> : null}
       {typeof error.status === "number" ? (
-        <Tag color="red">HTTP {error.status}</Tag>
+        <Tag>HTTP {error.status}</Tag>
       ) : null}
       {error.upstreamType ? <Tag>type: {error.upstreamType}</Tag> : null}
       {error.upstreamCode ? <Tag>code: {error.upstreamCode}</Tag> : null}
@@ -39,7 +39,7 @@ export function renderGatewayErrorMeta(error: {
         </Typography.Text>
       ) : null}
       {error.compatibilityError?.code ? (
-        <Tag color="gold">compat: {error.compatibilityError.code}</Tag>
+        <Tag>compat: {error.compatibilityError.code}</Tag>
       ) : null}
     </Space>
   );
@@ -54,7 +54,7 @@ export function LlmGatewayTestResult({
 }): ReactElement {
   return (
     <Space direction="vertical" size="small" style={{ display: "flex" }}>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+      <Typography.Paragraph type="secondary" className="!mb-0">
         {t("settings.llmGateway.fields.apiBase")}:{" "}
         <Typography.Text code copyable>
           {result.apiBase}
@@ -62,14 +62,14 @@ export function LlmGatewayTestResult({
       </Typography.Paragraph>
 
       {result.apiSurfaceUsed ? (
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.test.labels.apiSurface")}
           : <Typography.Text code>{result.apiSurfaceUsed}</Typography.Text>
         </Typography.Paragraph>
       ) : null}
 
       {result.authModeUsed ? (
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.test.labels.authMode")}
           : <Typography.Text code>{result.authModeUsed}</Typography.Text>
         </Typography.Paragraph>
@@ -103,13 +103,13 @@ export function LlmGatewayTestResult({
         />
       ) : null}
 
-      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+      <Typography.Title level={5} className="!mb-0">
         {t("settings.llmGateway.test.sections.completion")}
       </Typography.Title>
       {result.completion ? (
         <>
           <Space wrap>
-            <Tag color="blue">{result.completion.model}</Tag>
+            <Tag>{result.completion.model}</Tag>
             <Tag>{result.completion.latencyMs}ms</Tag>
             {result.completion.finishReason ? (
               <Tag>{result.completion.finishReason}</Tag>
@@ -122,7 +122,7 @@ export function LlmGatewayTestResult({
               </Tag>
             ) : null}
             {typeof result.completion.costUsd === "number" ? (
-              <Tag color="geekblue">
+              <Tag>
                 {t("settings.llmGateway.test.cost", {
                   cost: result.completion.costUsd.toFixed(6),
                 })}
@@ -130,7 +130,8 @@ export function LlmGatewayTestResult({
             ) : null}
           </Space>
           <Typography.Paragraph
-            style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
+            className="!mb-0"
+            style={{ whiteSpace: "pre-wrap" }}
           >
             {result.completion.content ?? "-"}
           </Typography.Paragraph>
@@ -160,12 +161,12 @@ export function LlmGatewayTestResult({
         <>
           <Typography.Title
             level={5}
-            style={{ marginBottom: 0, marginTop: 8 }}
+            className="!mb-0"
           >
             {t("settings.llmGateway.test.sections.embedding")}
           </Typography.Title>
           <Space wrap>
-            <Tag color="blue">{result.embedding.model}</Tag>
+            <Tag>{result.embedding.model}</Tag>
             <Tag>
               {t("settings.llmGateway.test.dimensions", {
                 n: result.embedding.dimensions,
@@ -173,7 +174,7 @@ export function LlmGatewayTestResult({
             </Tag>
             <Tag>{result.embedding.latencyMs}ms</Tag>
             {typeof result.embedding.costUsd === "number" ? (
-              <Tag color="geekblue">
+              <Tag>
                 {t("settings.llmGateway.test.cost", {
                   cost: result.embedding.costUsd.toFixed(6),
                 })}
@@ -185,7 +186,7 @@ export function LlmGatewayTestResult({
         <>
           <Typography.Title
             level={5}
-            style={{ marginBottom: 0, marginTop: 8 }}
+            className="!mb-0"
           >
             {t("settings.llmGateway.test.sections.embedding")}
           </Typography.Title>
@@ -210,19 +211,19 @@ export function LlmGatewayTestResult({
         <>
           <Typography.Title
             level={5}
-            style={{ marginBottom: 0, marginTop: 8 }}
+            className="!mb-0"
           >
             {t("settings.llmGateway.test.sections.rerank")}
           </Typography.Title>
           <Space wrap>
-            <Tag color="blue">{result.rerank.model}</Tag>
+            <Tag>{result.rerank.model}</Tag>
             <Tag>{result.rerank.latencyMs}ms</Tag>
             <Tag>
               {t("settings.llmGateway.test.labels.topN")}
               : {result.rerank.topN}
             </Tag>
             {typeof result.rerank.costUsd === "number" ? (
-              <Tag color="geekblue">
+              <Tag>
                 {t("settings.llmGateway.test.cost", {
                   cost: result.rerank.costUsd.toFixed(6),
                 })}
@@ -231,7 +232,8 @@ export function LlmGatewayTestResult({
           </Space>
           <Typography.Paragraph
             type="secondary"
-            style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}
+            className="!mb-0"
+            style={{ whiteSpace: "pre-wrap" }}
           >
             {result.rerank.results
               .slice(0, 10)
@@ -248,7 +250,7 @@ export function LlmGatewayTestResult({
         <>
           <Typography.Title
             level={5}
-            style={{ marginBottom: 0, marginTop: 8 }}
+            className="!mb-0"
           >
             {t("settings.llmGateway.test.sections.rerank")}
           </Typography.Title>

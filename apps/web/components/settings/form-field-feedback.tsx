@@ -91,7 +91,7 @@ export function TotalTokenEstimateText({
   );
 
   return (
-    <Typography.Text type="secondary" style={{ display: 'block', marginBottom: '0.75rem' }}>
+    <Typography.Text type="secondary" style={{ display: 'block' }}>
       {t('settings.newsPrompts.estimatedTotalTokens', { count: totalTokens })}
     </Typography.Text>
   );

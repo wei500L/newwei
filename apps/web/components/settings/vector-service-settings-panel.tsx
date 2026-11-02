@@ -211,13 +211,12 @@ export function VectorServiceSettingsPanel() {
     });
   };
 
-  const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
       ? t("systemSettings.vectorService.status.saved")
       : t("systemSettings.vectorService.status.env");
 
-  const enabledColor = settings.enabled ? "green" : "default";
+  const enabledColor = settings.enabled ? "success" : undefined;
   const enabledLabel = settings.enabled
     ? t("systemSettings.vectorService.status.enabled")
     : t("systemSettings.vectorService.status.disabled");
@@ -225,7 +224,6 @@ export function VectorServiceSettingsPanel() {
   const tokenSourceLabel = t(`systemSettings.vectorService.status.tokenSources.${settings.tokenSource}`, {
     defaultValue: settings.tokenSource
   });
-  const tokenColor = settings.hasToken ? "blue" : "default";
 
   if (loading && settings === EMPTY_SETTINGS) {
     return (
@@ -256,13 +254,13 @@ export function VectorServiceSettingsPanel() {
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.vectorService.status.label")}</Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
           <Tag color={enabledColor}>{enabledLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.vectorService.status.tokenSource")}</Typography.Text>
-          <Tag color={tokenColor}>{tokenSourceLabel}</Tag>
-          {settings.baseUrl ? <Tag color="geekblue">{settings.baseUrl}</Tag> : <Tag>-</Tag>}
+          <Tag>{tokenSourceLabel}</Tag>
+          {settings.baseUrl ? <Tag>{settings.baseUrl}</Tag> : <Tag>-</Tag>}
         </Space>
       </Space>
 
@@ -271,12 +269,12 @@ export function VectorServiceSettingsPanel() {
           <SectionHeader title={t("systemSettings.vectorService.diagnostics.title")} rule />
           <Space direction="vertical" size="small" style={{ width: "100%" }}>
             <Space wrap>
-              <Tag color={diagnostics.configured ? "green" : "orange"}>
+              <Tag color={diagnostics.configured ? "success" : "warning"}>
                 {diagnostics.configured
                   ? t("systemSettings.vectorService.diagnostics.configured")
                   : t("systemSettings.vectorService.diagnostics.incomplete")}
               </Tag>
-              <Tag color={diagnostics.temporarilyUnavailable ? "red" : "green"}>
+              <Tag color={diagnostics.temporarilyUnavailable ? "warning" : "success"}>
                 {diagnostics.temporarilyUnavailable
                   ? t("systemSettings.vectorService.diagnostics.backoffActive")
                   : t("systemSettings.vectorService.diagnostics.available")}

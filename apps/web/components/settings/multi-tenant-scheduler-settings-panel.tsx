@@ -178,7 +178,6 @@ export function MultiTenantSchedulerSettingsPanel() {
     );
   }
 
-  const sourceColor = settings?.source === "db" ? "green" : "default";
   const sourceLabel =
     settings?.source === "db"
       ? t("systemSettings.multiTenantSchedulers.status.saved")
@@ -187,7 +186,7 @@ export function MultiTenantSchedulerSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.multiTenantSchedulers.description")}
       </Typography.Paragraph>
 
@@ -196,7 +195,7 @@ export function MultiTenantSchedulerSettingsPanel() {
         showIcon
         message={t("systemSettings.multiTenantSchedulers.notice.title")}
         description={t("systemSettings.multiTenantSchedulers.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {errorMessage ? (
@@ -204,15 +203,15 @@ export function MultiTenantSchedulerSettingsPanel() {
           type="error"
           showIcon
           message={errorMessage}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
-      <Space wrap style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space wrap className="!mb-4" style={{ display: "flex" }}>
         <Typography.Text>
           {t("systemSettings.multiTenantSchedulers.status.label")}
         </Typography.Text>
-        <Tag color={sourceColor}>{sourceLabel}</Tag>
+        <Tag>{sourceLabel}</Tag>
       </Space>
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>

@@ -1188,11 +1188,11 @@ export function LlmRequestLogsPanel() {
         width: 120,
         render: (value: LlmRequestStatus) =>
           value === "success" ? (
-            <Tag color="green">
+            <Tag color="success">
               {t("systemSettings.llmRequestLogs.status.success")}
             </Tag>
           ) : (
-            <Tag color="red">
+            <Tag color="error">
               {t("systemSettings.llmRequestLogs.status.error")}
             </Tag>
           ),
@@ -1573,7 +1573,6 @@ export function LlmRequestLogsPanel() {
     );
   }
 
-  const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
       ? t("systemSettings.llmRequestLogs.retention.status.db")
@@ -1643,7 +1642,7 @@ export function LlmRequestLogsPanel() {
           <Typography.Text>
             {t("systemSettings.llmRequestLogs.retention.status.label")}
           </Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
           <span className="font-mono text-xs text-muted-foreground">
             {t("systemSettings.llmRequestLogs.retention.status.currentDays", {
               days: settings.retentionDays,
@@ -2020,13 +2019,7 @@ export function LlmRequestLogsPanel() {
           <Typography.Text>
             {t("systemSettings.llmRequestLogs.metadataPolicy.source")}
           </Typography.Text>
-          <Tag
-            color={
-              effectiveMetadataPolicy.source === "db" ? "green" : "default"
-            }
-          >
-            {metadataPolicySourceLabel}
-          </Tag>
+          <Tag>{metadataPolicySourceLabel}</Tag>
           <span className="font-mono text-xs text-muted-foreground">
             {t("systemSettings.llmRequestLogs.metadataPolicy.keysCount", {
               count: effectiveMetadataPolicy.keyCount,
@@ -2353,7 +2346,7 @@ export function LlmRequestLogsPanel() {
             title={t("systemSettings.llmRequestLogs.summary.topErrors.title")}
           />
           {summary.topErrors.length === 0 ? (
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            <Typography.Paragraph type="secondary" className="!mb-0">
               {t("systemSettings.llmRequestLogs.summary.topErrors.empty")}
             </Typography.Paragraph>
           ) : (

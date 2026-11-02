@@ -156,7 +156,6 @@ export function GeoNominatimSettingsPanel() {
 
   const overrideUserAgent = Boolean(settings.userAgent);
   const overrideEmail = Boolean(settings.email);
-  const statusTagColor = overrideUserAgent || overrideEmail ? "green" : "default";
   const statusLabel = overrideUserAgent || overrideEmail
     ? t("systemSettings.geoNominatim.status.overridden")
     : t("systemSettings.geoNominatim.status.env");
@@ -172,7 +171,7 @@ export function GeoNominatimSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.geoNominatim.description")}
       </Typography.Paragraph>
 
@@ -181,29 +180,29 @@ export function GeoNominatimSettingsPanel() {
         showIcon
         message={t("systemSettings.geoNominatim.notice.title")}
         description={t("systemSettings.geoNominatim.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} className="!mb-4" />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" className="!mb-4" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.geoNominatim.status.label")}</Typography.Text>
-          <Tag color={statusTagColor}>{statusLabel}</Tag>
+          <Tag>{statusLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
             {t("systemSettings.geoNominatim.status.effectiveUserAgent")}
           </Typography.Text>
-          <Tag color="blue">{settings.effectiveUserAgent || "-"}</Tag>
+          <Tag>{settings.effectiveUserAgent || "-"}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">
             {t("systemSettings.geoNominatim.status.effectiveEmail")}
           </Typography.Text>
-          <Tag color="blue">{settings.effectiveEmail || "-"}</Tag>
+          <Tag>{settings.effectiveEmail || "-"}</Tag>
         </Space>
       </Space>
 
@@ -236,15 +235,15 @@ export function GeoNominatimSettingsPanel() {
         </Form.Item>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: 24 }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("systemSettings.geoNominatim.test.title")}
       </Typography.Title>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.geoNominatim.test.description")}
       </Typography.Paragraph>
 
       {testErrorMessage ? (
-        <Alert type="error" showIcon message={testErrorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={testErrorMessage} className="!mb-4" />
       ) : null}
 
       {testAttempted && !testErrorMessage && !testResult ? (
@@ -252,7 +251,7 @@ export function GeoNominatimSettingsPanel() {
           type="info"
           showIcon
           message={t("systemSettings.geoNominatim.test.noResult")}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -303,15 +302,15 @@ export function GeoNominatimSettingsPanel() {
       </Form>
 
       {testResult ? (
-        <div style={{ marginTop: 16 }}>
+        <div className="mt-4">
           <Space wrap>
-            <Tag color="blue">{testResult.provider}</Tag>
-            <Tag color="geekblue">{testResult.lat.toFixed(6)}</Tag>
-            <Tag color="geekblue">{testResult.lng.toFixed(6)}</Tag>
+            <Tag>{testResult.provider}</Tag>
+            <Tag>{testResult.lat.toFixed(6)}</Tag>
+            <Tag>{testResult.lng.toFixed(6)}</Tag>
             {testResult.countryCodeAlpha2 ? <Tag>{testResult.countryCodeAlpha2}</Tag> : null}
           </Space>
           {testResult.displayName ? (
-            <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0 }}>
+            <Typography.Paragraph className="!mt-2 !mb-0">
               {testResult.displayName}
             </Typography.Paragraph>
           ) : null}

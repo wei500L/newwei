@@ -8,7 +8,7 @@ export function RealtimeSignalsGeneralSection() {
 
   return (
     <>
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
+      <Typography.Title level={5} className="!mt-0">
         {t("systemSettings.realtimeSignals.sections.general")}
       </Typography.Title>
       <Form.Item

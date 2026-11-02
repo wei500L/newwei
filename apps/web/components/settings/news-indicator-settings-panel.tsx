@@ -156,7 +156,7 @@ export function NewsIndicatorSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("settings.newsIndicator.description")}
       </Typography.Paragraph>
 
@@ -165,7 +165,7 @@ export function NewsIndicatorSettingsPanel() {
         showIcon
         message={t("settings.newsIndicator.notice.title")}
         description={t("settings.newsIndicator.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {error ? (
@@ -174,7 +174,7 @@ export function NewsIndicatorSettingsPanel() {
           showIcon
           message={t("settings.newsIndicator.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -302,7 +302,7 @@ export function NewsIndicatorSettingsPanel() {
           </Form.Item>
         </Space>
 
-        <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+        <Typography.Title level={5} className="!mt-6">
           {t("settings.newsIndicator.sections.backtest")}
         </Typography.Title>
 

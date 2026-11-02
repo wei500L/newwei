@@ -717,7 +717,7 @@ export function NewsSourceRuntimeSecretsPanel() {
                 <Typography.Text type="secondary">{sourceMetadata.name}</Typography.Text>
               ) : null}
               {!record.persisted ? (
-                <Tag color="gold">
+                <Tag>
                   {t('systemSettings.newsSourceRuntimeSecrets.status.draft')}
                 </Tag>
               ) : null}
@@ -806,7 +806,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         width: 180,
         render: (_value, record) =>
           record.fingerprint ? (
-            <Tag color="blue">{record.fingerprint}</Tag>
+            <Tag>{record.fingerprint}</Tag>
           ) : (
             <Typography.Text type="secondary">
               {t("systemSettings.newsSourceRuntimeSecrets.status.notStored")}
@@ -860,7 +860,6 @@ export function NewsSourceRuntimeSecretsPanel() {
     );
   }
 
-  const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
       ? t("systemSettings.newsSourceRuntimeSecrets.status.saved")
@@ -882,7 +881,7 @@ export function NewsSourceRuntimeSecretsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.newsSourceRuntimeSecrets.description")}
       </Typography.Paragraph>
 
@@ -891,42 +890,42 @@ export function NewsSourceRuntimeSecretsPanel() {
         showIcon
         message={t("systemSettings.newsSourceRuntimeSecrets.notice.title")}
         description={t("systemSettings.newsSourceRuntimeSecrets.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} className="!mb-4" />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" className="!mb-4" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.newsSourceRuntimeSecrets.status.label")}</Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
           <Tag>{t("systemSettings.newsSourceRuntimeSecrets.status.entryCount", { count: rows.length })}</Tag>
           {(showOnlyConfiguredSources || showOnlyRequiredSources) ? (
-            <Tag color="blue">
+            <Tag>
               {t('systemSettings.newsSourceRuntimeSecrets.status.visibleCount', {
                 count: visibleRows.length,
               })}
             </Tag>
           ) : null}
           {showOnlyConfiguredSources ? (
-            <Tag color="geekblue">
+            <Tag>
               {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyConfigured')}
             </Tag>
           ) : null}
           {showOnlyRequiredSources ? (
-            <Tag color="purple">
+            <Tag>
               {t('systemSettings.newsSourceRuntimeSecrets.filters.onlyRequired')}
             </Tag>
           ) : null}
           {removed.length > 0 ? (
-            <Tag color="orange">
+            <Tag color="warning">
               {t("systemSettings.newsSourceRuntimeSecrets.status.pendingRemoves", { count: removed.length })}
             </Tag>
           ) : null}
           {sourceQuery.trim() ? (
-            <Tag color="cyan">
+            <Tag>
               {activeSourceMetadata?.name
                 ? `${activeSourceMetadata.name} (${sourceQuery.trim()})`
                 : sourceQuery.trim()}
@@ -940,7 +939,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         ) : null}
       </Space>
 
-      <Space style={{ marginBottom: "1rem" }}>
+      <Space className="!mb-4">
         <Button icon={<PlusOutlined />} onClick={handleAddRow}>
           {t("systemSettings.newsSourceRuntimeSecrets.actions.addRow")}
         </Button>
@@ -949,7 +948,7 @@ export function NewsSourceRuntimeSecretsPanel() {
         </Button>
       </Space>
 
-      <Space wrap style={{ marginBottom: '1rem' }}>
+      <Space wrap className="!mb-4">
         <Input.Search
           allowClear
           value={sourceQuery}
@@ -1017,7 +1016,7 @@ export function NewsSourceRuntimeSecretsPanel() {
       </Space>
 
       {quickAddSections.length > 0 ? (
-        <Space direction="vertical" size="small" style={{ display: 'flex', marginBottom: '1rem' }}>
+        <Space direction="vertical" size="small" className="!mb-4" style={{ display: 'flex' }}>
           <Typography.Text type="secondary">
             {t('systemSettings.newsSourceRuntimeSecrets.actions.quickAdd')}
           </Typography.Text>
@@ -1039,7 +1038,7 @@ export function NewsSourceRuntimeSecretsPanel() {
                         {preferredKey ? ` · ${preferredKey}` : ''}
                       </Button>
                       {isConfigured ? (
-                        <Tag color="green">
+                        <Tag color="success">
                           {t('systemSettings.newsSourceRuntimeSecrets.status.configured')}
                         </Tag>
                       ) : null}
@@ -1064,14 +1063,6 @@ export function NewsSourceRuntimeSecretsPanel() {
               const sourceName = group.isDraftGroup
                 ? t('systemSettings.newsSourceRuntimeSecrets.groups.unassignedDrafts')
                 : group.metadata?.name?.trim() || group.sourceId;
-              const requirementColor =
-                group.isDraftGroup
-                  ? 'gold'
-                  : group.requirementLevel === 'required'
-                  ? 'red'
-                  : group.requirementLevel === 'optional'
-                    ? 'blue'
-                    : 'default';
               const requirementLabel =
                 group.isDraftGroup
                   ? t('systemSettings.newsSourceRuntimeSecrets.status.draft')
@@ -1089,19 +1080,19 @@ export function NewsSourceRuntimeSecretsPanel() {
                     {!group.isDraftGroup ? (
                       <Typography.Text type="secondary">{group.sourceId}</Typography.Text>
                     ) : null}
-                    <Tag color={requirementColor}>{requirementLabel}</Tag>
+                    <Tag>{requirementLabel}</Tag>
                     <Tag>
                       {t('systemSettings.newsSourceRuntimeSecrets.groups.totalCount', {
                         count: group.totalCount,
                       })}
                     </Tag>
-                    <Tag color="green">
+                    <Tag>
                       {t('systemSettings.newsSourceRuntimeSecrets.groups.persistedCount', {
                         count: group.persistedCount,
                       })}
                     </Tag>
                     {group.draftCount > 0 ? (
-                      <Tag color="gold">
+                      <Tag>
                         {t('systemSettings.newsSourceRuntimeSecrets.groups.draftCount', {
                           count: group.draftCount,
                         })}

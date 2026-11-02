@@ -486,7 +486,7 @@ export function LlmGatewayProxyLbPanel({
           void runProxyLbTest(proxyLbTestProfile, values);
         }}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        <Typography.Paragraph type="secondary" className="!mb-3">
           {t("settings.llmGateway.fields.apiBase")}:{" "}
           <Typography.Text code copyable>
             {proxyLbTestProfile?.apiBase ?? "-"}
@@ -542,12 +542,12 @@ export function LlmGatewayProxyLbPanel({
           type="error"
           showIcon
           message={proxyLbTestErrorMessage}
-          style={{ marginTop: 12 }}
+          className="!mt-3"
         />
       ) : null}
 
       {proxyLbTestResult ? (
-        <div style={{ marginTop: 12 }}>
+        <div className="mt-3">
           {<LlmGatewayProxyLbTestResult t={t} result={proxyLbTestResult} />}
         </div>
       ) : null}
@@ -631,7 +631,7 @@ export function LlmGatewayProxyLbPanel({
                     )}
                   </Tag>
                   {proxyLbSettings.openai.restartRequired ? (
-                    <Tag color="orange">
+                    <Tag color="warning">
                       {t(
                         "settings.llmGateway.proxyLoadBalancing.status.restartRequired",
                       )}
@@ -699,9 +699,9 @@ export function LlmGatewayProxyLbPanel({
             </Form.Item>
 
             {proxyLbSettings?.openai?.keyFingerprints?.length ? (
-              <Space wrap style={{ marginBottom: 12 }}>
+              <Space wrap className="!mb-3">
                 {proxyLbSettings.openai.keyFingerprints.map((fingerprint) => (
-                  <Tag key={fingerprint} color="blue">
+                  <Tag key={fingerprint}>
                     {shortenFingerprint(fingerprint)}
                   </Tag>
                 ))}
@@ -742,10 +742,10 @@ export function LlmGatewayProxyLbPanel({
             </Form.Item>
 
             {proxyLbSettings?.anthropicKeyFingerprints?.length ? (
-              <Space wrap style={{ marginBottom: 12 }}>
+              <Space wrap className="!mb-3">
                 {proxyLbSettings.anthropicKeyFingerprints.map(
                   (fingerprint) => (
-                    <Tag key={fingerprint} color="purple">
+                    <Tag key={fingerprint}>
                       {shortenFingerprint(fingerprint)}
                     </Tag>
                   ),

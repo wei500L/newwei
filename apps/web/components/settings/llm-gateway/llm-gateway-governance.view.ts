@@ -316,7 +316,7 @@ export function useLlmGatewayGovernanceView(
     }
     if (!proxyGovernancePreflight.canEnable) {
       return {
-        color: "red",
+        color: "error",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.blocked.label",
         ),
@@ -331,7 +331,7 @@ export function useLlmGatewayGovernanceView(
     }
     if (governancePreflightWarningCount > 0) {
       return {
-        color: "gold",
+        color: "warning",
         label: t(
           "settings.llmGateway.proxyGovernance.status.preflightStates.readyWithWarnings.label",
         ),
@@ -344,7 +344,7 @@ export function useLlmGatewayGovernanceView(
       };
     }
     return {
-      color: "green",
+      color: "success",
       label: t(
         "settings.llmGateway.proxyGovernance.status.preflightStates.ready.label",
       ),
@@ -373,7 +373,7 @@ export function useLlmGatewayGovernanceView(
     }
     if (proxyGovernanceSettings.managedRuntimeKeyState === "unreadable") {
       return {
-        color: "red",
+        color: "error",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.failClosed.label",
         ),
@@ -395,7 +395,7 @@ export function useLlmGatewayGovernanceView(
     }
     if (governanceObservedZeroGoverned) {
       return {
-        color: "gold",
+        color: "warning",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.noGovernedTraffic.label",
         ),
@@ -406,7 +406,7 @@ export function useLlmGatewayGovernanceView(
     }
     if (governanceObservedDirectRequests) {
       return {
-        color: "gold",
+        color: "warning",
         label: t(
           "settings.llmGateway.proxyGovernance.status.runtimeStates.mixedTraffic.label",
         ),
@@ -416,7 +416,7 @@ export function useLlmGatewayGovernanceView(
       };
     }
     return {
-      color: "green",
+      color: "success",
       label: t(
         "settings.llmGateway.proxyGovernance.status.runtimeStates.governedTrafficObserved.label",
       ),
@@ -451,7 +451,7 @@ export function useLlmGatewayGovernanceView(
                 "settings.llmGateway.proxyGovernance.status.cards.enforcementDisabledDescription",
               ),
         tagColor:
-          proxyGovernanceSettings?.enabled === true ? "green" : "default",
+          proxyGovernanceSettings?.enabled === true ? "success" : "default",
         tagLabel:
           proxyGovernanceSettings?.adminKeyConfigured === true
             ? t(
@@ -475,11 +475,6 @@ export function useLlmGatewayGovernanceView(
           t(
             "settings.llmGateway.proxyGovernance.status.cards.targetDescriptionEmpty",
           ),
-        tagColor:
-          (selectedGovernanceProfile ?? governedTargetProfile)?.enabled ===
-          false
-            ? "orange"
-            : "geekblue",
         tagLabel: governanceHasTrafficBindings
           ? t(
               "settings.llmGateway.proxyGovernance.status.tags.trafficBindings",

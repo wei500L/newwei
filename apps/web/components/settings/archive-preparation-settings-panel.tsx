@@ -264,7 +264,7 @@ export function ArchivePreparationSettingsPanel() {
           <Alert
             type="warning"
             showIcon
-            style={{ marginBottom: "1rem" }}
+            className="!mb-4"
             message={t("systemSettings.archivePreparation.hint.title")}
             description={t("systemSettings.archivePreparation.hint.body")}
           />
@@ -295,7 +295,7 @@ export function ArchivePreparationSettingsPanel() {
         }
         />
         <Space wrap size={[8, 8]}>
-          <Tag color={opsStatus && opsStatus.pending > 0 ? "processing" : "green"}>
+          <Tag color={opsStatus && opsStatus.pending > 0 ? "processing" : "success"}>
             {t("systemSettings.archivePreparation.ops.pending", {
               count: opsStatus?.pending ?? 0,
             })}
@@ -310,7 +310,7 @@ export function ArchivePreparationSettingsPanel() {
               count: opsStatus?.counts.waiting ?? 0,
             })}
           </Tag>
-          <Tag color={(opsStatus?.counts.failed ?? 0) > 0 ? "volcano" : "default"}>
+          <Tag color={(opsStatus?.counts.failed ?? 0) > 0 ? "error" : "default"}>
             {t("systemSettings.archivePreparation.ops.failed", {
               count: opsStatus?.counts.failed ?? 0,
             })}
@@ -344,7 +344,7 @@ export function ArchivePreparationSettingsPanel() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <Space wrap size={[8, 8]}>
-                    <Tag color={item.state === "FAILED" ? "volcano" : item.state === "READY" ? "green" : "processing"}>
+                    <Tag color={item.state === "FAILED" ? "error" : item.state === "READY" ? "success" : "processing"}>
                       {item.state}
                     </Tag>
                     <Typography.Text strong>
@@ -362,7 +362,7 @@ export function ArchivePreparationSettingsPanel() {
                   </Typography.Text>
                 </div>
                 {item.errorMessage ? (
-                  <Typography.Paragraph type="secondary" style={{ margin: "0.5rem 0 0" }}>
+                  <Typography.Paragraph type="secondary" className="!mt-2">
                     {item.errorMessage}
                   </Typography.Paragraph>
                 ) : null}

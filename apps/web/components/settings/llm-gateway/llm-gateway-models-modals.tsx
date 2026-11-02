@@ -35,7 +35,7 @@ export function openLlmGatewayModelsModal(
     width: screensMd ? 720 : "100%",
     content: (
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.fields.apiBase")}:{" "}
           <Typography.Text code copyable>
             {apiBase}
@@ -162,7 +162,7 @@ export function openLlmGatewayProxyModelInfoModal(
       key: "deployments",
       width: 140,
       render: (value: number) => (
-        <Tag color={value > 1 ? "green" : "default"}>{value}</Tag>
+        <Tag>{value}</Tag>
       ),
     },
     {
@@ -196,7 +196,7 @@ export function openLlmGatewayProxyModelInfoModal(
     width: screensMd ? 860 : "100%",
     content: (
       <Space direction="vertical" size="small" style={{ display: "flex" }}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t("settings.llmGateway.fields.apiBase")}:{" "}
           <Typography.Text code copyable>
             {apiBase}

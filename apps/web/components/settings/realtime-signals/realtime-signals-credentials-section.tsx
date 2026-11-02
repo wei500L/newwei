@@ -19,14 +19,14 @@ export function RealtimeSignalsCredentialsSection({
       </Typography.Title>
       <Typography.Paragraph
         type="secondary"
-        style={{ marginBottom: "0.75rem" }}
+        className="!mb-3"
       >
         {t("systemSettings.realtimeSignals.hints.secretOptional")}
       </Typography.Paragraph>
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
         message={t("systemSettings.realtimeSignals.alerts.aisCredentials.title")}
         description={t(
           "systemSettings.realtimeSignals.alerts.aisCredentials.body",
@@ -36,7 +36,7 @@ export function RealtimeSignalsCredentialsSection({
         <Alert
           type="warning"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={t(
             "systemSettings.realtimeSignals.alerts.acledDisabled.title",
           )}

@@ -345,7 +345,6 @@ export function NewsSourceSchedulerSettingsPanel() {
     );
   }
 
-  const sourceColor = settings?.source === "db" ? "green" : "default";
   const sourceLabel =
     settings?.source === "db"
       ? t("systemSettings.newsSourceScheduler.status.saved")
@@ -370,7 +369,7 @@ export function NewsSourceSchedulerSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.newsSourceScheduler.description")}
       </Typography.Paragraph>
 
@@ -379,18 +378,18 @@ export function NewsSourceSchedulerSettingsPanel() {
         showIcon
         message={t("systemSettings.newsSourceScheduler.notice.title")}
         description={t("systemSettings.newsSourceScheduler.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} className="!mb-4" />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" className="!mb-4" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.newsSourceScheduler.status.label")}</Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
-          <Tag color={isGlobalForced ? "gold" : "blue"}>
+          <Tag>{sourceLabel}</Tag>
+          <Tag>
             {isGlobalForced
               ? t("systemSettings.newsSourceScheduler.policyPreview.globalForcedTag")
               : t("systemSettings.newsSourceScheduler.policyPreview.sourceAwareTag")}
@@ -417,7 +416,7 @@ export function NewsSourceSchedulerSettingsPanel() {
                 listDeep: previewSeedCacheTtlSecondsListDeep,
               })
         }
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       <Form layout="vertical" form={form} onFinish={handleSubmit}>

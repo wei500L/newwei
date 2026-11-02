@@ -135,14 +135,14 @@ export function TaskLogSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.taskLogs.description")}
       </Typography.Paragraph>
 
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
         message={t("systemSettings.taskLogs.notice.title")}
         description={t("systemSettings.taskLogs.notice.body")}
       />
@@ -151,20 +151,21 @@ export function TaskLogSettingsPanel() {
         <Alert
           type="error"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={errorMessage}
         />
       ) : null}
 
       <Space
         size="middle"
-        style={{ display: "flex", marginBottom: "1rem", flexWrap: "wrap" }}
+        className="!mb-4"
+        style={{ display: "flex", flexWrap: "wrap" }}
       >
         <Typography.Text strong>
           {t("systemSettings.taskLogs.status.label")}
           :{" "}
         </Typography.Text>
-        <Tag color={settings.source === "db" ? "blue" : "default"}>
+        <Tag>
           {settings.source === "db"
             ? t("systemSettings.taskLogs.status.db")
             : t("systemSettings.taskLogs.status.default")}
@@ -199,11 +200,11 @@ export function TaskLogSettingsPanel() {
           <InputNumber min={1} max={3650} />
         </Form.Item>
 
-        <Typography.Paragraph type="secondary" style={{ marginTop: "-0.5rem" }}>
+        <Typography.Paragraph type="secondary" className="!-mt-2">
           {t("systemSettings.taskLogs.hints.retentionDays")}
         </Typography.Paragraph>
 
-        <Form.Item style={{ marginBottom: 0 }}>
+        <Form.Item className="!mb-0">
           <Space wrap>
             <Button type="primary" htmlType="submit" loading={saving}>
               {t("common.saveChanges")}

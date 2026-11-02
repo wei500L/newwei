@@ -162,13 +162,12 @@ export function ModelServiceSettingsPanel() {
     });
   };
 
-  const sourceColor = settings.source === "db" ? "green" : "default";
   const sourceLabel =
     settings.source === "db"
       ? t("systemSettings.modelService.status.saved")
       : t("systemSettings.modelService.status.env");
 
-  const enabledColor = settings.enabled ? "green" : "default";
+  const enabledColor = settings.enabled ? "success" : undefined;
   const enabledLabel = settings.enabled
     ? t("systemSettings.modelService.status.enabled")
     : t("systemSettings.modelService.status.disabled");
@@ -176,7 +175,6 @@ export function ModelServiceSettingsPanel() {
   const tokenSourceLabel = t(`systemSettings.modelService.status.tokenSources.${settings.tokenSource}`, {
     defaultValue: settings.tokenSource
   });
-  const tokenColor = settings.hasToken ? "blue" : "default";
 
   if (loading && settings === EMPTY_SETTINGS) {
     return (
@@ -189,7 +187,7 @@ export function ModelServiceSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.modelService.description")}
       </Typography.Paragraph>
 
@@ -198,23 +196,23 @@ export function ModelServiceSettingsPanel() {
         showIcon
         message={t("systemSettings.modelService.notice.title")}
         description={t("systemSettings.modelService.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} className="!mb-4" />
       ) : null}
 
-      <Space direction="vertical" size="small" style={{ display: "flex", marginBottom: "1rem" }}>
+      <Space direction="vertical" size="small" className="!mb-4" style={{ display: "flex" }}>
         <Space wrap>
           <Typography.Text>{t("systemSettings.modelService.status.label")}</Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
           <Tag color={enabledColor}>{enabledLabel}</Tag>
         </Space>
         <Space wrap>
           <Typography.Text type="secondary">{t("systemSettings.modelService.status.tokenSource")}</Typography.Text>
-          <Tag color={tokenColor}>{tokenSourceLabel}</Tag>
-          {settings.baseUrl ? <Tag color="geekblue">{settings.baseUrl}</Tag> : <Tag>-</Tag>}
+          <Tag>{tokenSourceLabel}</Tag>
+          {settings.baseUrl ? <Tag>{settings.baseUrl}</Tag> : <Tag>-</Tag>}
         </Space>
       </Space>
 

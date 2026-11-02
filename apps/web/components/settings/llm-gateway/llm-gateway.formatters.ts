@@ -223,10 +223,10 @@ export function getManagedRuntimeKeyStateMeta(
   state: LiteLlmManagedRuntimeKeyState | null | undefined,
 ): { color: string } {
   if (state === "available") {
-    return { color: "green" };
+    return { color: "success" };
   }
   if (state === "unreadable") {
-    return { color: "red" };
+    return { color: "error" };
   }
   return { color: "default" };
 }

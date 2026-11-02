@@ -68,7 +68,7 @@ export function CrawlClientSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-6">
         {t("settings.crawlClient.description")}
       </Typography.Paragraph>
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
@@ -468,7 +468,7 @@ export function CrawlClientSettingsPanel() {
         >
           <Switch />
         </Form.Item>
-        <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+        <Typography.Paragraph type="secondary" className="!-mt-2">
           {adaptiveConcurrencyEnabled
             ? t("settings.crawlClient.hints.adaptiveEnabled")
             : t("settings.crawlClient.hints.adaptiveDisabled")}

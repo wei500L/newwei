@@ -162,13 +162,13 @@ export function SystemSecuritySettingsPanel() {
       return <Tag color="default">{t("systemSettings.security.status.keyMissing")}</Tag>;
     }
     if (!settings.encryptionKeyValid) {
-      return <Tag color="red">{t("systemSettings.security.status.keyInvalid")}</Tag>;
+      return <Tag color="error">{t("systemSettings.security.status.keyInvalid")}</Tag>;
     }
-    return <Tag color="green">{t("systemSettings.security.status.keyPresent")}</Tag>;
+    return <Tag color="success">{t("systemSettings.security.status.keyPresent")}</Tag>;
   })();
 
   const encryptionTag = settings.secretEncryptionActive ? (
-    <Tag color="green">{t("systemSettings.security.status.encryptionEnabled")}</Tag>
+    <Tag color="success">{t("systemSettings.security.status.encryptionEnabled")}</Tag>
   ) : (
     <Tag color="default">{t("systemSettings.security.status.encryptionDisabled")}</Tag>
   );
@@ -214,7 +214,6 @@ export function SystemSecuritySettingsPanel() {
                 })
               : t("systemSettings.security.alerts.enabledMissingKey.body")
           }
-          style={{ marginBottom: "1rem" }}
         />
       );
     }
@@ -226,7 +225,6 @@ export function SystemSecuritySettingsPanel() {
           showIcon
           message={t("systemSettings.security.alerts.disabledWithKey.title")}
           description={t("systemSettings.security.alerts.disabledWithKey.body")}
-          style={{ marginBottom: "1rem" }}
         />
       );
     }
@@ -238,7 +236,6 @@ export function SystemSecuritySettingsPanel() {
           showIcon
           message={t("systemSettings.security.alerts.keyInvalid.title")}
           description={t("systemSettings.security.alerts.keyInvalid.body")}
-          style={{ marginBottom: "1rem" }}
         />
       );
     }
@@ -250,7 +247,6 @@ export function SystemSecuritySettingsPanel() {
           showIcon
           message={t("systemSettings.security.alerts.keyMissing.title")}
           description={t("systemSettings.security.alerts.keyMissing.body")}
-          style={{ marginBottom: "1rem" }}
         />
       );
     }
@@ -284,7 +280,7 @@ export function SystemSecuritySettingsPanel() {
           <Typography.Text>{t("systemSettings.security.status.label")}</Typography.Text>
           {encryptionTag}
           {keyStatusTag}
-          <Tag color={settings.mfaPolicy === "off" ? "default" : "blue"}>
+          <Tag>
             {t("systemSettings.security.mfaPolicyTag", {
               policy: settings.mfaPolicy,
             })}
@@ -325,7 +321,6 @@ export function SystemSecuritySettingsPanel() {
         <Alert
           type={oidcConfig.enabled ? "success" : "info"}
           showIcon
-          style={{ marginBottom: "1rem" }}
           message={t(
             oidcConfig.enabled
               ? oidcConfig.hasClientSecret
@@ -378,7 +373,7 @@ export function SystemSecuritySettingsPanel() {
                 <Alert
                   type="warning"
                   showIcon
-                  style={{ marginBottom: "1rem" }}
+                  className="!mb-4"
                   message={t("systemSettings.security.oidc.unverifiedEmailWarning")}
                 />
               ) : null

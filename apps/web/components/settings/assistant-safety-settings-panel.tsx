@@ -550,13 +550,13 @@ export function AssistantSafetySettingsPanel() {
 
   const sourceTag =
     settings.source === "db" ? (
-      <Tag color="purple">{t("settings.assistantSafety.source.db")}</Tag>
+      <Tag>{t("settings.assistantSafety.source.db")}</Tag>
     ) : (
       <Tag>{t("settings.assistantSafety.source.env")}</Tag>
     );
 
   const enabledTag = settings.enabled ? (
-    <Tag color="green">{t("common.enabled")}</Tag>
+    <Tag color="success">{t("common.enabled")}</Tag>
   ) : (
     <Tag color="default">{t("common.disabled")}</Tag>
   );
@@ -588,20 +588,20 @@ export function AssistantSafetySettingsPanel() {
             showIcon
             message={t("settings.assistantSafety.hint.title")}
             description={
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              <Typography.Paragraph type="secondary" className="!mb-0">
                 {t("settings.assistantSafety.hint.body")}
               </Typography.Paragraph>
             }
           />
 
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" className="!mb-0">
             {t("settings.assistantSafety.docs.scope")}
           </Typography.Paragraph>
 
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" className="!mb-0">
             {t("settings.assistantSafety.docs.setupTitle")}
           </Typography.Paragraph>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+          <Typography.Paragraph type="secondary" className="!mb-0" style={{ whiteSpace: "pre-wrap" }}>
             {t("settings.assistantSafety.docs.setupBody")}
           </Typography.Paragraph>
 
@@ -629,9 +629,9 @@ export function AssistantSafetySettingsPanel() {
                 label={t("settings.assistantSafety.diagnostics.fields.litellmLiveliness")}
               >
                 {diagnostics.litellm.liveliness.ok ? (
-                  <Tag color="green">{t("common.ok")}</Tag>
+                  <Tag color="success">{t("common.ok")}</Tag>
                 ) : (
-                  <Tag color="red">{t("common.failed")}</Tag>
+                  <Tag color="error">{t("common.failed")}</Tag>
                 )}
                 {diagnostics.litellm.liveliness.status ? ` (HTTP ${diagnostics.litellm.liveliness.status})` : ""}
                 {diagnostics.litellm.liveliness.error ? `: ${diagnostics.litellm.liveliness.error}` : ""}
@@ -640,9 +640,9 @@ export function AssistantSafetySettingsPanel() {
                 label={t("settings.assistantSafety.diagnostics.fields.litellmModels")}
               >
                 {diagnostics.litellm.models.ok ? (
-                  <Tag color="green">{t("common.ok")}</Tag>
+                  <Tag color="success">{t("common.ok")}</Tag>
                 ) : (
-                  <Tag color="red">{t("common.failed")}</Tag>
+                  <Tag color="error">{t("common.failed")}</Tag>
                 )}
                 {diagnostics.litellm.models.status ? ` (HTTP ${diagnostics.litellm.models.status})` : ""}
                 {typeof diagnostics.litellm.models.count === "number" ? `, ${diagnostics.litellm.models.count} models` : ""}
@@ -654,9 +654,9 @@ export function AssistantSafetySettingsPanel() {
                 <Space direction="vertical" size={4} style={{ display: "flex" }}>
                   <Space wrap>
                     {diagnostics.litellm.guardrails.ok ? (
-                      <Tag color="green">{t("common.ok")}</Tag>
+                      <Tag color="success">{t("common.ok")}</Tag>
                     ) : (
-                      <Tag color="red">{t("common.failed")}</Tag>
+                      <Tag color="error">{t("common.failed")}</Tag>
                     )}
                     {diagnostics.litellm.guardrails.status ? (
                       <Typography.Text type="secondary">{`HTTP ${diagnostics.litellm.guardrails.status}`}</Typography.Text>
@@ -670,11 +670,11 @@ export function AssistantSafetySettingsPanel() {
                     ) : null}
                     {diagnostics.litellm.guardrails.ok && (diagnostics.litellm.guardrails.expected ?? []).length > 0 ? (
                       diagnostics.litellm.guardrails.missing.length === 0 ? (
-                        <Tag color="green">
+                        <Tag color="success">
                           {t("settings.assistantSafety.diagnostics.guardrails.allPresent")}
                         </Tag>
                       ) : (
-                        <Tag color="orange">
+                        <Tag color="warning">
                           {t("settings.assistantSafety.diagnostics.guardrails.missingCount", {
                             count: diagnostics.litellm.guardrails.missing.length
                           })}
@@ -689,7 +689,7 @@ export function AssistantSafetySettingsPanel() {
                   {diagnostics.litellm.guardrails.ok && diagnostics.litellm.guardrails.missing.length > 0 ? (
                     <Space wrap>
                       {diagnostics.litellm.guardrails.missing.map((name) => (
-                        <Tag key={name} color="orange">
+                        <Tag key={name}>
                           {name}
                         </Tag>
                       ))}
@@ -716,11 +716,11 @@ export function AssistantSafetySettingsPanel() {
                 <Space wrap>
                   <Tag>{t("settings.assistantSafety.openaiKeys.status.count", { count: diagnostics.openaiKeys.keysCount })}</Tag>
                   {diagnostics.openaiKeys.restartRequired ? (
-                    <Tag color="orange">
+                    <Tag color="warning">
                       {t("settings.assistantSafety.openaiKeys.status.restartRequired")}
                     </Tag>
                   ) : diagnostics.openaiKeys.appliedAt ? (
-                    <Tag color="green">
+                    <Tag color="success">
                       {t("settings.assistantSafety.openaiKeys.status.applied")}
                     </Tag>
                   ) : (
@@ -733,7 +733,7 @@ export function AssistantSafetySettingsPanel() {
             </Descriptions>
           ) : null}
 
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider className="!my-2" />
 
           <Space wrap align="center">
             <Typography.Text strong>
@@ -805,7 +805,7 @@ export function AssistantSafetySettingsPanel() {
                 render: (value: AssistantSafetyMetricsRow["guardrails"]) => (
                   <Space wrap>
                     {(value ?? []).map((entry) => (
-                      <Tag key={entry.name} color="geekblue">
+                      <Tag key={entry.name}>
                         {entry.name} ({entry.count})
                       </Tag>
                     ))}
@@ -829,7 +829,7 @@ export function AssistantSafetySettingsPanel() {
             ]}
           />
 
-          <Divider style={{ margin: "8px 0" }} />
+          <Divider className="!my-2" />
 
           <Space direction="vertical" size={8}>
             <Space wrap>
@@ -837,7 +837,7 @@ export function AssistantSafetySettingsPanel() {
                 {t("settings.assistantSafety.openaiKeys.title")}
               </Typography.Text>
               {openaiKeys.hasKeys ? (
-                <Tag color="green">
+                <Tag color="success">
                   {t("settings.assistantSafety.openaiKeys.status.configured")}
                 </Tag>
               ) : (
@@ -856,31 +856,31 @@ export function AssistantSafetySettingsPanel() {
                 })}
               </Tag>
               {openaiKeys.restartRequired ? (
-                <Tag color="orange">
+                <Tag color="warning">
                   {t("settings.assistantSafety.openaiKeys.status.restartRequired")}
                 </Tag>
               ) : openaiKeys.hasKeys ? (
                 openaiKeys.appliedAt ? (
-                  <Tag color="green">
+                  <Tag color="success">
                     {t("settings.assistantSafety.openaiKeys.status.applied")}
                   </Tag>
                 ) : (
-                  <Tag color="orange">
+                  <Tag color="warning">
                     {t("settings.assistantSafety.openaiKeys.status.notApplied")}
                   </Tag>
                 )
               ) : null}
               {openaiKeys.internalTokenConfigured ? (
-                <Tag color="green">
+                <Tag color="success">
                   {t("settings.assistantSafety.openaiKeys.status.tokenOk")}
                 </Tag>
               ) : (
-                <Tag color="red">
+                <Tag color="error">
                   {t("settings.assistantSafety.openaiKeys.status.tokenMissing")}
                 </Tag>
               )}
               {openaiKeys.keysCount > 1 ? (
-                <Tag color="geekblue">
+                <Tag color="success">
                   {t("settings.assistantSafety.openaiKeys.status.lbOn")}
                 </Tag>
               ) : (
@@ -890,12 +890,12 @@ export function AssistantSafetySettingsPanel() {
               )}
             </Space>
 
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            <Typography.Paragraph type="secondary" className="!mb-0">
               {t("settings.assistantSafety.openaiKeys.description")}
             </Typography.Paragraph>
 
             {openaiKeys.keysCount > 0 ? (
-              <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              <Typography.Paragraph type="secondary" className="!mb-0">
                 {t("settings.assistantSafety.openaiKeys.quotaHint", {
                   quota: estimatedDailyQuota,
                   perKey: OPENAI_MODERATION_FREE_CALLS_PER_DAY,
@@ -904,7 +904,7 @@ export function AssistantSafetySettingsPanel() {
               </Typography.Paragraph>
             ) : null}
 
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+            <Typography.Paragraph type="secondary" className="!mb-0">
               {t("settings.assistantSafety.openaiKeys.compliance")}
             </Typography.Paragraph>
 
@@ -922,7 +922,7 @@ export function AssistantSafetySettingsPanel() {
                 message={t("settings.assistantSafety.openaiKeys.warnings.restartRequired")}
                 description={
                   <Typography.Paragraph
-                    style={{ marginBottom: 0 }}
+                    className="!mb-0"
                     copyable={{
                       text: "docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml restart litellm"
                     }}
@@ -980,7 +980,7 @@ export function AssistantSafetySettingsPanel() {
               </Space>
             </Form>
 
-            <Divider style={{ margin: "8px 0" }} />
+            <Divider className="!my-2" />
 
             <Typography.Text type="secondary">
               {t("settings.assistantSafety.openaiKeys.list.title")}
@@ -1009,12 +1009,12 @@ export function AssistantSafetySettingsPanel() {
 
             {lbBuckets.length > 0 ? (
               <>
-                <Divider style={{ margin: "8px 0" }} />
+                <Divider className="!my-2" />
 
                 <Typography.Text type="secondary">
                   {t("settings.assistantSafety.openaiKeys.buckets.title")}
                 </Typography.Text>
-                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                <Typography.Paragraph type="secondary" className="!mb-0">
                   {t("settings.assistantSafety.openaiKeys.buckets.hint")}
                 </Typography.Paragraph>
                 <Table
@@ -1053,7 +1053,7 @@ export function AssistantSafetySettingsPanel() {
               </>
             ) : null}
 
-            <Divider style={{ margin: "8px 0" }} />
+            <Divider className="!my-2" />
 
             <Typography.Text type="secondary">
               {t("settings.assistantSafety.openaiKeys.applied.title")}
@@ -1076,7 +1076,7 @@ export function AssistantSafetySettingsPanel() {
             {openaiKeys.appliedKeyFingerprints.length > 0 ? (
               <Space wrap>
                 {openaiKeys.appliedKeyFingerprints.map((fingerprint) => (
-                  <Tag key={fingerprint} color="blue">
+                  <Tag key={fingerprint}>
                     {fingerprint.slice(0, 8)}…{fingerprint.slice(-4)}
                   </Tag>
                 ))}
@@ -1094,7 +1094,7 @@ export function AssistantSafetySettingsPanel() {
           <Space wrap>
             {(settings.guardrails ?? []).length > 0 ? (
               settings.guardrails.map((name) => (
-                <Tag key={name} color="geekblue">
+                <Tag key={name}>
                   {name}
                 </Tag>
               ))
@@ -1142,13 +1142,13 @@ export function AssistantSafetySettingsPanel() {
         <SectionHeader
           title={t("settings.assistantSafety.quota.title")}
           extra={
-            <Tag color={quota.enabled ? "green" : "default"}>
+            <Tag color={quota.enabled ? "success" : undefined}>
               {quota.enabled ? t("common.enabled") : t("common.disabled")}
             </Tag>
           }
         />
         <Space direction="vertical" size="middle" style={{ display: "flex" }}>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" className="!mb-0">
             {t("settings.assistantSafety.quota.description")}
           </Typography.Paragraph>
           <Descriptions size="small" column={1} bordered>

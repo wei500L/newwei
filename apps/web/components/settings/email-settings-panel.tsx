@@ -138,7 +138,7 @@ export function EmailSettingsPanel() {
 
   const verify = settings?.verify;
   const verifyColor =
-    verify?.ok === true ? "green" : verify?.ok === false ? "red" : "default";
+    verify?.ok === true ? "success" : verify?.ok === false ? "error" : undefined;
   const verifyLabel =
     verify?.ok === true
       ? t("systemSettings.email.status.verified")
@@ -157,15 +157,15 @@ export function EmailSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.email.description")}
       </Typography.Paragraph>
 
       {errorMessage ? (
-        <Alert type="error" showIcon message={errorMessage} style={{ marginBottom: "1rem" }} />
+        <Alert type="error" showIcon message={errorMessage} className="!mb-4" />
       ) : null}
 
-      <Space wrap style={{ marginBottom: "1rem" }}>
+      <Space wrap className="!mb-4">
         <Typography.Text>{t("systemSettings.email.status.label")}</Typography.Text>
         <Tag color={verifyColor}>{verifyLabel}</Tag>
         <Button size="small" onClick={loadSettings} loading={loading}>
@@ -174,7 +174,7 @@ export function EmailSettingsPanel() {
       </Space>
 
       {verify?.checkedAt ? (
-        <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
+        <Typography.Paragraph type="secondary" className="!mb-2">
           {t("systemSettings.email.status.checkedAt")} {verify.checkedAt}
         </Typography.Paragraph>
       ) : null}
@@ -184,7 +184,7 @@ export function EmailSettingsPanel() {
           showIcon
           message={t("systemSettings.email.status.error")}
           description={verify.error}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -193,7 +193,7 @@ export function EmailSettingsPanel() {
           bordered
           size="small"
           column={1}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           title={t("systemSettings.email.config.title")}
         >
           <Descriptions.Item label={t("systemSettings.email.config.fields.host")}>
@@ -229,11 +229,11 @@ export function EmailSettingsPanel() {
         </Descriptions>
       ) : null}
 
-      <Typography.Title level={5} style={{ marginTop: 24 }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("systemSettings.email.authCode.title")}
       </Typography.Title>
 
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-3">
         {t("systemSettings.email.authCode.description")}
       </Typography.Paragraph>
 
@@ -286,7 +286,7 @@ export function EmailSettingsPanel() {
         </Form.Item>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: 24 }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("systemSettings.email.test.title")}
       </Typography.Title>
 

@@ -82,7 +82,7 @@ export function RealtimeSignalsSourceCard({
           extra={
             <Space wrap size={[8, 8]}>
             {row.source === "unrest" && acledApiDisabled ? (
-              <Tag color="gold">
+              <Tag>
                 {t(
                   "systemSettings.realtimeSignals.runtime.unrestModeGdeltOnly",
                 )}
@@ -91,7 +91,7 @@ export function RealtimeSignalsSourceCard({
             <Tag color={runtimeStatusColor(row.status)}>
               {runtimeStatusLabel(t, row.status)}
             </Tag>
-            <Tag color={row.enabled ? "green" : "default"}>
+            <Tag>
               {row.source === "opensky"
                 ? t(
                     "systemSettings.realtimeSignals.runtime.effectiveIntervalTag",
@@ -200,7 +200,7 @@ export function RealtimeSignalsSourceCard({
                 </Tag>
               ) : null}
               {aisView.reportsProcessed !== null ? (
-                <Tag color="green">
+                <Tag>
                   {t(
                     "systemSettings.realtimeSignals.runtime.aisReportsProcessed",
                   )}
@@ -208,9 +208,7 @@ export function RealtimeSignalsSourceCard({
                 </Tag>
               ) : null}
               {aisView.reportsIgnored !== null ? (
-                <Tag
-                  color={aisView.reportsIgnored > 0 ? "gold" : "default"}
-                >
+                <Tag>
                   {t(
                     "systemSettings.realtimeSignals.runtime.aisReportsIgnored",
                   )}
@@ -219,7 +217,7 @@ export function RealtimeSignalsSourceCard({
               ) : null}
               {aisView.parseErrors !== null ? (
                 <Tag
-                  color={aisView.parseErrors > 0 ? "volcano" : "default"}
+                  color={aisView.parseErrors > 0 ? "error" : "default"}
                 >
                   {t(
                     "systemSettings.realtimeSignals.runtime.aisParseErrors",
@@ -320,7 +318,7 @@ export function RealtimeSignalsSourceCard({
           typeof row.lastErrorStatus === "number" ? (
             <Space wrap size={[8, 8]}>
               {openskyErrorKindLabel ? (
-                <Tag color="volcano">{openskyErrorKindLabel}</Tag>
+                <Tag color="error">{openskyErrorKindLabel}</Tag>
               ) : null}
               {errorCodeLabel ? (
                 <Tag color="default">{errorCodeLabel}</Tag>
@@ -329,7 +327,7 @@ export function RealtimeSignalsSourceCard({
                 <Tag color="default">{`HTTP ${row.lastErrorStatus}`}</Tag>
               ) : null}
               {typeof row.lastRateLimit?.retryAfterSec === "number" ? (
-                <Tag color="gold">
+                <Tag color="warning">
                   {t("systemSettings.realtimeSignals.runtime.retryAfter")}:{" "}
                   {`${row.lastRateLimit.retryAfterSec}s`}
                 </Tag>

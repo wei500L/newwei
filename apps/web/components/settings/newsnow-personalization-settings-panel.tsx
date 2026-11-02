@@ -474,7 +474,6 @@ export function NewsnowPersonalizationSettingsPanel() {
     }
   };
 
-  const sourceColor = settings?.source === 'db' ? 'green' : 'default';
   const sourceLabel =
     settings?.source === 'db'
       ? t('systemSettings.newsnowPersonalization.status.saved')
@@ -598,15 +597,15 @@ export function NewsnowPersonalizationSettingsPanel() {
           <Typography.Text>
             {t('systemSettings.newsnowPersonalization.status.label')}
           </Typography.Text>
-          <Tag color={sourceColor}>{sourceLabel}</Tag>
+          <Tag>{sourceLabel}</Tag>
         </Space>
       </Space>
 
-      <Divider style={{ margin: '12px 0' }} />
+      <Divider />
 
       <Space
         align="center"
-        style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}
+        style={{ display: 'flex', justifyContent: 'space-between' }}
       >
         <Typography.Text strong>
           {t('systemSettings.newsnowPersonalization.metrics.title')}
@@ -616,7 +615,7 @@ export function NewsnowPersonalizationSettingsPanel() {
         </Button>
       </Space>
 
-      <Typography.Paragraph type="secondary" style={{ marginBottom: '0.75rem' }}>
+      <Typography.Paragraph type="secondary">
         {t('systemSettings.newsnowPersonalization.metrics.description')}
       </Typography.Paragraph>
 
@@ -625,7 +624,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           type="warning"
           showIcon
           message={metricsErrorMessage}
-          style={{ marginBottom: '0.75rem' }}
         />
       ) : null}
 
@@ -633,7 +631,6 @@ export function NewsnowPersonalizationSettingsPanel() {
         bordered
         size="small"
         column={1}
-        style={{ marginBottom: '1rem' }}
         title={
           metrics
             ? t('systemSettings.newsnowPersonalization.metrics.window', {
@@ -691,11 +688,11 @@ export function NewsnowPersonalizationSettingsPanel() {
         </Descriptions.Item>
       </Descriptions>
 
-      <Divider style={{ margin: '12px 0' }} />
+      <Divider />
 
       <Space
         align="center"
-        style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}
+        style={{ display: 'flex', justifyContent: 'space-between' }}
       >
         <Typography.Text strong>
           {t('systemSettings.newsnowPersonalization.behaviorProfile.title')}
@@ -720,7 +717,7 @@ export function NewsnowPersonalizationSettingsPanel() {
         </Space>
       </Space>
 
-      <Typography.Paragraph type="secondary" style={{ marginBottom: '0.75rem' }}>
+      <Typography.Paragraph type="secondary">
         {t('systemSettings.newsnowPersonalization.behaviorProfile.description')}
       </Typography.Paragraph>
 
@@ -729,7 +726,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           type="warning"
           showIcon
           message={behaviorProfileErrorMessage}
-          style={{ marginBottom: '0.75rem' }}
         />
       ) : null}
       {behaviorProfile?.meta?.legacyFallbackUsed ? (
@@ -737,7 +733,6 @@ export function NewsnowPersonalizationSettingsPanel() {
           type="info"
           showIcon
           message={t('systemSettings.newsnowPersonalization.behaviorProfile.legacyFallback')}
-          style={{ marginBottom: '0.75rem' }}
         />
       ) : null}
 
@@ -813,7 +808,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                     {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.positive')}
                   </Typography.Text>
                   {positiveEntries.length > 0 ? (
-                    <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
+                    <Space direction="vertical" size={6} className="!mt-2" style={{ width: '100%' }}>
                       {positiveEntries.slice(0, 4).map(([key, value]) => (
                         <div
                           key={`positive-${section.key}-${key}`}
@@ -822,7 +817,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                           <Typography.Text ellipsis={{ tooltip: key }} style={{ maxWidth: '70%' }}>
                             {key}
                           </Typography.Text>
-                          <Tag color="green">{value.toFixed(2)}</Tag>
+                          <Tag>{value.toFixed(2)}</Tag>
                         </div>
                       ))}
                     </Space>
@@ -837,7 +832,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                     {t('systemSettings.newsnowPersonalization.behaviorProfile.sections.negative')}
                   </Typography.Text>
                   {negativeEntries.length > 0 ? (
-                    <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 6 }}>
+                    <Space direction="vertical" size={6} className="!mt-2" style={{ width: '100%' }}>
                       {negativeEntries.slice(0, 4).map(([key, value]) => (
                         <div
                           key={`negative-${section.key}-${key}`}
@@ -846,7 +841,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                           <Typography.Text ellipsis={{ tooltip: key }} style={{ maxWidth: '70%' }}>
                             {key}
                           </Typography.Text>
-                          <Tag color="red">{value.toFixed(2)}</Tag>
+                          <Tag>{value.toFixed(2)}</Tag>
                         </div>
                       ))}
                     </Space>
@@ -913,7 +908,7 @@ export function NewsnowPersonalizationSettingsPanel() {
                 })
               : t('systemSettings.newsnowPersonalization.weightPreview.invalid')
           }
-          style={{ marginBottom: '1rem' }}
+          className="!mb-4"
         />
 
         <Form.Item

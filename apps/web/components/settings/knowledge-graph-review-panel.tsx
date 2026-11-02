@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Button, Empty, Form, Input, InputNumber, Modal, Space, Spin, Switch, Table, Typography, message, Tag } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Modal, Space, Spin, Switch, Table, Typography, message, Tag } from "antd";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import {
   useKnowledgeGraphEvidenceReviewQueueQuery,
   useReviewKnowledgeGraphEvidenceMutation
@@ -263,11 +264,11 @@ export function KnowledgeGraphReviewPanel() {
 
           let outcomeColor: string | undefined;
           if (outcome === "accept") {
-            outcomeColor = "green";
+            outcomeColor = "success";
           } else if (outcome === "reject") {
-            outcomeColor = "red";
+            outcomeColor = "error";
           } else if (outcome) {
-            outcomeColor = "orange";
+            outcomeColor = "warning";
           }
 
           return (
@@ -288,7 +289,7 @@ export function KnowledgeGraphReviewPanel() {
                 </Typography.Text>
               ) : null}
               {reviewedStatus ? (
-                <Tag color={reviewedStatus === "approved" ? "green" : reviewedStatus === "rejected" ? "red" : "blue"}>
+                <Tag color={reviewedStatus === "approved" ? "success" : reviewedStatus === "rejected" ? "error" : undefined}>
                   {reviewedStatus}
                 </Tag>
               ) : null}
@@ -366,7 +367,7 @@ export function KnowledgeGraphReviewPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("settings.knowledgeGraphReview.description")}
       </Typography.Paragraph>
 
@@ -376,11 +377,11 @@ export function KnowledgeGraphReviewPanel() {
           showIcon
           message={t("settings.knowledgeGraphReview.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
-      <Space style={{ marginBottom: "1rem" }} wrap>
+      <Space className="!mb-4" wrap>
         <Space>
           <Typography.Text>{t("settings.knowledgeGraphReview.filters.maxConfidence")}</Typography.Text>
           <InputNumber
@@ -405,7 +406,7 @@ export function KnowledgeGraphReviewPanel() {
           <Spin />
         </div>
       ) : rows.length === 0 ? (
-        <Empty description={t("settings.knowledgeGraphReview.empty")} />
+        <ChartEmptyState presentation="banner" description={t("settings.knowledgeGraphReview.empty")} />
       ) : (
         <Table
           rowKey="id"
@@ -429,7 +430,7 @@ export function KnowledgeGraphReviewPanel() {
       >
         {detailsRow ? (
           <>
-            <Typography.Paragraph style={{ marginBottom: "0.25rem" }}>
+            <Typography.Paragraph className="!mb-1">
               <Link href={detailsRow.article.url} target="_blank" rel="noreferrer">
                 {detailsRow.article.title ?? detailsRow.article.url}
               </Link>
@@ -451,7 +452,7 @@ export function KnowledgeGraphReviewPanel() {
                 <Typography.Text type="secondary">
                   {t("settings.knowledgeGraphReview.details.quote")}
                 </Typography.Text>
-                <div style={{ marginTop: "0.25rem", whiteSpace: "pre-wrap" }}>
+                <div className="mt-1" style={{ whiteSpace: "pre-wrap" }}>
                   {readNestedString(detailsEvidence, ["quote"])}
                 </div>
               </Typography.Paragraph>
@@ -461,11 +462,11 @@ export function KnowledgeGraphReviewPanel() {
               <Typography.Text type="secondary">
                 {t("settings.knowledgeGraphReview.details.validation")}
               </Typography.Text>
-              <div style={{ marginTop: "0.25rem" }}>
+              <div className="mt-1">
                 <Space wrap>
                   {detailsValidation ? <Tag>{detailsValidation}</Tag> : <Tag color="default">-</Tag>}
                   {readNestedNumber(detailsEvidence, ["validation", "supportScore"]) !== null ? (
-                    <Tag color="blue">
+                    <Tag>
                       {t("settings.knowledgeGraphReview.details.supportScore", {
                         value: Number(readNestedNumber(detailsEvidence, ["validation", "supportScore"])).toFixed(2)
                       })}
@@ -512,7 +513,7 @@ export function KnowledgeGraphReviewPanel() {
 
               return (
                 <>
-                  <Typography.Paragraph type="secondary" style={{ marginBottom: "0.5rem" }}>
+                  <Typography.Paragraph type="secondary" className="!mb-2">
                     {t("settings.knowledgeGraphReview.details.modelResults")}
                   </Typography.Paragraph>
                   <Table
@@ -551,7 +552,7 @@ export function KnowledgeGraphReviewPanel() {
       >
         {reviewTarget ? (
           <>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: "0.75rem" }}>
+            <Typography.Paragraph type="secondary" className="!mb-3">
               {reviewTarget.edge.fromEntity.name} - {reviewTarget.edge.type} {"->"} {reviewTarget.edge.toEntity.name}
             </Typography.Paragraph>
 

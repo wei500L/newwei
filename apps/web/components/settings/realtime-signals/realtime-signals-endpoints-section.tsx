@@ -14,7 +14,7 @@ export function RealtimeSignalsEndpointsSection() {
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
         message={t(
           "systemSettings.realtimeSignals.alerts.aisRelayPurpose.title",
         )}

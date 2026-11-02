@@ -178,7 +178,7 @@ export function RealtimeSignalsSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("systemSettings.realtimeSignals.description")}
       </Typography.Paragraph>
 
@@ -187,7 +187,7 @@ export function RealtimeSignalsSettingsPanel() {
         showIcon
         message={t("systemSettings.realtimeSignals.notice.title")}
         description={t("systemSettings.realtimeSignals.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {settings.refreshError ? (
@@ -200,7 +200,7 @@ export function RealtimeSignalsSettingsPanel() {
               {t("common.retry")}
             </Button>
           }
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 

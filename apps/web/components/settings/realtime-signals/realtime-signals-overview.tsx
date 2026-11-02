@@ -25,7 +25,6 @@ export function RealtimeSignalsOverview({
 }: RealtimeSignalsOverviewProps) {
   const { t } = useTranslation();
 
-  const sourceTagColor = settings.source === "db" ? "green" : "default";
   const sourceTagLabel =
     settings.source === "db"
       ? t("systemSettings.realtimeSignals.status.saved")
@@ -34,7 +33,7 @@ export function RealtimeSignalsOverview({
   const acledApiStatusLabel = settings.acledApiEnabled
     ? t("systemSettings.realtimeSignals.status.acledApiEnabled")
     : t("systemSettings.realtimeSignals.status.acledApiDisabled");
-  const enabledTagColor = settings.enabled ? "green" : "default";
+  const enabledTagColor = settings.enabled ? "success" : undefined;
   const enabledTagLabel = settings.enabled
     ? t("systemSettings.realtimeSignals.status.enabled")
     : t("systemSettings.realtimeSignals.status.disabled");
@@ -50,12 +49,12 @@ export function RealtimeSignalsOverview({
   );
   const acledTokenStatusColor =
     settings.acledAccessTokenStatus === "ready"
-      ? "green"
+      ? "success"
       : settings.acledAccessTokenStatus === "expiring"
-        ? "gold"
+        ? "warning"
         : settings.acledAccessTokenStatus === "refresh_failed"
-          ? "red"
-          : "default";
+          ? "error"
+          : undefined;
 
   const enabledSourceCount = sourceStatusRows.filter(
     (row) => row.enabled,
@@ -130,7 +129,7 @@ export function RealtimeSignalsOverview({
           <Typography.Text>
             {t("systemSettings.realtimeSignals.status.label")}
           </Typography.Text>
-          <Tag color={sourceTagColor}>{sourceTagLabel}</Tag>
+          <Tag>{sourceTagLabel}</Tag>
           <Tag color={enabledTagColor}>{enabledTagLabel}</Tag>
         </Space>
         <Space wrap>
@@ -162,7 +161,7 @@ export function RealtimeSignalsOverview({
             {settings.openskyClientId ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
-          <Tag color={settings.openskyClientId ? "blue" : "default"}>
+          <Tag>
             {secretSourceLabel(settings.openskyClientIdSource)}
           </Tag>
           <Typography.Text type="secondary">
@@ -177,7 +176,7 @@ export function RealtimeSignalsOverview({
           <Typography.Text type="secondary">
             {t("systemSettings.realtimeSignals.status.acledApi")}
           </Typography.Text>
-          <Tag color={settings.acledApiEnabled ? "green" : "gold"}>
+          <Tag color={settings.acledApiEnabled ? "success" : undefined}>
             {acledApiStatusLabel}
           </Tag>
           {acledApiDisabled ? (
@@ -194,7 +193,7 @@ export function RealtimeSignalsOverview({
             {settings.acledOauthUsername ||
               t("systemSettings.realtimeSignals.status.notConfigured")}
           </Tag>
-          <Tag color={settings.acledOauthUsername ? "blue" : "default"}>
+          <Tag>
             {secretSourceLabel(settings.acledOauthUsernameSource)}
           </Tag>
           <Typography.Text type="secondary">
@@ -203,13 +202,7 @@ export function RealtimeSignalsOverview({
           <Tag>
             {settings.acledOauthClientId || "acled"}
           </Tag>
-          <Tag
-            color={
-              settings.acledOauthClientIdSource === "none"
-                ? "default"
-                : "blue"
-            }
-          >
+          <Tag>
             {secretSourceLabel(settings.acledOauthClientIdSource)}
           </Tag>
         </Space>
@@ -222,7 +215,7 @@ export function RealtimeSignalsOverview({
                 )}
               </Typography.Text>
               <Tag color={acledTokenStatusColor}>{acledTokenStatusLabel}</Tag>
-              <Tag color={settings.hasAcledAccessToken ? "blue" : "default"}>
+              <Tag>
                 {secretSourceLabel(settings.acledAccessTokenSource)}
               </Tag>
               <Typography.Text type="secondary">
@@ -263,20 +256,20 @@ export function RealtimeSignalsOverview({
         {secretStatusRows.map((row) => (
           <Space key={row.key} wrap>
             <Typography.Text type="secondary">{row.label}</Typography.Text>
-            <Tag color={row.has ? "blue" : "default"}>
+            <Tag>
               {secretSourceLabel(row.source)}
             </Tag>
           </Space>
         ))}
 
-        <Divider style={{ margin: "8px 0" }} />
+        <Divider />
 
         <Typography.Text type="secondary">
           {t("systemSettings.realtimeSignals.status.sourceSnapshot")}
         </Typography.Text>
         <Space wrap size={[8, 8]}>
           {sourceStatusRows.map((row) => (
-            <Tag key={row.key} color={row.enabled ? "green" : "default"}>
+            <Tag key={row.key} color={row.enabled ? "success" : undefined}>
               {row.sourceName} ·{" "}
               {row.enabled
                 ? t("systemSettings.realtimeSignals.status.enabled")

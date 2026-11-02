@@ -94,14 +94,14 @@ export function KnowledgeGraphSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-6">
         {t("settings.knowledgeGraph.description")}
       </Typography.Paragraph>
       <Alert
         type="info"
         showIcon
         message={t("settings.knowledgeGraph.hints.note")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
       <Form layout="vertical" form={form} onFinish={handleSubmit}>
         <Divider orientation="left" plain>
@@ -195,7 +195,7 @@ export function KnowledgeGraphSettingsPanel() {
                   value: typeof minEdgeConfidence === "number" ? minEdgeConfidence.toFixed(2) : "-"
                 })
           }
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
 
         <Divider orientation="left" plain>
@@ -248,11 +248,11 @@ export function KnowledgeGraphSettingsPanel() {
                 models: typeof validationModelCount === "number" ? validationModelCount : "-",
                 relations: typeof validationMaxRelations === "number" ? validationMaxRelations : "-"
               })}
-              style={{ marginBottom: "1rem" }}
+              className="!mb-4"
             />
           </>
         ) : (
-          <Typography.Paragraph type="secondary" style={{ marginBottom: "1.5rem" }}>
+          <Typography.Paragraph type="secondary" className="!mb-6">
             {t("settings.knowledgeGraph.hints.multiModelValidationDisabled")}
           </Typography.Paragraph>
         )}

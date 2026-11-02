@@ -46,20 +46,20 @@ export function LlmGatewayProfilesPanel({
             <Space size={6} wrap>
               <Typography.Text strong>{record.name}</Typography.Text>
               {settings.activeId === record.id && record.enabled ? (
-                <Tag color="blue">{t("settings.llmGateway.active")}</Tag>
+                <Tag color="success">{t("settings.llmGateway.active")}</Tag>
               ) : null}
               {settings.embeddingActiveId === record.id && record.enabled ? (
-                <Tag color="purple">
+                <Tag>
                   {t("settings.llmGateway.embeddingActive.tag")}
                 </Tag>
               ) : null}
               {settings.rerankActiveId === record.id && record.enabled ? (
-                <Tag color="gold">
+                <Tag>
                   {t("settings.llmGateway.rerankActive.tag")}
                 </Tag>
               ) : null}
               {governed ? (
-                <Tag color="geekblue">
+                <Tag>
                   {t("settings.llmGateway.proxyGovernance.table.lockedTag")}
                 </Tag>
               ) : null}
@@ -132,13 +132,13 @@ export function LlmGatewayProfilesPanel({
       render: (_: unknown, record) => (
         <Space wrap>
           <Tag>{`api:${record.apiSurface}`}</Tag>
-          <Tag color={record.assistantWebSearchEnabled ? "blue" : "default"}>
+          <Tag>
             {record.assistantWebSearchEnabled
               ? t("settings.llmGateway.columns.assistantWebSearchOn")
               : t("settings.llmGateway.columns.assistantWebSearchOff")}
           </Tag>
           <Tag>{`response_format:${record.responseFormatMode}`}</Tag>
-          <Tag color={record.sendMetadata ? "green" : "default"}>
+          <Tag>
             {record.sendMetadata
               ? t("settings.llmGateway.columns.metadataOn")
               : t("settings.llmGateway.columns.metadataOff")}
@@ -152,11 +152,11 @@ export function LlmGatewayProfilesPanel({
       key: "enabled",
       render: (value: boolean, record) => (
         <Space wrap>
-          <Tag color={value ? "green" : "red"}>
+          <Tag color={value ? "success" : undefined}>
             {value ? t("common.enabled") : t("common.disabled")}
           </Tag>
           {isGovernedProfileLocked(record.id) ? (
-            <Tag color="gold">
+            <Tag>
               {t("settings.llmGateway.proxyGovernance.table.lockedStatus")}
             </Tag>
           ) : null}
@@ -169,7 +169,7 @@ export function LlmGatewayProfilesPanel({
       key: "hasApiKey",
       responsive: ["md"],
       render: (value: boolean) => (
-        <Tag color={value ? "green" : "default"}>
+        <Tag color={value ? "success" : "warning"}>
           {value
             ? t("settings.llmGateway.keySet")
             : t("settings.llmGateway.keyMissing")}

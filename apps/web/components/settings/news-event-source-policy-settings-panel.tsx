@@ -5,7 +5,6 @@ import {
   Alert,
   Button,
   Divider,
-  Empty,
   Form,
   Input,
   List,
@@ -24,6 +23,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { formatDateTime, resolveLocale } from "@/lib/i18n";
@@ -1274,52 +1274,44 @@ export function NewsEventSourcePolicySettingsPanel() {
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsAdd",
         ),
         values: revisionDiff.authoritativeDomainsAdd,
-        color: "blue" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsRemove",
         ),
         values: revisionDiff.authoritativeDomainsRemove,
-        color: "red" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsAdd",
         ),
         values: revisionDiff.authoritativeLabelsAdd,
-        color: "blue" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsRemove",
         ),
         values: revisionDiff.authoritativeLabelsRemove,
-        color: "red" as const,
       },
       {
         label: t("settings.newsEventSourcePolicy.history.deltaBlogDomainsAdd"),
         values: revisionDiff.blogDomainsAdd,
-        color: "orange" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaBlogDomainsRemove",
         ),
         values: revisionDiff.blogDomainsRemove,
-        color: "green" as const,
       },
       {
         label: t("settings.newsEventSourcePolicy.history.deltaBlogLabelsAdd"),
         values: revisionDiff.blogLabelsAdd,
-        color: "orange" as const,
       },
       {
         label: t(
           "settings.newsEventSourcePolicy.history.deltaBlogLabelsRemove",
         ),
         values: revisionDiff.blogLabelsRemove,
-        color: "green" as const,
       },
     ].filter((group) => group.values.length > 0);
   }, [revisionDiff, t]);
@@ -1399,14 +1391,14 @@ export function NewsEventSourcePolicySettingsPanel() {
           >
             <Tag
               color={degradedStatusCritical ? "error" : "warning"}
-              style={{ marginInlineEnd: 0 }}
+              className="!me-0"
             >
               {t("settings.newsEventSourcePolicy.degraded.badge")}
             </Tag>
           </Tooltip>
         ) : null}
       </div>
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("settings.newsEventSourcePolicy.description")}
       </Typography.Paragraph>
 
@@ -1415,7 +1407,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         showIcon
         message={t("settings.newsEventSourcePolicy.notice.title")}
         description={t("settings.newsEventSourcePolicy.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {currentPolicy ? (
@@ -1434,7 +1426,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                 })
               : undefined
           }
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1444,7 +1436,7 @@ export function NewsEventSourcePolicySettingsPanel() {
           showIcon
           message={t("settings.newsEventSourcePolicy.conflicts.title")}
           description={conflictDescription}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1456,7 +1448,7 @@ export function NewsEventSourcePolicySettingsPanel() {
           description={policySyncWarnings
             .map((code) => resolveSyncWarningMessage(code))
             .join(" | ")}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1466,7 +1458,7 @@ export function NewsEventSourcePolicySettingsPanel() {
           showIcon
           message={t("settings.newsEventSourcePolicy.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1474,7 +1466,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="info"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={t("settings.newsEventSourcePolicy.presets.quickApplyTitle")}
           description={
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
@@ -1650,12 +1642,12 @@ export function NewsEventSourcePolicySettingsPanel() {
         </Space>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("settings.newsEventSourcePolicy.presets.title")}
       </Typography.Title>
       <Typography.Paragraph
         type="secondary"
-        style={{ marginBottom: "0.75rem" }}
+        className="!mb-3"
       >
         {t("settings.newsEventSourcePolicy.presets.description")}
       </Typography.Paragraph>
@@ -1668,7 +1660,7 @@ export function NewsEventSourcePolicySettingsPanel() {
             "settings.newsEventSourcePolicy.messages.presetsLoadFailed",
           )}
           description={presetError.message}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1680,7 +1672,7 @@ export function NewsEventSourcePolicySettingsPanel() {
           description={presetSyncWarnings
             .map((code) => resolveSyncWarningMessage(code))
             .join(" | ")}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 
@@ -1688,7 +1680,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         <Alert
           type="success"
           showIcon
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
           message={t("settings.newsEventSourcePolicy.presets.updatedAt", {
             value: dayjs(currentPresets.updatedAt).format(
               "YYYY-MM-DD HH:mm:ss",
@@ -1792,7 +1784,7 @@ export function NewsEventSourcePolicySettingsPanel() {
         </Space>
       </Form>
 
-      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("settings.newsEventSourcePolicy.history.title")}
       </Typography.Title>
 
@@ -1812,56 +1804,48 @@ export function NewsEventSourcePolicySettingsPanel() {
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsAdd",
               ),
               values: entry.delta.authoritativeDomainsAdd,
-              color: "blue" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeDomainsRemove",
               ),
               values: entry.delta.authoritativeDomainsRemove,
-              color: "red" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsAdd",
               ),
               values: entry.delta.authoritativeLabelsAdd,
-              color: "blue" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaAuthoritativeLabelsRemove",
               ),
               values: entry.delta.authoritativeLabelsRemove,
-              color: "red" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogDomainsAdd",
               ),
               values: entry.delta.blogDomainsAdd,
-              color: "orange" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogDomainsRemove",
               ),
               values: entry.delta.blogDomainsRemove,
-              color: "green" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogLabelsAdd",
               ),
               values: entry.delta.blogLabelsAdd,
-              color: "orange" as const,
             },
             {
               label: t(
                 "settings.newsEventSourcePolicy.history.deltaBlogLabelsRemove",
               ),
               values: entry.delta.blogLabelsRemove,
-              color: "green" as const,
             },
           ].filter((group) => group.values.length > 0);
 
@@ -1871,7 +1855,7 @@ export function NewsEventSourcePolicySettingsPanel() {
               actions={
                 isActive
                   ? [
-                      <Tag color="green" key="active">
+                      <Tag color="success" key="active">
                         {t("settings.newsEventSourcePolicy.history.activeTag")}
                       </Tag>,
                     ]
@@ -1900,7 +1884,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                         },
                       )}
                     </Typography.Text>
-                    <Tag color="blue">{operationLabelMap[entry.operation]}</Tag>
+                    <Tag>{operationLabelMap[entry.operation]}</Tag>
                     <Typography.Text type="secondary">
                       {dayjs(entry.createdAt).format("YYYY-MM-DD HH:mm:ss")}
                     </Typography.Text>
@@ -1936,7 +1920,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                     ) : null}
                     {deltaGroups.length > 0 ? (
                       <>
-                        <Divider style={{ margin: "6px 0" }} />
+                        <Divider className="!my-2" />
                         {deltaGroups.map((group) => {
                           const values = group.values.slice(0, 8);
                           const remaining = Math.max(
@@ -1958,7 +1942,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                               </Typography.Text>
                               <Space wrap size={[4, 4]}>
                                 {values.map((value) => (
-                                  <Tag color={group.color} key={value}>
+                                  <Tag key={value}>
                                     {value}
                                   </Tag>
                                 ))}
@@ -1986,17 +1970,17 @@ export function NewsEventSourcePolicySettingsPanel() {
         }}
       />
 
-      <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+      <Typography.Title level={5} className="!mt-6">
         {t("settings.newsEventSourcePolicy.history.diffTitle")}
       </Typography.Title>
       <Typography.Paragraph
         type="secondary"
-        style={{ marginBottom: "0.75rem" }}
+        className="!mb-3"
       >
         {t("settings.newsEventSourcePolicy.history.diffDescription")}
       </Typography.Paragraph>
 
-      <Space wrap size={[8, 8]} style={{ marginBottom: "0.75rem" }}>
+      <Space wrap size={[8, 8]} className="!mb-3">
         <Select
           style={{ minWidth: 180 }}
           value={baseRevision ?? undefined}
@@ -2022,7 +2006,7 @@ export function NewsEventSourcePolicySettingsPanel() {
           showIcon
           message={t("settings.newsEventSourcePolicy.history.diffLoadFailed")}
           description={diffError.message}
-          style={{ marginBottom: "0.75rem" }}
+          className="!mb-3"
         />
       ) : null}
 
@@ -2049,7 +2033,7 @@ export function NewsEventSourcePolicySettingsPanel() {
                 </Typography.Text>
                 <Space wrap size={[4, 4]}>
                   {values.map((value) => (
-                    <Tag color={group.color} key={`${group.label}-${value}`}>
+                    <Tag key={`${group.label}-${value}`}>
                       {value}
                     </Tag>
                   ))}
@@ -2066,8 +2050,8 @@ export function NewsEventSourcePolicySettingsPanel() {
           })}
         </Space>
       ) : (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        <ChartEmptyState
+          presentation="banner"
           description={t("settings.newsEventSourcePolicy.history.diffEmpty")}
         />
       )}

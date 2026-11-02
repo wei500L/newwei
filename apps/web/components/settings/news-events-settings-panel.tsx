@@ -479,7 +479,7 @@ export function NewsEventsSettingsPanel() {
       }
       if (!row.lastAttemptAt) {
         return {
-          color: "blue",
+          color: undefined,
           text: t("settings.newsEvents.clusteringQueue.automation.nextTick"),
         };
       }
@@ -491,7 +491,7 @@ export function NewsEventsSettingsPanel() {
       );
       if (nextRetryAt.getTime() <= Date.now()) {
         return {
-          color: "blue",
+          color: undefined,
           text: t("settings.newsEvents.clusteringQueue.automation.eligible"),
         };
       }
@@ -718,7 +718,7 @@ export function NewsEventsSettingsPanel() {
         />
       ) : null}
 
-      <Typography.Title level={5} style={{ marginTop: 0 }}>
+      <Typography.Title level={5} className="!mt-0">
         {t("settings.newsEvents.sections.clustering")}
       </Typography.Title>
 
@@ -763,7 +763,7 @@ export function NewsEventsSettingsPanel() {
             <Alert
               type={modelServiceReady ? "info" : "warning"}
               showIcon
-              style={{ marginBottom: "1rem" }}
+              className="!mb-4"
               message={t("settings.newsEvents.clusteringMode.notice.title")}
               description={
                 <Space direction="vertical" size={4}>
@@ -1069,7 +1069,7 @@ export function NewsEventsSettingsPanel() {
           )}
         </Form.Item>
 
-        <Typography.Title level={5} style={{ marginTop: "1.5rem" }}>
+        <Typography.Title level={5} className="!mt-6">
           {t("settings.newsEvents.sections.timelineClassification")}
         </Typography.Title>
 
@@ -1107,7 +1107,7 @@ export function NewsEventsSettingsPanel() {
               {t("settings.newsEvents.presets.aggressive")}
             </Button>
           </Space>
-          <Space size={6} style={{ marginTop: 8 }}>
+          <Space size={6} className="!mt-2">
             <Typography.Text type="secondary">
               {t("settings.newsEvents.hints.closestPreset")}
             </Typography.Text>

@@ -214,7 +214,7 @@ export function RateLimitPoliciesPanel() {
       dataIndex: "enabled",
       key: "enabled",
       render: (value: boolean) => (
-        <Tag color={value ? "green" : "red"}>
+        <Tag color={value ? "success" : undefined}>
           {value ? t("common.enabled") : t("common.disabled")}
         </Tag>
       )
@@ -247,7 +247,8 @@ export function RateLimitPoliciesPanel() {
       <Space
         direction="vertical"
         size="middle"
-        style={{ display: "flex", marginBottom: "1rem" }}
+        className="!mb-4"
+        style={{ display: "flex" }}
       >
         <Alert
           type="warning"
@@ -261,7 +262,7 @@ export function RateLimitPoliciesPanel() {
           }
         />
         <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-          <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+          <Typography.Paragraph type="secondary" className="!m-0">
             {t("settings.rateLimitPolicies.description")}
           </Typography.Paragraph>
           <Button type="primary" htmlType="button" onClick={openCreate}>
@@ -298,7 +299,7 @@ export function RateLimitPoliciesPanel() {
                 title={
                   <Space align="center">
                     <Typography.Text code>{policy.feature}</Typography.Text>
-                    <Tag color={policy.enabled ? "green" : "red"}>
+                    <Tag color={policy.enabled ? "success" : undefined}>
                       {policy.enabled ? t("common.enabled") : t("common.disabled")}
                     </Tag>
                   </Space>

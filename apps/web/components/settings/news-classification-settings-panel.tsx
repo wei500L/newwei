@@ -246,7 +246,7 @@ export function NewsClassificationSettingsPanel() {
   return (
     <>
       {contextHolder}
-      <Typography.Paragraph type="secondary" style={{ marginBottom: "1rem" }}>
+      <Typography.Paragraph type="secondary" className="!mb-4">
         {t("settings.newsClassification.description")}
       </Typography.Paragraph>
 
@@ -255,7 +255,7 @@ export function NewsClassificationSettingsPanel() {
         showIcon
         message={t("settings.newsClassification.notice.title")}
         description={t("settings.newsClassification.notice.body")}
-        style={{ marginBottom: "1rem" }}
+        className="!mb-4"
       />
 
       {error ? (
@@ -264,7 +264,7 @@ export function NewsClassificationSettingsPanel() {
           showIcon
           message={t("settings.newsClassification.messages.loadFailed")}
           description={error.message}
-          style={{ marginBottom: "1rem" }}
+          className="!mb-4"
         />
       ) : null}
 

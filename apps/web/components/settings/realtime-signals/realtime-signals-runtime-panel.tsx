@@ -48,12 +48,6 @@ export function RealtimeSignalsRuntimePanel({
 
   const acledApiDisabled = !settings.acledApiEnabled;
   const runtimeSettingsSource = diagnostics?.settingsSource ?? "unknown";
-  const runtimeSettingsSourceColor =
-    runtimeSettingsSource === "db"
-      ? "green"
-      : runtimeSettingsSource === "unknown"
-        ? "gold"
-        : "default";
   const runtimeSettingsSourceLabel = t(
     `systemSettings.realtimeSignals.runtime.settingsSources.${runtimeSettingsSource}`,
     {
@@ -80,7 +74,7 @@ export function RealtimeSignalsRuntimePanel({
         extra={
           <Space wrap>
           {diagnostics ? (
-            <Tag color={runtimeSettingsSourceColor}>
+            <Tag>
               {t("systemSettings.realtimeSignals.runtime.settingsSource")}
               : {runtimeSettingsSourceLabel}
             </Tag>
