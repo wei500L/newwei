@@ -318,6 +318,7 @@ export function SearchTelemetryContent() {
             title={t("admin.searchTelemetry.tables.events")}
           >
             <Table
+              scroll={{ x: "max-content" }}
               size="small"
               pagination={false}
               columns={eventColumns}
@@ -333,6 +334,7 @@ export function SearchTelemetryContent() {
             title={t("admin.searchTelemetry.tables.surfaces")}
           >
             <Table
+              scroll={{ x: "max-content" }}
               size="small"
               pagination={false}
               columns={pairColumns}
@@ -348,6 +350,7 @@ export function SearchTelemetryContent() {
             title={t("admin.searchTelemetry.tables.queryLength")}
           >
             <Table
+              scroll={{ x: "max-content" }}
               size="small"
               pagination={false}
               columns={[
@@ -374,6 +377,7 @@ export function SearchTelemetryContent() {
             title={t("admin.searchTelemetry.tables.verticals")}
           >
             <Table
+              scroll={{ x: "max-content" }}
               size="small"
               pagination={false}
               columns={[

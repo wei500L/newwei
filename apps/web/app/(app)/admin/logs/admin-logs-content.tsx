@@ -1237,6 +1237,7 @@ export function AdminLogsContent() {
                         </Col>
                       </Row>
                       <Table
+                        scroll={{ x: "max-content" }}
                         rowKey={(row) =>
                           `${row.queue}:${row.stage}:${row.errorName}`
                         }
@@ -1289,7 +1290,6 @@ export function AdminLogsContent() {
                         locale={{
                           emptyText: t("adminLogs.task.summary.empty"),
                         }}
-                        scroll={{ x: "max-content" }}
                       />
                     </Space>
                   ) : null}
@@ -1439,6 +1439,7 @@ export function AdminLogsContent() {
                         </Col>
                       </Row>
                       <Table
+                        scroll={{ x: "max-content" }}
                         rowKey={(row) => row.date}
                         size="small"
                         pagination={false}

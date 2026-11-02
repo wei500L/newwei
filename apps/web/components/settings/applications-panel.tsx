@@ -313,6 +313,7 @@ export function ApplicationsPanel({
     <Space direction="vertical" size="large" style={{ display: 'flex' }}>
       <Card size="small" title="Join requests">
         <Table
+          scroll={{ x: "max-content" }}
           rowKey="id"
           loading={loading}
           dataSource={applications.orgApplications}
@@ -347,6 +348,7 @@ export function ApplicationsPanel({
       {canManagePlatform ? (
         <Card size="small" title="New organization requests">
           <Table
+            scroll={{ x: "max-content" }}
             rowKey="id"
             loading={loading}
             dataSource={applications.platformApplications}

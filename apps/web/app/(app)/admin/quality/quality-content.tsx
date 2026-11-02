@@ -2132,6 +2132,7 @@ export function QualityContent() {
                 loading={loading}
               >
                 <Table
+                  scroll={{ x: "max-content" }}
                   rowKey={(row) => `${row.stage}:${row.errorName}`}
                   columns={failureColumns}
                   dataSource={pipeline?.failureTypes ?? []}

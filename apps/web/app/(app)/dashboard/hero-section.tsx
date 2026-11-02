@@ -179,14 +179,14 @@ export function HeroSection({
 
   if (allMissing) {
     return (
-      <div className="mb-10 glass-panel border border-[var(--border)] rounded-3xl p-8 shadow-sm">
+      <div className="content-card p-6 md:p-8">
         <ChartEmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );
   }
 
   return (
-    <div className="mb-10 glass-panel border border-[var(--border)] rounded-3xl p-8 shadow-sm">
+    <div className="content-card p-6 md:p-8">
       <Row gutter={[32, 32]} align="middle">
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.key}>

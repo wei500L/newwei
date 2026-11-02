@@ -54,7 +54,7 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
     case "healthy":
       return {
         dotClassName: "bg-emerald-500",
-        fillClassName: "bg-[linear-gradient(90deg,#34d399,#10b981)]",
+        fillClassName: "bg-[var(--bullish)]",
         badgeClassName:
           "border-emerald-200/80 dark:border-emerald-400/35 bg-emerald-50/85 dark:bg-emerald-400/12 text-emerald-700 dark:text-emerald-200",
         labelClassName: "text-emerald-700",
@@ -64,7 +64,7 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
     case "warning":
       return {
         dotClassName: "bg-amber-500",
-        fillClassName: "bg-[linear-gradient(90deg,#fbbf24,#f59e0b)]",
+        fillClassName: "bg-[var(--accent)]",
         badgeClassName:
           "border-amber-200/80 dark:border-amber-400/35 bg-amber-50/90 dark:bg-amber-400/12 text-amber-700 dark:text-amber-200",
         labelClassName: "text-amber-700",
@@ -74,7 +74,7 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
     case "critical":
       return {
         dotClassName: "bg-rose-500",
-        fillClassName: "bg-[linear-gradient(90deg,#fb7185,#e11d48)]",
+        fillClassName: "bg-[var(--destructive)]",
         badgeClassName:
           "border-rose-200/80 dark:border-rose-400/35 bg-rose-50/90 dark:bg-rose-400/12 text-rose-700 dark:text-rose-200",
         labelClassName: "text-rose-700",
@@ -84,7 +84,7 @@ const buildStateTone = (state: SystemHealthState): SystemHealthTone => {
     default:
       return {
         dotClassName: "bg-slate-400",
-        fillClassName: "bg-[linear-gradient(90deg,#cbd5e1,#94a3b8)]",
+        fillClassName: "bg-slate-400",
         badgeClassName:
           "border-slate-200/80 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
         labelClassName: "text-slate-600",
@@ -141,9 +141,8 @@ export function SystemHealthMeter({
       ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div
-          className={`relative h-2 ${compact ? "w-16" : "w-full"} overflow-hidden rounded-full border border-white/60 bg-slate-200/80`}
+          className={`relative h-2 ${compact ? "w-16" : "w-full"} overflow-hidden rounded-full bg-[var(--surface-muted)]`}
         >
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,#f43f5e_0%,#f59e0b_52%,#10b981_100%)] opacity-25" />
           {assessment.score !== null ? (
             <div
               className={`absolute inset-y-0 left-0 rounded-full ${tone.fillClassName}`}

@@ -862,6 +862,7 @@ export function AkshareGatewaySettingsPanel() {
             {t("systemSettings.akshare.providers.description")}
           </Typography.Paragraph>
           <Table
+            scroll={{ x: "max-content" }}
             size="small"
             rowKey="key"
             loading={fetchConfigsLoading}
@@ -991,7 +992,6 @@ export function AkshareGatewaySettingsPanel() {
                 ),
               },
             ]}
-            scroll={{ x: "max-content" }}
           />
         </Card>
       ) : null}

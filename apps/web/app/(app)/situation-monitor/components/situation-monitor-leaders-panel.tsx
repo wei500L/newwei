@@ -40,6 +40,7 @@ export function SituationMonitorLeadersPanel(
       loading={initialLoading}
     >
       <Table
+        scroll={{ x: "max-content" }}
         rowKey="id"
         size="small"
         pagination={{ pageSize: screens.lg ? 8 : 6, hideOnSinglePage: true }}
@@ -89,7 +90,6 @@ export function SituationMonitorLeadersPanel(
         dataSource={(data?.leaders ?? []).filter(
           (leader) => leader.matchCount > 0,
         )}
-        scroll={{ x: "max-content" }}
       />
     </Card>
   );

@@ -28,6 +28,7 @@ import { useSession } from 'next-auth/react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PageHeader } from '@/components/page-header';
 import {
   canViewLoginHistory,
   getAssignableRoles,
@@ -1110,20 +1111,19 @@ export function AccessSettingsContent() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card
-        className="content-card"
-        title={t('adminConsole.links.settings.title')}
-      >
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t('nav.groups.admin')}
+        title={t('adminSettings.pages.access.title')}
+        description={t('adminSettings.pages.access.description')}
+      />
+      <Card className="content-card">
         {messageContext}
-        <Typography.Paragraph type="secondary" style={{ marginBottom: '1rem' }}>
-          {t('adminConsole.links.settings.description')}
-        </Typography.Paragraph>
         {metaError ? (
           <Alert
             type="error"
             showIcon
-            style={{ marginBottom: '1rem' }}
+            className="mb-4"
             message={t('settings.members.loadFailed')}
           />
         ) : null}
@@ -1877,6 +1877,7 @@ function UsersPanel({
       </Space>
 
       <Table
+        scroll={{ x: "max-content" }}
         rowKey="id"
         columns={columns}
         dataSource={users}
@@ -1885,7 +1886,6 @@ function UsersPanel({
         locale={{
           emptyText: <Empty description={t('settings.members.empty')} />,
         }}
-        scroll={{ x: 1260 }}
       />
     </Space>
   );

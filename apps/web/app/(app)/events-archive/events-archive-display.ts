@@ -69,7 +69,7 @@ export type ArchiveClassificationDetail = Omit<
 
 export interface ArchiveVerticalTone {
   accentDotClassName: string;
-  accentGlowClassName: string;
+  accentBarClassName: string;
   actionClassName: string;
   titlePillClassName: string;
 }
@@ -135,8 +135,7 @@ export const MIN_ARCHIVE_SEARCH_QUERY_LENGTH = 2;
 const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   EAST_SEA: {
     accentDotClassName: 'bg-sky-500 dark:bg-sky-300',
-    accentGlowClassName:
-      'from-sky-500/22 via-sky-500/10 to-transparent dark:from-sky-400/26 dark:via-sky-400/10',
+    accentBarClassName: 'bg-[var(--primary)]',
     actionClassName:
       'text-sky-700 hover:bg-sky-500/12 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-400/12 dark:hover:text-sky-100',
     titlePillClassName:
@@ -144,8 +143,7 @@ const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   },
   SOUTH_SEA: {
     accentDotClassName: 'bg-cyan-500 dark:bg-cyan-300',
-    accentGlowClassName:
-      'from-cyan-500/22 via-cyan-500/10 to-transparent dark:from-cyan-400/26 dark:via-cyan-400/10',
+    accentBarClassName: 'bg-[var(--primary)]',
     actionClassName:
       'text-cyan-700 hover:bg-cyan-500/12 hover:text-cyan-800 dark:text-cyan-300 dark:hover:bg-cyan-400/12 dark:hover:text-cyan-100',
     titlePillClassName:
@@ -153,8 +151,7 @@ const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   },
   WEST_FRONT: {
     accentDotClassName: 'bg-violet-500 dark:bg-violet-300',
-    accentGlowClassName:
-      'from-violet-500/22 via-violet-500/10 to-transparent dark:from-violet-400/26 dark:via-violet-400/10',
+    accentBarClassName: 'bg-[var(--primary)]',
     actionClassName:
       'text-violet-700 hover:bg-violet-500/12 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-400/12 dark:hover:text-violet-100',
     titlePillClassName:
@@ -162,8 +159,7 @@ const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   },
   FOREIGN_AFFAIRS: {
     accentDotClassName: 'bg-amber-500 dark:bg-amber-300',
-    accentGlowClassName:
-      'from-amber-500/22 via-amber-500/10 to-transparent dark:from-amber-400/26 dark:via-amber-400/10',
+    accentBarClassName: 'bg-[var(--accent)]',
     actionClassName:
       'text-amber-700 hover:bg-amber-500/12 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-400/12 dark:hover:text-amber-100',
     titlePillClassName:
@@ -171,8 +167,7 @@ const ARCHIVE_VERTICAL_TONES: Record<ArchiveVertical, ArchiveVerticalTone> = {
   },
   DOMESTIC_AFFAIRS: {
     accentDotClassName: 'bg-emerald-500 dark:bg-emerald-300',
-    accentGlowClassName:
-      'from-emerald-500/22 via-emerald-500/10 to-transparent dark:from-emerald-400/26 dark:via-emerald-400/10',
+    accentBarClassName: 'bg-[var(--border-strong)]',
     actionClassName:
       'text-emerald-700 hover:bg-emerald-500/12 hover:text-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-400/12 dark:hover:text-emerald-100',
     titlePillClassName:

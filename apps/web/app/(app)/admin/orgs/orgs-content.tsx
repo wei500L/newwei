@@ -403,6 +403,7 @@ export function OrgAdminContent() {
           />
         ) : (
           <Table
+            scroll={{ x: "max-content" }}
             dataSource={tableData}
             pagination={{ pageSize: 10 }}
             columns={[
@@ -491,7 +492,6 @@ export function OrgAdminContent() {
                 ),
               },
             ]}
-            scroll={{ x: "max-content" }}
           />
         )}
         </Card>

@@ -588,7 +588,7 @@ export function KnowledgeGraph() {
         open={nodeDrawerOpen && Boolean(selectedNode)}
         onClose={() => setNodeDrawerOpen(false)}
         placement="right"
-        width={380}
+        width="min(380px, 100vw)"
         title={selectedNode?.name ?? t("dashboard.charts.knowledgeGraphNodeTitle")}
       >
         {selectedNode ? (

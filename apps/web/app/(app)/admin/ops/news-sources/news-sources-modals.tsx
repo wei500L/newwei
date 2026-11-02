@@ -2232,6 +2232,7 @@ export function NewsSourcesModals({
 
           {opmlPreview ? (
             <Table
+              scroll={{ x: "max-content" }}
               rowKey={(record, index) =>
                 `${record.url}-${record.feedUrl}-${index}`
               }
@@ -2324,7 +2325,6 @@ export function NewsSourcesModals({
                   },
                 },
               ]}
-              scroll={{ x: "max-content" }}
             />
           ) : (
             <Typography.Text type="secondary">

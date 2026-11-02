@@ -1142,7 +1142,7 @@ export function EventsArchiveContent() {
                     <Input
                       allowClear
                       prefix={
-                        <SearchOutlined className="text-slate-400 dark:text-slate-500" />
+                        <SearchOutlined className="text-[var(--muted-foreground)]" />
                       }
                       value={searchInput}
                       onChange={(event) => setSearchInput(event.target.value)}
@@ -1249,11 +1249,11 @@ export function EventsArchiveContent() {
               {VERTICAL_SECTIONS.map((section) => (
                 <section key={section.key} className="flex flex-col gap-3">
                   <div className="flex items-center gap-2.5">
-                    <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-300/75 to-slate-200/40 dark:via-slate-600/75 dark:to-slate-700/30" />
-                    <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                    <span className="h-px flex-1 bg-[var(--border)]" />
+                    <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--muted-foreground)]">
                       {sectionLabels[section.key as keyof typeof sectionLabels]}
                     </Typography.Text>
-                    <span className="h-px flex-1 bg-gradient-to-l from-transparent via-slate-300/75 to-slate-200/40 dark:via-slate-600/75 dark:to-slate-700/30" />
+                    <span className="h-px flex-1 bg-[var(--border)]" />
                   </div>
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:gap-5">
                     {section.verticals.map((vertical) => {
@@ -1270,10 +1270,10 @@ export function EventsArchiveContent() {
                               padding: 0,
                             },
                           }}
-                          className="h-full overflow-hidden border border-slate-200/80 bg-white/72 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.22)] dark:border-slate-800/80 dark:bg-slate-950/58 dark:hover:border-slate-700/80"
+                          className="content-card h-full overflow-hidden transition-colors hover:border-[var(--border-strong)]"
                         >
                           <div
-                            className={`h-1.5 w-full bg-gradient-to-r ${tone.accentGlowClassName}`}
+                            className={`h-1.5 w-full ${tone.accentBarClassName}`}
                           />
                           <div className="flex flex-col gap-4 p-4 sm:p-5">
                             <div className="flex items-start justify-between gap-3">
@@ -1289,13 +1289,13 @@ export function EventsArchiveContent() {
                                   </span>
                                 </div>
                               </div>
-                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-slate-300/80 bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-600/80 dark:bg-slate-950/70 dark:text-slate-200">
+                              <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold text-[var(--muted-foreground)]">
                                 {group?.totalCount ?? 0}
                               </span>
                             </div>
 
                             {items.length === 0 ? (
-                              <div className="rounded-2xl border border-dashed border-slate-300/80 bg-slate-50/80 px-4 py-6 text-center dark:border-slate-700/80 dark:bg-slate-900/65">
+                              <div className="rounded border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-4 py-6 text-center">
                                 <Typography.Text type="secondary">
                                   {t("pages.eventsArchive.groupEmpty")}
                                 </Typography.Text>
@@ -1329,7 +1329,7 @@ export function EventsArchiveContent() {
                                   return (
                                     <div
                                       key={item.processedArticleId}
-                                      className="group cursor-pointer rounded-2xl border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.18)] transition-all duration-200 hover:border-slate-300/80 hover:shadow-[0_16px_32px_-24px_rgba(15,23,42,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 dark:border-slate-800/80 dark:bg-slate-900/82 dark:hover:border-slate-700/80"
+                                      className="group cursor-pointer rounded border border-[var(--border)] bg-[var(--surface)] p-3.5 transition-colors hover:border-[var(--border-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                                       role="button"
                                       tabIndex={0}
                                       aria-haspopup="dialog"
@@ -1360,19 +1360,19 @@ export function EventsArchiveContent() {
                                         />
                                         <div className="min-w-0 flex-1">
                                           <Typography.Paragraph
-                                            className="!mb-1.5 text-sm leading-6 text-slate-700 dark:text-slate-300"
+                                            className="!mb-1.5 text-sm leading-6 text-[var(--muted-foreground)]"
                                             ellipsis={{
                                               rows: 2,
                                               expandable: false,
                                             }}
                                           >
-                                            <span className="font-semibold text-slate-950 dark:text-slate-50">
+                                            <span className="font-semibold text-[var(--foreground)]">
                                               {renderHighlightedText(
                                                 country,
                                                 highlightTokens,
                                               )}
                                             </span>
-                                            <span className="text-slate-400 dark:text-slate-500">
+                                            <span className="text-[var(--muted-foreground)]">
                                               ：
                                             </span>
                                             <span>
@@ -1388,7 +1388,7 @@ export function EventsArchiveContent() {
                                                 item.weight,
                                               )}
                                             </span>
-                                            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                            <span className="text-xs font-medium text-[var(--muted-foreground)]">
                                               {dayjs(
                                                 item.publishedAt ?? item.sortAt,
                                               ).format("YYYY/MM/DD")}
@@ -1412,7 +1412,7 @@ export function EventsArchiveContent() {
                                               </span>
                                             ) : null}
                                             {item.sourceLabel ? (
-                                              <span className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300">
+                                              <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
                                                 {item.sourceLabel}
                                               </span>
                                             ) : null}
@@ -1424,7 +1424,7 @@ export function EventsArchiveContent() {
                                                 .map((keyword) => (
                                                   <span
                                                     key={`${item.processedArticleId}-${keyword}`}
-                                                    className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300"
+                                                    className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]"
                                                   >
                                                     {renderHighlightedText(
                                                       keyword,
@@ -1462,7 +1462,7 @@ export function EventsArchiveContent() {
                             {group?.pageInfo.hasMore ? (
                               <Button
                                 type="link"
-                                className="!px-0 !text-slate-600 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!text-white"
+                                className="!px-0 !text-[var(--muted-foreground)] hover:!text-[var(--foreground)] dark:!text-[var(--muted-foreground)] dark:hover:!text-white"
                                 loading={Boolean(
                                   loadingMoreByVertical[vertical],
                                 )}
@@ -1512,22 +1512,22 @@ export function EventsArchiveContent() {
           />
         ) : (
           <div className="flex flex-col gap-4 pb-2">
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.5)] dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-2">
                 <Typography.Title level={5} style={{ margin: 0 }}>
                   {detail.title || untitledArchiveLabel}
                 </Typography.Title>
                 {detail.summary ? (
-                  <Typography.Paragraph className="!mb-0 text-sm leading-6 text-slate-700 dark:text-slate-300">
+                  <Typography.Paragraph className="!mb-0 text-sm leading-6 text-[var(--muted-foreground)]">
                     {detail.summary}
                   </Typography.Paragraph>
                 ) : null}
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-3">
-                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                   {t("pages.eventsArchive.detail.classification")}
                 </Typography.Text>
                 {!detailClassification ? (
@@ -1542,14 +1542,14 @@ export function EventsArchiveContent() {
                       >
                         {verticalLabels[detailClassification.vertical]}
                       </span>
-                      <span className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-200">
+                      <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--muted-foreground)]">
                         {regionLabels[detailClassification.region] ??
                           detailClassification.region}
                       </span>
-                      <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                      <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
                         {`taxonomy ${detailClassification.taxonomyVersion}`}
                       </span>
-                      <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                      <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
                         {`pipeline ${detailClassification.pipelineVersion}`}
                       </span>
                       <span className="inline-flex rounded-full border border-amber-300/80 bg-amber-50/80 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
@@ -1576,7 +1576,7 @@ export function EventsArchiveContent() {
                             {visibleClassificationStaleReasons.map((reason) => (
                               <span
                                 key={reason}
-                                className="inline-flex rounded-full border border-amber-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/30 dark:bg-slate-950/50 dark:text-amber-200"
+                                className="inline-flex rounded-full border border-amber-300/80 bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/30 dark:text-amber-200"
                               >
                                 {t(reason, { defaultValue: reason })}
                               </span>
@@ -1587,19 +1587,19 @@ export function EventsArchiveContent() {
                     ) : null}
 
                     <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                      <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
-                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                           {t("pages.eventsArchive.detail.embeddingModel")}
                         </Typography.Text>
-                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
+                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-[var(--muted-foreground)]">
                           {detailClassification.embeddingModel}
                         </Typography.Paragraph>
                       </div>
-                      <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70">
-                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                        <Typography.Text className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">
                           {t("pages.eventsArchive.detail.rerankModel")}
                         </Typography.Text>
-                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-slate-700 dark:text-slate-200">
+                        <Typography.Paragraph className="!mb-0 mt-1 break-all text-sm text-[var(--muted-foreground)]">
                           {detailClassification.rerankModel}
                         </Typography.Paragraph>
                       </div>
@@ -1610,7 +1610,7 @@ export function EventsArchiveContent() {
                         {visibleClassificationSignals.map((signal) => (
                           <span
                             key={signal}
-                            className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300"
+                            className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]"
                           >
                             {signal}
                           </span>
@@ -1626,7 +1626,7 @@ export function EventsArchiveContent() {
                         return (
                           <div
                             key={entry.vertical}
-                            className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                            className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span
@@ -1634,15 +1634,15 @@ export function EventsArchiveContent() {
                               >
                                 {verticalLabels[entry.vertical]}
                               </span>
-                              <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                              <Typography.Text className="text-xs font-medium text-[var(--muted-foreground)]">
                                 {t("pages.eventsArchive.detail.fusedScore", {
                                   percent: fusedPercent,
                                 })}
                               </Typography.Text>
                             </div>
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800/80">
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]">
                               <div
-                                className={`h-full bg-gradient-to-r ${tone.accentGlowClassName}`}
+                                className={`h-full ${tone.accentBarClassName}`}
                                 style={{ width: `${fusedPercent}%` }}
                               />
                             </div>
@@ -1677,12 +1677,12 @@ export function EventsArchiveContent() {
                               ].map((metric) => (
                                 <div
                                   key={`${entry.vertical}-${metric.key}`}
-                                  className="rounded-lg border border-slate-200/80 bg-white/80 px-2.5 py-2 dark:border-slate-700/80 dark:bg-slate-950/70"
+                                  className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2"
                                 >
-                                  <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                                  <Typography.Text className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted-foreground)]">
                                     {metric.label}
                                   </Typography.Text>
-                                  <Typography.Text className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                                  <Typography.Text className="text-sm font-medium text-[var(--muted-foreground)]">
                                     {`${resolveArchiveRelevancePercent(metric.value) ?? 0}%`}
                                   </Typography.Text>
                                 </div>
@@ -1697,9 +1697,9 @@ export function EventsArchiveContent() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-3">
-                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                   {t("pages.eventsArchive.detail.entities")}
                 </Typography.Text>
                 {detail.fullEntities.length > 0 ? (
@@ -1707,7 +1707,7 @@ export function EventsArchiveContent() {
                     {detail.fullEntities.map((entity) => (
                       <span
                         key={entity}
-                        className="inline-flex rounded-full border border-slate-300/80 bg-slate-100/80 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-200"
+                        className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--muted-foreground)]"
                       >
                         {entity}
                       </span>
@@ -1721,12 +1721,12 @@ export function EventsArchiveContent() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-2">
-                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                   {t("pages.eventsArchive.detail.source")}
                 </Typography.Text>
-                <Typography.Text className="text-sm text-slate-700 dark:text-slate-200">
+                <Typography.Text className="text-sm text-[var(--muted-foreground)]">
                   {detail.sourceLabel ||
                     t("pages.eventsArchive.detail.sourceUnknown")}
                 </Typography.Text>
@@ -1743,9 +1743,9 @@ export function EventsArchiveContent() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-3">
-                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                   {t("pages.eventsArchive.detail.timeline")}
                 </Typography.Text>
                 {detail.timeline.length === 0 ? (
@@ -1757,18 +1757,18 @@ export function EventsArchiveContent() {
                     {detail.timeline.map((entry) => (
                       <div
                         key={entry.id}
-                        className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                        className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                       >
-                        <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <Typography.Text className="text-xs font-medium text-[var(--muted-foreground)]">
                           {dayjs(entry.bucketStart).format("YYYY/MM/DD")}
                         </Typography.Text>
                         {entry.title ? (
-                          <Typography.Paragraph className="!mb-0 mt-1 font-medium text-slate-900 dark:text-slate-100">
+                          <Typography.Paragraph className="!mb-0 mt-1 font-medium text-[var(--foreground)]">
                             {entry.title}
                           </Typography.Paragraph>
                         ) : null}
                         {entry.summary ? (
-                          <Typography.Paragraph className="!mb-0 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                          <Typography.Paragraph className="!mb-0 mt-1 text-sm text-[var(--muted-foreground)]">
                             {entry.summary}
                           </Typography.Paragraph>
                         ) : null}
@@ -1779,9 +1779,9 @@ export function EventsArchiveContent() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800/80 dark:bg-slate-950/60">
+            <section className="content-card p-4">
               <div className="flex flex-col gap-3">
-                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                <Typography.Text className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                   {t("pages.eventsArchive.detail.related")}
                 </Typography.Text>
                 {detail.relatedArticles.length === 0 ? (
@@ -1793,27 +1793,27 @@ export function EventsArchiveContent() {
                     {detail.relatedArticles.map((article) => (
                       <div
                         key={article.processedArticleId}
-                        className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800/80 dark:bg-slate-900/70"
+                        className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                       >
                         <Typography.Text
                           strong
-                          className="block text-slate-900 dark:text-slate-100"
+                          className="block text-[var(--foreground)]"
                         >
                           {article.title || untitledArchiveLabel}
                         </Typography.Text>
                         {article.summary ? (
-                          <Typography.Paragraph className="!mb-1 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                          <Typography.Paragraph className="!mb-1 mt-1 text-sm text-[var(--muted-foreground)]">
                             {article.summary}
                           </Typography.Paragraph>
                         ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           {article.sourceLabel ? (
-                            <span className="inline-flex rounded-full border border-slate-300/80 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-300">
+                            <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted-foreground)]">
                               {article.sourceLabel}
                             </span>
                           ) : null}
                           {article.publishedAt ? (
-                            <Typography.Text className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                            <Typography.Text className="text-xs font-medium text-[var(--muted-foreground)]">
                               {dayjs(article.publishedAt).format(
                                 "YYYY/MM/DD HH:mm",
                               )}

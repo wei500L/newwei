@@ -2604,6 +2604,7 @@ export function CrawlMonitorContent({
                     title={t("crawl.monitor.requests.activeTitle")}
                   >
                     <Table
+                      scroll={{ x: "max-content" }}
                       size="small"
                       pagination={false}
                       dataSource={activeRequestRows}
@@ -2697,7 +2698,6 @@ export function CrawlMonitorContent({
                           ),
                         },
                       ]}
-                      scroll={{ x: "max-content" }}
                     />
                   </Card>
 

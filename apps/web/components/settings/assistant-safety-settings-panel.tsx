@@ -752,6 +752,7 @@ export function AssistantSafetySettingsPanel() {
           </Space>
 
           <Table<AssistantSafetyMetricsRow>
+            scroll={{ x: "max-content" }}
             size="small"
             rowKey="date"
             loading={metricsLoading}
@@ -823,7 +824,6 @@ export function AssistantSafetySettingsPanel() {
                 )
               }
             ]}
-            scroll={{ x: "max-content" }}
           />
 
           <Divider style={{ margin: "8px 0" }} />
