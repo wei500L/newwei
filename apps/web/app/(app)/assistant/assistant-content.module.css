@@ -1,10 +1,10 @@
 .pageFrame {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--background);
-  box-shadow: var(--shadow-surface);
+  background: transparent;
+  box-shadow: none;
 }
 
 .panel {
@@ -121,22 +121,18 @@
 
 .userBubble {
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: var(--ticker-bg);
-  color: var(--ticker-fg);
+  background: var(--secondary);
+  color: var(--foreground);
   padding: 18px 22px;
-  box-shadow: var(--shadow-surface);
 }
 
 .assistantBubble {
   min-width: 0;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--foreground);
   padding: 24px;
   line-height: 1.85;
-  box-shadow: var(--shadow-surface);
 }
 
 .assistantMarkdown {

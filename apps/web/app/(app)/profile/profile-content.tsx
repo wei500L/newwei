@@ -5,7 +5,6 @@ import {
   Alert,
   Button,
   Card,
-  Divider,
   Form,
   Input,
   Spin,
@@ -22,6 +21,7 @@ import { useTranslation } from "react-i18next";
 
 import { AvatarFallback } from "@/components/avatar-fallback";
 import { PageHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { createApiClient } from "@/lib/api-client";
 import type { AuthenticatedUser } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -358,26 +358,25 @@ export function ProfileContent() {
         description={t("profile.description")}
       />
       <Card className="content-card">
-        <div className="flex flex-col gap-6">
-        <div className="flex items-center gap-4">
-          <AvatarFallback
-            size={72}
-            src={avatarSrc}
-            name={displayName}
-            email={displayEmail}
-            className="bg-blue-500"
-          />
-          <div className="min-w-0">
-            <Typography.Text strong>{displayNameOrEmail}</Typography.Text>
-            {showEmail ? (
-              <div className="text-xs text-gray-500 truncate">
-                {displayEmail}
-              </div>
-            ) : null}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <AvatarFallback
+              size={72}
+              src={avatarSrc}
+              name={displayName}
+              email={displayEmail}
+              className="bg-[var(--primary)]"
+            />
+            <div className="min-w-0">
+              <Typography.Text strong>{displayNameOrEmail}</Typography.Text>
+              {showEmail ? (
+                <div className="text-xs text-muted-foreground truncate">
+                  {displayEmail}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col gap-2">
-          <Typography.Text strong>{t("profile.avatar.title")}</Typography.Text>
+          <SectionHeader title={t("profile.avatar.title")} />
           <Typography.Paragraph type="secondary">
             {t("profile.avatar.description")}
           </Typography.Paragraph>
@@ -403,11 +402,11 @@ export function ProfileContent() {
             {t("profile.avatar.requirements")}
           </Typography.Text>
         </div>
-        <Divider style={{ margin: 0 }} />
-        <div className="flex flex-col gap-2">
-          <Typography.Text strong>
-            {t("profile.details.title")}
-          </Typography.Text>
+      </Card>
+
+      <Card className="content-card">
+        <div className="flex flex-col gap-4">
+          <SectionHeader title={t("profile.details.title")} />
           <Typography.Paragraph type="secondary">
             {t("profile.details.description")}
           </Typography.Paragraph>
@@ -447,11 +446,11 @@ export function ProfileContent() {
             </Button>
           </Form>
         </div>
-        <Divider style={{ margin: 0 }} />
-        <div className="flex flex-col gap-2">
-          <Typography.Text strong>
-            {t("profile.password.title")}
-          </Typography.Text>
+      </Card>
+
+      <Card className="content-card">
+        <div className="flex flex-col gap-4">
+          <SectionHeader title={t("profile.password.title")} />
           <Typography.Paragraph type="secondary">
             {t("profile.password.description")}
           </Typography.Paragraph>
@@ -518,11 +517,11 @@ export function ProfileContent() {
             </Button>
           </Form>
         </div>
-        <Divider style={{ margin: 0 }} />
-        <div className="flex flex-col gap-2">
-          <Typography.Text strong>
-            {t("profile.dataExport.title")}
-          </Typography.Text>
+      </Card>
+
+      <Card className="content-card">
+        <div className="flex flex-col gap-4">
+          <SectionHeader title={t("profile.dataExport.title")} />
           <Typography.Paragraph type="secondary">
             {t("profile.dataExport.description")}
           </Typography.Paragraph>
@@ -534,11 +533,11 @@ export function ProfileContent() {
             {t("profile.dataExport.download")}
           </Button>
         </div>
-        <Divider style={{ margin: 0 }} />
-        <div className="flex flex-col gap-2">
-          <Typography.Text strong>
-            {t("profile.emailBinding.title")}
-          </Typography.Text>
+      </Card>
+
+      <Card className="content-card">
+        <div className="flex flex-col gap-4">
+          <SectionHeader title={t("profile.emailBinding.title")} />
           <Typography.Paragraph type="secondary">
             {t("profile.emailBinding.description")}
           </Typography.Paragraph>
@@ -626,7 +625,6 @@ export function ProfileContent() {
             </Button>
           </Form>
         </div>
-      </div>
       </Card>
     </div>
   );

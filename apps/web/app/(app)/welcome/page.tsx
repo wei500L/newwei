@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "antd";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
@@ -84,7 +85,7 @@ export default function WelcomePage() {
         </p>
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
-          <div className="min-w-[14rem] flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+          <div className="surface-inset min-w-[14rem] flex-1">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>{t("pages.welcome.progress")}</span>
               <span>{completedCount}/{ONBOARDING_STEPS.length}</span>
@@ -96,26 +97,23 @@ export default function WelcomePage() {
               />
             </div>
           </div>
-          <button
-            type="button"
+          <Button
+            type="primary"
             onClick={() => {
               completeOnboarding();
               router.push("/today");
             }}
-            className="rounded-full bg-[var(--foreground)] px-5 py-3 text-sm font-medium text-[var(--background)] transition hover:opacity-90"
           >
             {t("pages.welcome.enterWorkspace")}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             onClick={() => {
               dismissOnboarding();
               router.push("/today");
             }}
-            className="rounded-full border border-[var(--border)] px-5 py-3 text-sm font-medium text-[var(--foreground)] transition hover:border-[var(--border-strong)]"
           >
             {t("pages.welcome.skipForNow")}
-          </button>
+          </Button>
         </div>
       </section>
 
@@ -131,13 +129,13 @@ export default function WelcomePage() {
               className="group rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 transition hover:-translate-y-0.5 hover:border-[var(--border-strong)]"
             >
               <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                <span className="kicker">
                   {entry.label}
                 </span>
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
                     done
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                      ? "text-[var(--bullish)]"
                       : "bg-[var(--surface-muted)] text-muted-foreground"
                   }`}
                 >

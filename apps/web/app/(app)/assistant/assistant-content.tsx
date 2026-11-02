@@ -37,6 +37,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { MarkdownViewer } from '@/components/markdown-viewer';
+import { PageHeader } from '@/components/page-header';
 import {
   asRecord,
   buildUserPromptFromRun,
@@ -1102,40 +1103,38 @@ export function AssistantContent() {
       ) : null}
 
       <section className={styles.pageFrame}>
-        <header className="relative z-[1] border-b border-[var(--border)] px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="space-y-2">
-              <p className="kicker m-0">{designKicker}</p>
-              <h1 className="m-0 font-serif text-2xl font-semibold leading-tight tracking-tight text-[var(--foreground)] md:text-[28px]">{title}</h1>
-              <p className="m-0 max-w-measure text-sm text-muted-foreground">{subtitle}</p>
-            </div>
-            <Space size={8} wrap>
-              <Button
-                icon={<PlusOutlined />}
-                onClick={handleNewConversation}
-                disabled={!activeRun || querySaving}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:bg-white hover:text-sky-700 hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:bg-slate-900/82 dark:hover:text-sky-300"
-              >
-                {t('assistant.chat.newConversation')}
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={() => refetch()}
-                loading={loading}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
-              >
-                {t('common.refresh')}
-              </Button>
-              <Button
-                icon={<HistoryOutlined />}
-                className="rounded-xl border-white/80 bg-white/85 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-white/15 dark:bg-slate-900/65 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/82"
-                onClick={() => setHistoryDrawerOpen(true)}
-              >
-                {t('assistant.chat.historyTitle')} ({runs.length})
-              </Button>
-            </Space>
-          </div>
-        </header>
+        <div className="relative z-[1] border-b border-[var(--border)] px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
+          <PageHeader
+            title={title}
+            kicker={designKicker}
+            description={subtitle}
+            actions={
+              <Space size={8} wrap>
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={handleNewConversation}
+                  disabled={!activeRun || querySaving}
+                >
+                  {t('assistant.chat.newConversation')}
+                </Button>
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={() => refetch()}
+                  loading={loading}
+                >
+                  {t('common.refresh')}
+                </Button>
+                <Button
+                  icon={<HistoryOutlined />}
+                  className="xl:hidden"
+                  onClick={() => setHistoryDrawerOpen(true)}
+                >
+                  {t('assistant.chat.historyTitle')} ({runs.length})
+                </Button>
+              </Space>
+            }
+          />
+        </div>
 
         <div
           className={`relative z-[1] grid gap-4 p-4 lg:p-5 ${styles.historyLayout} ${
@@ -1149,7 +1148,7 @@ export function AssistantContent() {
           >
             <div className="flex items-center justify-between border-b border-slate-200/70 px-5 py-4 dark:border-slate-700/70">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 dark:text-slate-400">
+                <p className="kicker m-0">
                   {t('assistant.chat.historyTitle')}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -1216,7 +1215,7 @@ export function AssistantContent() {
                   <Space size={8} wrap>
                     <Button
                       icon={<HistoryOutlined />}
-                      className="rounded-xl border-slate-200/80 bg-white/80 text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-md xl:hidden dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-slate-500/70 dark:hover:bg-slate-900/88"
+                      className="xl:hidden"
                       onClick={() => setHistoryDrawerOpen(true)}
                     >
                       {t('assistant.chat.historyTitle')} ({runs.length})
@@ -1254,7 +1253,7 @@ export function AssistantContent() {
                   <>
                     <div className={`${styles.messageEnter} ml-auto min-w-0 max-w-[95%] sm:max-w-[88%] xl:max-w-[84%]`}>
                       <div className={styles.userBubble}>
-                        <div className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-white">
+                        <div className="whitespace-pre-wrap text-[15px] font-medium leading-relaxed text-[var(--foreground)]">
                           {activeUserPrompt}
                         </div>
                       </div>
@@ -1317,7 +1316,7 @@ export function AssistantContent() {
 
                         {activeRun.error ? (
                           <Alert
-                            style={{ marginTop: 16, borderRadius: 14 }}
+                            style={{ marginTop: 16 }}
                             type="error"
                             showIcon
                             icon={<CloseCircleOutlined />}
@@ -1328,7 +1327,7 @@ export function AssistantContent() {
 
                         {activeBlocked ? (
                           <Alert
-                            style={{ marginTop: 16, borderRadius: 14 }}
+                            style={{ marginTop: 16 }}
                             type="warning"
                             showIcon
                             message={t('assistant.blocked.title')}
@@ -1402,7 +1401,7 @@ export function AssistantContent() {
               <div className="border-t border-slate-200/70 px-4 py-3 sm:px-6 sm:py-3.5 dark:border-slate-700/70">
                 {!canRunAssistant ? (
                   <Alert
-                    style={{ marginBottom: 16, borderRadius: 14 }}
+                    style={{ marginBottom: 16 }}
                     type="warning"
                     showIcon
                     message={t('common.accessDenied')}
@@ -1484,7 +1483,6 @@ export function AssistantContent() {
                         </Space>
                         <Button
                           icon={<BarChartOutlined />}
-                          className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300`}
                           onMouseDown={(event) => {
                             event.preventDefault();
                             quickActionPointerDownRef.current = true;
@@ -1500,7 +1498,6 @@ export function AssistantContent() {
                         </Button>
                         <Button
                           icon={<RobotOutlined />}
-                          className={`${styles.composerActionButton} rounded-xl border-slate-200/80 bg-white text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-700 hover:shadow-md dark:border-slate-700/80 dark:bg-slate-900/78 dark:text-slate-200 dark:hover:border-indigo-400/50 dark:hover:text-indigo-300`}
                           onMouseDown={(event) => {
                             event.preventDefault();
                             quickActionPointerDownRef.current = true;
@@ -1520,7 +1517,6 @@ export function AssistantContent() {
                       </div>
                       <Button
                         icon={<SendOutlined />}
-                        className="h-10 w-full rounded-xl border-none bg-sky-600 px-8 font-bold text-white shadow-[0_12px_24px_rgba(14,116,217,0.28)] transition-all hover:bg-sky-700 hover:shadow-[0_16px_26px_rgba(14,116,217,0.34)] active:scale-[0.98] disabled:opacity-50 sm:w-auto"
                         type="primary"
                         loading={querySaving}
                         disabled={!canRunAssistant || knowledgeSourceBlocked}
@@ -1566,14 +1562,12 @@ export function AssistantContent() {
               icon={<PlusOutlined />}
               onClick={handleNewConversation}
               disabled={!activeRun || querySaving}
-              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:border-sky-300 hover:text-sky-700 hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
             >
               {t('assistant.chat.newConversation')}
             </Button>
             <Button
               onClick={() => refetch()}
               loading={loading}
-              className="rounded-xl border-slate-200 bg-white text-slate-700 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200"
             >
               {t('common.refresh')}
             </Button>

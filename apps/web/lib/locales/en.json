@@ -4366,7 +4366,20 @@
   "settings": {
     "security": {
       "title": "Account security",
-      "description": "Manage your authenticator app and recovery codes."
+      "description": "Manage your authenticator app and recovery codes.",
+      "signInRequired": "Sign in to manage your security settings.",
+      "mfaEnabledWithCodes": "MFA enabled. Recovery codes remaining: {{count}}",
+      "mfaNotEnabled": "MFA is not enabled",
+      "reEnroll": "Re-enroll authenticator",
+      "setUpAuthenticator": "Set up authenticator",
+      "rotateRecoveryCodes": "Rotate recovery codes",
+      "authenticatorSetup": "Authenticator setup",
+      "verificationCode": "Verification code",
+      "verifyAuthenticator": "Verify authenticator",
+      "recoveryCodesRotated": "Recovery codes rotated",
+      "mfaEnabledWithRecoveryCodes": "MFA enabled. Recovery codes: {{codes}}",
+      "rotatePromptTitle": "Enter current authenticator code",
+      "rotatePromptPlaceholder": "Authenticator code"
     },
     "rateLimits": {
       "riskTitle": "Security impact",

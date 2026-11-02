@@ -232,7 +232,7 @@ export function EntityIntelligenceCard({
   );
 
   return (
-    <Space direction="vertical" size="large" className="w-full">
+    <div className="flex flex-col gap-6">
       <PageHeader
         kicker={t("nav.groups.research")}
         back={{ href: "/knowledge-graph", label: t("nav.main.knowledgeGraph") }}
@@ -262,7 +262,11 @@ export function EntityIntelligenceCard({
             <Button icon={<ShareAltOutlined />} href={explorerHref}>{t("pages.knowledgeGraph.actions.openExplorer")}</Button>
             <Button icon={<CopyOutlined />} onClick={() => void copyLink()}>{t("common.copy")}</Button>
             <Tooltip title={t("dashboard.actions.retryFetch")}>
-              <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([refetchCard(), refetchEvidence()])} />
+              <Button
+                icon={<ReloadOutlined />}
+                aria-label={t("dashboard.actions.retryFetch")}
+                onClick={() => void Promise.all([refetchCard(), refetchEvidence()])}
+              />
             </Tooltip>
           </Space>
         }
@@ -279,25 +283,25 @@ export function EntityIntelligenceCard({
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
+        <Card className="content-card">
           <Statistic
             title={t("entities.intelligence.relationships")}
             value={card.metrics.relationshipCount}
           />
         </Card>
-        <Card>
+        <Card className="content-card">
           <Statistic
             title={t("entities.intelligence.mentions")}
             value={card.metrics.mentionedArticleCount}
           />
         </Card>
-        <Card>
+        <Card className="content-card">
           <Statistic
             title={t("entities.intelligence.events")}
             value={card.metrics.recentEventCount}
           />
         </Card>
-        <Card>
+        <Card className="content-card">
           <Statistic
             title={t("entities.intelligence.negativeRatio")}
             value={formatPercent(card.metrics.negativeRatio)}
@@ -529,6 +533,6 @@ export function EntityIntelligenceCard({
           </Card>
         </Space>
       </div>
-    </Space>
+    </div>
   );
 }

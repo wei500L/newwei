@@ -680,12 +680,12 @@ export function KnowledgeGraphContent() {
             const reviewStatus = readNestedString(item.evidence, ["review", "status"]);
 
             return (
-              <List.Item className="!block rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-4 py-4 shadow-sm">
+              <List.Item className="!block hairline-b py-3">
                 <div className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <a
-                        className="text-sm font-semibold text-slate-900 hover:text-blue-600"
+                        className="text-sm font-semibold text-[var(--foreground)] hover:text-[var(--primary)]"
                         href={item.article.url}
                         target="_blank"
                         rel="noreferrer"
@@ -709,7 +709,7 @@ export function KnowledgeGraphContent() {
                     </Space>
                   </div>
                   {quote ? (
-                    <blockquote className="rounded-xl border-l-4 border-blue-200 dark:border-blue-800 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-300">
+                    <blockquote className="rounded border-l-4 border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--foreground)]">
                       {quote}
                     </blockquote>
                   ) : null}
@@ -829,7 +829,7 @@ export function KnowledgeGraphContent() {
       </div>
 
       {isMobile ? null : (
-        <div className="glass-panel border border-[var(--border)] p-5">{controlPanel}</div>
+        <div className="content-card border border-[var(--border)] p-5">{controlPanel}</div>
       )}
 
       {error ? (
@@ -844,19 +844,19 @@ export function KnowledgeGraphContent() {
       ) : null}
 
       {!routeState.seedName ? (
-        <div className="glass-panel flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
+        <div className="content-card flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphEmptyTitle")}
             description={t("pages.knowledgeGraph.emptyDescription")}
           />
         </div>
       ) : loading ? (
-        <div className="glass-panel border border-[var(--border)] p-6">
+        <div className="content-card border border-[var(--border)] p-6">
           <Skeleton active paragraph={{ rows: 10 }} />
         </div>
       ) : graphData ? (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="glass-panel border border-[var(--border)] p-4">
+          <div className="content-card border border-[var(--border)] p-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <Space wrap>
                 <Tag color="blue">
@@ -890,11 +890,11 @@ export function KnowledgeGraphContent() {
             />
           </div>
           {!isMobile ? (
-            <div className="glass-panel border border-[var(--border)] p-5">{detailContent}</div>
+            <div className="content-card border border-[var(--border)] p-5">{detailContent}</div>
           ) : null}
         </div>
       ) : (
-        <div className="glass-panel flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
+        <div className="content-card flex min-h-[540px] items-center justify-center border border-[var(--border)] p-6">
           <ChartEmptyState
             title={t("dashboard.charts.knowledgeGraphNotFoundTitle")}
             description={t("dashboard.charts.knowledgeGraphNotFoundDescription")}

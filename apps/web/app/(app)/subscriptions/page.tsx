@@ -821,13 +821,7 @@ export default function SubscriptionsPage() {
   const rulesTabContent = (
     <Card
       className="content-card"
-      title={
-        <Space size="middle" align="center">
-          <Typography.Text strong>
-            {t("subscriptions.rulesTitle")}
-          </Typography.Text>
-        </Space>
-      }
+      title={t("subscriptions.rulesTitle")}
       extra={
         <Button
           size="small"
@@ -958,13 +952,7 @@ export default function SubscriptionsPage() {
   const channelsTabContent = (
     <Card
       className="content-card"
-      title={
-        <Space size="middle" align="center">
-          <Typography.Text strong>
-            {t("subscriptions.channelsTitle")}
-          </Typography.Text>
-        </Space>
-      }
+      title={t("subscriptions.channelsTitle")}
       extra={
         <Space size="small">
           <Button
@@ -1096,16 +1084,10 @@ export default function SubscriptionsPage() {
   const notificationsTabContent = (
     <Card
       className="content-card"
-      title={
-        <Space size="middle" align="center">
-          <Typography.Text strong>
-            {t("subscriptions.notificationsTitle")}
-          </Typography.Text>
-          <Badge count={unreadCount} size="small" />
-        </Space>
-      }
+      title={t("subscriptions.notificationsTitle")}
       extra={
         <Space size="small">
+          <Badge count={unreadCount} size="small" />
           <Button size="small" onClick={() => void refetchNotifications()}>
             {t("common.refresh")}
           </Button>

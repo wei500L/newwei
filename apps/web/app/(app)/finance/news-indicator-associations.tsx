@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { FilterBar } from "@/components/filter-bar";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { SectionHeader } from "@/components/section-header";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -607,67 +608,64 @@ export function NewsIndicatorAssociations() {
 
       <Card className="content-card">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
-            <Space wrap size="small">
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.newsIndicator.filters.indicator")}</Typography.Text>
-                <Select
-                  allowClear
-                  placeholder={t("pages.newsIndicator.filters.indicatorPlaceholder")}
-                  value={indicatorSlug}
-                  options={indicatorOptions}
-                  onChange={(value) => setIndicatorSlug(value ?? undefined)}
-                  style={{ minWidth: 200 }}
-                />
-              </Space>
-
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.newsIndicator.filters.scopeType.label")}</Typography.Text>
-                <Select
-                  value={scopeType ?? "all"}
-                  options={scopeTypeOptions}
-                  onChange={(value) => setScopeType(value === "all" ? undefined : (value as NewsIndicatorScopeType))}
-                  style={{ minWidth: 140 }}
-                />
-              </Space>
-
-              <Space size={6}>
-                <Typography.Text type="secondary">{t("pages.newsIndicator.filters.featureMetric.label")}</Typography.Text>
-                <Select
-                  value={featureMetric ?? "all"}
-                  options={featureMetricOptions}
-                  onChange={(value) => setFeatureMetric(value === "all" ? undefined : (value as NewsIndicatorFeatureMetric))}
-                  style={{ minWidth: 160 }}
-                />
-              </Space>
-
+          <FilterBar
+            actions={
+              <>
+                <Button onClick={() => refetchAssociations()} loading={assocLoading}>
+                  {t("common.refresh")}
+                </Button>
+                {canRefresh ? (
+                  <Button type="primary" onClick={handleRefresh} loading={refreshing}>
+                    {t("pages.newsIndicator.actions.refresh")}
+                  </Button>
+                ) : null}
+              </>
+            }
+          >
+            <FilterBar.Item label={t("pages.newsIndicator.filters.indicator")} width="lg">
+              <Select
+                allowClear
+                placeholder={t("pages.newsIndicator.filters.indicatorPlaceholder")}
+                value={indicatorSlug}
+                options={indicatorOptions}
+                onChange={(value) => setIndicatorSlug(value ?? undefined)}
+                className="w-full"
+              />
+            </FilterBar.Item>
+            <FilterBar.Item label={t("pages.newsIndicator.filters.scopeType.label")} width="md">
+              <Select
+                value={scopeType ?? "all"}
+                options={scopeTypeOptions}
+                onChange={(value) => setScopeType(value === "all" ? undefined : (value as NewsIndicatorScopeType))}
+                className="w-full"
+              />
+            </FilterBar.Item>
+            <FilterBar.Item label={t("pages.newsIndicator.filters.featureMetric.label")} width="md">
+              <Select
+                value={featureMetric ?? "all"}
+                options={featureMetricOptions}
+                onChange={(value) => setFeatureMetric(value === "all" ? undefined : (value as NewsIndicatorFeatureMetric))}
+                className="w-full"
+              />
+            </FilterBar.Item>
+            <FilterBar.Item width="lg">
               <Input
                 allowClear
                 value={scopeKey}
                 onChange={(evt) => setScopeKey(evt.target.value)}
                 placeholder={t("pages.newsIndicator.filters.scopeKeyPlaceholder")}
-                style={{ width: 240 }}
+                className="w-full"
               />
-
+            </FilterBar.Item>
+            <FilterBar.Item width="sm">
               <Select
                 value={limit}
                 onChange={(value) => setLimit(value)}
                 options={[20, 50, 100, 200].map((value) => ({ value, label: String(value) }))}
-                style={{ width: 100 }}
+                className="w-full"
               />
-            </Space>
-
-            <Space>
-              <Button onClick={() => refetchAssociations()} loading={assocLoading}>
-                {t("common.refresh")}
-              </Button>
-              {canRefresh ? (
-                <Button type="primary" onClick={handleRefresh} loading={refreshing}>
-                  {t("pages.newsIndicator.actions.refresh")}
-                </Button>
-              ) : null}
-            </Space>
-          </div>
+            </FilterBar.Item>
+          </FilterBar>
 
           {assocError && associations.length > 0 ? (
             <RequestErrorBanner

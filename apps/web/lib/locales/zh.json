@@ -4366,7 +4366,20 @@
   "settings": {
     "security": {
       "title": "账号安全",
-      "description": "管理身份验证器与恢复码。"
+      "description": "管理身份验证器与恢复码。",
+      "signInRequired": "请登录后管理您的安全设置。",
+      "mfaEnabledWithCodes": "已启用 MFA。剩余恢复码：{{count}}",
+      "mfaNotEnabled": "尚未启用 MFA",
+      "reEnroll": "重新配置身份验证器",
+      "setUpAuthenticator": "设置身份验证器",
+      "rotateRecoveryCodes": "轮换恢复码",
+      "authenticatorSetup": "身份验证器设置",
+      "verificationCode": "验证码",
+      "verifyAuthenticator": "验证身份验证器",
+      "recoveryCodesRotated": "恢复码已轮换",
+      "mfaEnabledWithRecoveryCodes": "已启用 MFA。恢复码：{{codes}}",
+      "rotatePromptTitle": "请输入当前身份验证器代码",
+      "rotatePromptPlaceholder": "身份验证器代码"
     },
     "rateLimits": {
       "riskTitle": "安全影响提示",
