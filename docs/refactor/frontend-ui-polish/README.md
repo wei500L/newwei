@@ -55,6 +55,9 @@
 | UI-10B | [UI-10B-crawl-frontier-quality.md](UI-10B-crawl-frontier-quality.md) | workflow-studio 四层嵌套、crawl-frontier 彩色 Tag 与英文表单、质量页 `window.prompt` | UI-9 全部合入 |
 | UI-10C | [UI-10C-residual-i18n-polish.md](UI-10C-residual-i18n-polish.md) | 分析看板 / 邀请与 SSO / NewsNow 头部文案；大圆角、小字号、图标按钮 aria-label | UI-9 全部合入 |
 | UI-11 | [UI-11-details-title-time-reading.md](UI-11-details-title-time-reading.md) | 细节：标签页标题、时间统一走应用时区、正文行宽、favicon、不生效的 `[var()]/NN` 类 | UI-10 全部合入 |
+| UI-12A | [UI-12A-tail-components.md](UI-12A-tail-components.md) | `components/**`：Tag 颜色、颜色映射、裸 Empty、内联 margin 按 §3.6 收尾 | UI-11 合入 |
+| UI-12B | [UI-12B-tail-admin-crawl.md](UI-12B-tail-admin-crawl.md) | `admin/**`、`crawl/**`：同上 | UI-11 合入 |
+| UI-12C | [UI-12C-tail-app-pages.md](UI-12C-tail-app-pages.md) | 其余 `app/**` 页面：同上 | UI-11 合入 |
 
 ```
 UI-0 ─┬→ UI-1 ─────────┬→ UI-3A ┐
@@ -70,7 +73,9 @@ UI-8 → UI-9A → ┬ UI-9B ┬ UI-9C ┬ UI-9D
 UI-9 → ┬ UI-10A
        ├ UI-10B   （三者并行，文件互不相交）
        └ UI-10C
-UI-10 → UI-11
+UI-10 → UI-11 → ┬ UI-12A
+               ├ UI-12B   （三者并行，目录互不相交）
+               └ UI-12C
 ```
 
 可以并行的组合：UI-1、UI-2A、UI-2B 三者并行（都在 UI-0 合入后开工）；UI-3A、UI-3B、UI-3C 三者并行，它们改的目录互不相交。
@@ -234,6 +239,57 @@ Tailwind 新增的映射（UI-0）：`bg-surface`、`bg-surface-muted`、`text-m
 - 可点击元素用 `<Link>` / `<Button>`；不得在 `div`/`Tag`/`List.Item` 上直接挂 `onClick` 而不加 `role` + `tabIndex` + `onKeyDown`。
 - 只有图标的按钮必须有 `aria-label`（文本走 `t()`），最好再包 `Tooltip`。
 - 横向控件组（Space / flex）必须能换行（`Space wrap` 或 `flex-wrap`）。`<Col span>` 必须带 `xs={24}`。Modal 宽度写 `"min(Npx, calc(100vw - 32px))"`，不写 `screens.md ? N : "100%"`。
+
+### 3.6 收尾换算表（UI-12 起使用，§3.5-C 与 §3.5-A 间距规则的机械执行版）
+
+**A. Tag 颜色换算**：先判断这个 Tag 表达的是「怎么样」（状态）还是「是什么」（信息），再查表。**看 Tag 里显示的文字或 i18n key 来判断，不看原来的颜色**。
+
+| 语义（看文字 / key） | 例子 | 新 color |
+|---|---|---|
+| 成功、正常、已启用、在线、健康、已完成、通过、active、ok、healthy、enabled、success、completed、passed | `common.ok`、`common.enabled`、`active` | `"success"` |
+| 失败、错误、阻断、离线、拒绝、严重、critical、failed、error、blocked、rejected、offline | `common.failed`、`blocked` | `"error"` |
+| 警告、降级、延迟、待处理、即将过期、重试中、warning、degraded、pending、delayed、expiring、retrying | `pending`、`degraded` | `"warning"` |
+| 运行中、处理中、同步中、排队、running、processing、syncing、queued | `running` | `"processing"` |
+| 已停用、未知、跳过、草稿、disabled、unknown、skipped、draft、inactive | — | **不传 color** |
+| 其它一切：来源、类型、类别、模型名、供应商、操作名、指纹、版本、区域、主题、实体、计数、维度 | `operationLabelMap[x]`、`record.fingerprint`、`source.db` | **不传 color** |
+| 严重度分级 low / medium / high / critical | — | low 不传，medium → `"warning"`，high / critical → `"error"` |
+
+**颜色映射函数 / 常量**（例如 `function statusColor(x) { return x === "ok" ? "green" : "red"; }`、`const COLORS = { running: "blue", … }`）：
+
+1. **先 grep 它的所有使用处**。只有当它的返回值**只**传给 `<Tag color>`（或 antd `Badge`、`Tag.CheckableTag` 的 color）时才改；如果同时喂给地图标记、图表、`style`、`className`，**一律不改**，在报告里列出。
+2. 改法：按上表把返回值换成 `"success"` / `"error"` / `"warning"` / `"processing"` / `undefined`。返回类型如果写死了字符串联合，改成 `TagProps["color"]`（`import type { TagProps } from "antd"`）或 `string | undefined`。
+3. 函数名、参数、调用方都不改。
+
+**数字进 Tag**：`<Tag>{n}</Tag>`、`<Tag>judge:{n}</Tag>` 这种只为显示一个数值的 Tag → `<span className="font-mono text-xs text-muted-foreground">…</span>`。拿不准是否改变了布局（比如在表格 render 里），保留 Tag，只去掉 color。
+
+**B. 内联 margin 换算**：
+
+| 原值 | Tailwind（普通元素） | antd 组件上（Typography / Space / Alert / Form / Divider / Card / Button） |
+|---|---|---|
+| `0` | `m*-0` | `!m*-0` |
+| `4` | `m*-1` | `!m*-1` |
+| `6`、`8`、`"0.5rem"` | `m*-2` | `!m*-2` |
+| `10`、`12`、`"0.75rem"` | `m*-3` | `!m*-3` |
+| `16`、`"1rem"` | `m*-4` | `!m*-4` |
+| `20`、`24`、`"1.5rem"` | `m*-6` | `!m*-6` |
+| `32`、`"2rem"` | `m*-8` | `!m*-8` |
+| `"8px 0"` / `"12px 0"` | `my-2` / `my-3` | `!my-2` / `!my-3` |
+| `"8px 0 4px"` | `mt-2 mb-1` | `!mt-2 !mb-1` |
+
+`m*` 指 `mt` / `mb` / `ml` / `mr` / `mx` / `my` / `m`，按原来的方向替换（`marginBottom` → `mb`，`marginTop` → `mt`，`margin` → `m`）。antd 组件要加 `!` 是因为 antd 的运行时样式可能排在 Tailwind 之后，不加会被覆盖。
+
+- 如果这个元素的**父级已经是 `flex flex-col gap-*` 或 `Space`**，非零的 margin 直接**删掉**（间距交给父级），不要换算。
+- `style` 里除 margin 外还有别的属性（如 `whiteSpace`、`fontFamily`），只把 margin 移进 className，其余保留在 style；`fontFamily: "monospace"` 顺手换成 `font-mono` 类。
+- 原元素已有 `className`，就追加到同一个 className 字符串里，不要写两个 className。
+- **不改**：值是变量或表达式的 margin（`marginTop: gap`）、`Modal` / `Drawer` / `Table` 的 `styles` / `bodyStyle` 对象、echarts option 里的 `margin`。
+
+**C. 裸 `<Empty>`**：
+
+| 位置 | 改法 |
+|---|---|
+| 卡片、区块、列表、Tab 内容里的空态 | `<ChartEmptyState presentation="banner" description={原 description} />` |
+| 整页 / 整个抽屉的「找不到」「无权限」 | `<ChartEmptyState description={…} />`（默认 center） |
+| `Table` / `List` 的 `locale={{ emptyText: … }}`、`Select` 的 `notFoundContent` | **保留** antd 的 Empty |
 
 ---
 
