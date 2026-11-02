@@ -371,13 +371,13 @@ export const getCrawlStrategyTags = (
   if (hasVirtualScroll) {
     tags.push({
       key: "scanMode",
-      color: "cyan",
+      color: "default",
       label: t("newsSources.scanMode.virtualScroll"),
     });
   } else if (crawlOptions.scanFullPage === true) {
     tags.push({
       key: "scanMode",
-      color: "blue",
+      color: "default",
       label: t("newsSources.scanMode.fullPage"),
     });
   }
@@ -389,19 +389,19 @@ export const getCrawlStrategyTags = (
   if (qualityProfile === "quality_first") {
     tags.push({
       key: "qualityProfile",
-      color: "purple",
+      color: "default",
       label: t("crawl.settings.qualityProfileOptions.qualityFirst"),
     });
   } else if (qualityProfile === "balanced") {
     tags.push({
       key: "qualityProfile",
-      color: "purple",
+      color: "default",
       label: t("crawl.settings.qualityProfileOptions.balanced"),
     });
   } else if (qualityProfile === "speed_first") {
     tags.push({
       key: "qualityProfile",
-      color: "purple",
+      color: "default",
       label: t("crawl.settings.qualityProfileOptions.speedFirst"),
     });
   }
@@ -413,13 +413,13 @@ export const getCrawlStrategyTags = (
   if (pageTypeHint === "list") {
     tags.push({
       key: "pageTypeHint",
-      color: "magenta",
+      color: "default",
       label: t("crawl.settings.pageTypeHintOptions.list"),
     });
   } else if (pageTypeHint === "detail") {
     tags.push({
       key: "pageTypeHint",
-      color: "magenta",
+      color: "default",
       label: t("crawl.settings.pageTypeHintOptions.detail"),
     });
   }
@@ -427,7 +427,7 @@ export const getCrawlStrategyTags = (
   if (crawlOptions.autoExpandDetails === true) {
     tags.push({
       key: "autoExpandDetails",
-      color: "green",
+      color: "default",
       label: t("crawl.settings.autoExpandDetails"),
     });
   }
@@ -439,7 +439,7 @@ export const getCrawlStrategyTags = (
   if (antiBotMode === "enabled") {
     tags.push({
       key: "antiBotMode",
-      color: "volcano",
+      color: "default",
       label: t("newsSources.tags.antiBotEnabled"),
     });
   } else if (antiBotMode === "disabled") {
@@ -459,7 +459,7 @@ export const getCrawlStrategyTags = (
   if (markdownOptions?.contentSource === "cleaned_html") {
     tags.push({
       key: "ragReady",
-      color: "geekblue",
+      color: "default",
       label: t("crawl.markdown.ragReadyTitle"),
     });
   }
@@ -468,21 +468,21 @@ export const getCrawlStrategyTags = (
 };
 
 export const pipelineJobStatusColors: Record<string, string> = {
-  pending: "gold",
-  queued: "cyan",
-  running: "blue",
-  delayed: "orange",
-  completed: "green",
-  failed: "red",
+  pending: "warning",
+  queued: "processing",
+  running: "processing",
+  delayed: "warning",
+  completed: "success",
+  failed: "error",
 };
 
 export const crawlTaskStatusColors: Record<string, string> = {
-  pending: "gold",
-  queued: "cyan",
-  running: "blue",
-  completed: "green",
-  failed: "red",
-  paused: "purple",
+  pending: "warning",
+  queued: "processing",
+  running: "processing",
+  completed: "success",
+  failed: "error",
+  paused: "default",
 };
 export const LIVE_EVENT_SOURCES: LiveEventSource[] = [
   "pipeline",

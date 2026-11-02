@@ -129,7 +129,7 @@ export function NewsSourcesOpsPanels({
                 showIcon
                 message={t("newsSources.readiness.loadFailed")}
                 description={readinessError}
-                style={{ marginBottom: 12 }}
+                className="!mb-3"
               />
             ) : null}
             {readinessSummary ? (
@@ -235,7 +235,7 @@ export function NewsSourcesOpsPanels({
                 showIcon
                 message={t("newsSources.queue.loadFailed")}
                 description={crawlQueueError}
-                style={{ marginBottom: 12 }}
+                className="!mb-3"
               />
             ) : null}
             {crawlQueueStats ? (
@@ -324,7 +324,7 @@ export function NewsSourcesOpsPanels({
                 showIcon
                 message={t("newsSources.quality.loadFailed")}
                 description={crawlQualityError}
-                style={{ marginBottom: 12 }}
+                className="!mb-3"
               />
             ) : null}
             {crawlQualityStats ? (
@@ -481,8 +481,8 @@ export function NewsSourcesOpsPanels({
                                 0) <= 0
                                 ? "default"
                                 : crawlQualityThresholdStatus?.http304Breached
-                                ? "red"
-                                : "green"
+                                ? "error"
+                                : "success"
                             }
                           >
                             {(crawlQualityThresholdStatus?.preflightRunCount ??
@@ -535,8 +535,8 @@ export function NewsSourcesOpsPanels({
                                 0) <= 0
                                 ? "default"
                                 : crawlQualityThresholdStatus?.preflightFailureBreached
-                                ? "red"
-                                : "green"
+                                ? "error"
+                                : "success"
                             }
                           >
                             {(crawlQualityThresholdStatus?.preflightRunCount ??
@@ -592,8 +592,8 @@ export function NewsSourcesOpsPanels({
                                 0) <= 0
                                 ? "default"
                                 : crawlQualityThresholdStatus?.orgHashDedupeBreached
-                                ? "red"
-                                : "green"
+                                ? "error"
+                                : "success"
                             }
                           >
                             {(crawlQualityThresholdStatus?.dedupeEvaluatedCount ??

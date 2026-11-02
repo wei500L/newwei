@@ -265,7 +265,7 @@ export function NewsSourcesModals({
                   timeStyle: "short",
                 })}
               </Typography.Text>
-              <Tag color="green">
+              <Tag>
                 {t("newsSources.preview.timePublished")}
               </Tag>
             </Space>
@@ -282,10 +282,10 @@ export function NewsSourcesModals({
                 })}
               </Typography.Text>
               <Space size={4} wrap>
-                <Tag color="blue">
+                <Tag>
                   {t("newsSources.preview.timeCrawled")}
                 </Tag>
-                <Tag color="orange">
+                <Tag color="warning">
                   {t("newsSources.preview.publishDateMissing")}
                 </Tag>
               </Space>
@@ -303,11 +303,11 @@ export function NewsSourcesModals({
       width: 110,
       render: (value: NewsSourcePreviewCandidate["status"]) =>
         value === "success" ? (
-          <Tag color="green">
+          <Tag color="success">
             {t("common.success")}
           </Tag>
         ) : (
-          <Tag color="red">
+          <Tag color="error">
             {t("common.failed")}
           </Tag>
         ),
@@ -324,7 +324,7 @@ export function NewsSourcesModals({
               {t("newsSources.preview.alreadyCrawled")}
             </Tag>
           ) : (
-            <Tag color="blue">
+            <Tag>
               {t("newsSources.preview.newUrl")}
             </Tag>
           )}
@@ -338,7 +338,7 @@ export function NewsSourcesModals({
                   : t("newsSources.preview.inFlight")
               }
             >
-              <Tag color="orange">
+              <Tag color="processing">
                 {t("newsSources.preview.inFlight")}
               </Tag>
             </Tooltip>
@@ -516,7 +516,7 @@ export function NewsSourcesModals({
             />
           </Form.Item>
 
-          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+          <Typography.Title level={5} className="!mb-0">
             {t("newsSources.sections.schedule")}
           </Typography.Title>
           <Typography.Text type="secondary">
@@ -724,14 +724,14 @@ export function NewsSourcesModals({
                 description={t("newsSources.crawl.proxyDisabledDescription")}
               />
 
-              <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              <Typography.Title level={5} className="!mb-0">
                 {t("newsSources.sections.crawlStrategy")}
               </Typography.Title>
               <Typography.Text type="secondary">
                 {t("newsSources.sections.crawlStrategyHint")}
               </Typography.Text>
               <Alert
-                style={{ marginBottom: 12, marginTop: 8 }}
+                className="!mb-3 !mt-2"
                 showIcon
                 type="info"
                 message={t("newsSources.hints.noLlmTitle")}
@@ -776,7 +776,7 @@ export function NewsSourcesModals({
                   return (
                     <>
                       <Alert
-                        style={{ marginBottom: 12 }}
+                        className="!mb-3"
                         showIcon
                         type={
                           scanMode === "full_page"
@@ -1085,14 +1085,14 @@ export function NewsSourcesModals({
                 }}
               </Form.Item>
 
-              <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              <Typography.Title level={5} className="!mb-0">
                 {t("newsSources.sections.crawlMarkdown")}
               </Typography.Title>
               <Typography.Text type="secondary">
                 {t("newsSources.sections.crawlMarkdownHint")}
               </Typography.Text>
               <Alert
-                style={{ marginBottom: 12, marginTop: 8 }}
+                className="!mb-3 !mt-2"
                 showIcon
                 type="success"
                 message={t("newsSources.hints.ragReadyTitle")}
@@ -1205,11 +1205,11 @@ export function NewsSourcesModals({
                     <Card
                       size="small"
                       title={t("newsSources.sections.crawlOptionsPreview")}
-                      style={{ marginBottom: 12 }}
+                      className="!mb-3"
                     >
                       <Typography.Paragraph
                         type="secondary"
-                        style={{ marginTop: 0 }}
+                        className="!mt-0"
                       >
                         {t("newsSources.sections.crawlOptionsPreviewHint")}
                       </Typography.Paragraph>
@@ -1218,7 +1218,7 @@ export function NewsSourcesModals({
                           type="warning"
                           showIcon
                           message={previewError}
-                          style={{ marginBottom: 8 }}
+                          className="!mb-2"
                         />
                       ) : null}
                       <Input.TextArea
@@ -1231,7 +1231,7 @@ export function NewsSourcesModals({
                 }}
               </Form.Item>
 
-              <Space style={{ marginBottom: 8 }}>
+              <Space className="!mb-2">
                 <Button
                   size="small"
                   onClick={() => {
@@ -1416,7 +1416,7 @@ export function NewsSourcesModals({
                   </Form.Item>
                 </Col>
               </Row>
-              <Typography.Paragraph style={{ marginBottom: 12 }}>
+              <Typography.Paragraph className="!mb-3">
                 <Space wrap>
                   <Button
                     size="small"
@@ -1462,7 +1462,7 @@ export function NewsSourcesModals({
             </>
           ) : null}
 
-          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+          <Typography.Title level={5} className="!mb-0">
             {t("newsSources.sections.seed")}
           </Typography.Title>
           <Typography.Text type="secondary">
@@ -1537,7 +1537,7 @@ export function NewsSourcesModals({
                       <Alert
                         type="info"
                         showIcon
-                        style={{ marginBottom: 12 }}
+                        className="!mb-3"
                         message={t("newsSources.seed.rssDirectTitle")}
                         description={t(
                           "newsSources.seed.rssDirectDescription",
@@ -1667,7 +1667,7 @@ export function NewsSourcesModals({
                                     <Alert
                                       type="warning"
                                       showIcon
-                                      style={{ marginBottom: 12 }}
+                                      className="!mb-3"
                                       message={t(
                                         "newsSources.seed.rssStubWarningTitle",
                                       )}
@@ -1767,8 +1767,8 @@ export function NewsSourcesModals({
                       )}
                     />
                   </Form.Item>
-                  <Space wrap size={[8, 8]} style={{ marginBottom: 8 }}>
-                    <Tag color={seedCacheTtlInputDisabled ? "gold" : "blue"}>
+                  <Space wrap size={[8, 8]} className="!mb-2">
+                    <Tag>
                       {seedCacheTtlInputDisabled
                         ? t("newsSources.seedCachePolicy.globalForcedTag")
                         : t("newsSources.seedCachePolicy.sourceAwareTag")}
@@ -1788,7 +1788,7 @@ export function NewsSourcesModals({
                     <Alert
                       type="warning"
                       showIcon
-                      style={{ marginBottom: 12 }}
+                      className="!mb-3"
                       message={t(
                         "newsSources.seedCachePolicy.loadFailedTitle",
                       )}
@@ -1800,7 +1800,7 @@ export function NewsSourcesModals({
                     <Alert
                       type="warning"
                       showIcon
-                      style={{ marginBottom: 12 }}
+                      className="!mb-3"
                       message={t(
                         "newsSources.seedCachePolicy.globalForcedTitle",
                       )}
@@ -1816,7 +1816,7 @@ export function NewsSourcesModals({
                     <Alert
                       type="info"
                       showIcon
-                      style={{ marginBottom: 12 }}
+                      className="!mb-3"
                       message={t(
                         "newsSources.seedCachePolicy.sourceAwareTitle",
                       )}
@@ -2103,7 +2103,7 @@ export function NewsSourcesModals({
                 {t("newsSources.opml.fields.mode")}
               </Typography.Text>
               <Select<NewsSourceOpmlMode>
-                style={{ width: "100%", marginTop: 6 }}
+                style={{ width: "100%" }} className="!mt-2"
                 value={opmlMode}
                 onChange={handleOpmlModeChange}
                 options={[
@@ -2125,7 +2125,7 @@ export function NewsSourcesModals({
                     {t("newsSources.opml.fields.preset")}
                   </Typography.Text>
                   <Select
-                    style={{ width: "100%", marginTop: 6 }}
+                    style={{ width: "100%" }} className="!mt-2"
                     loading={opmlLoadingPresets}
                     value={opmlPresetId}
                     onChange={(value) => {
@@ -2151,7 +2151,7 @@ export function NewsSourcesModals({
                     {t("newsSources.opml.fields.file")}
                   </Typography.Text>
                   <Input
-                    style={{ marginTop: 6 }}
+                    className="!mt-2"
                     type="file"
                     accept=".opml,.xml,text/xml,application/xml"
                     onChange={(event) => void handleOpmlFileChange(event)}
@@ -2185,22 +2185,22 @@ export function NewsSourcesModals({
           {opmlPreview ? (
             <Card size="small">
               <Space wrap>
-                <Tag color="blue">
+                <Tag>
                   {t("newsSources.opml.summary.total", {
                     count: opmlPreview.summary.total,
                   })}
                 </Tag>
-                <Tag color="green">
+                <Tag color="success">
                   {t("newsSources.opml.summary.valid", {
                     count: opmlPreview.summary.valid,
                   })}
                 </Tag>
-                <Tag color="gold">
+                <Tag>
                   {t("newsSources.opml.summary.duplicates", {
                     count: opmlPreview.summary.duplicates,
                   })}
                 </Tag>
-                <Tag color="purple">
+                <Tag color="success">
                   {t("newsSources.opml.summary.enabled", {
                     count: opmlPreview.entries.filter((entry) => entry.enabled)
                       .length,
@@ -2298,7 +2298,7 @@ export function NewsSourcesModals({
                   render: (_value, record) => {
                     if (record.alreadyExists) {
                       return (
-                        <Tag color="gold">
+                        <Tag>
                           {t("newsSources.opml.status.duplicate")}
                         </Tag>
                       );
@@ -2318,7 +2318,7 @@ export function NewsSourcesModals({
                       );
                     }
                     return (
-                      <Tag color="green">
+                      <Tag color="success">
                         {t("newsSources.opml.status.ready")}
                       </Tag>
                     );
@@ -2374,7 +2374,7 @@ export function NewsSourcesModals({
           <Alert
             type="info"
             showIcon
-            style={{ marginBottom: 12 }}
+            className="!mb-3"
             message={t(
               scheduleDeliveryMode === "rss"
                 ? "newsSources.schedule.hintTitleRss"
@@ -2410,7 +2410,7 @@ export function NewsSourcesModals({
             <Alert
               type="warning"
               showIcon
-              style={{ marginBottom: 12 }}
+              className="!mb-3"
               message={t("newsSources.schedule.enablesSource", {
                 count: scheduleTargets.filter((target) => !target.isActive)
                   .length,
@@ -2452,7 +2452,7 @@ export function NewsSourcesModals({
               }
             />
           </Form.Item>
-          <Space wrap size={8} style={{ marginBottom: 8 }}>
+          <Space wrap size={8} className="!mb-2">
             <Button
               size="small"
               onClick={() =>
@@ -2614,19 +2614,7 @@ export function NewsSourcesModals({
                 })()
               : null}
             <Space wrap>
-              <Tag
-                color={
-                  previewData.mode === "sitemap"
-                    ? "purple"
-                    : previewData.mode === "rss"
-                      ? "blue"
-                      : previewData.mode === "list"
-                        ? "gold"
-                        : previewData.mode === "deep"
-                          ? "geekblue"
-                          : "default"
-                }
-              >
+              <Tag>
                 {previewData.mode === "sitemap"
                   ? t("newsSources.preview.modeSitemap")
                   : previewData.mode === "rss"
@@ -2675,7 +2663,7 @@ export function NewsSourcesModals({
                   <Alert
                     type="error"
                     showIcon
-                    style={{ marginBottom: 12 }}
+                    className="!mb-3"
                     message={`${previewData.deepPreviewError.code}: ${previewData.deepPreviewError.message}`}
                     description={previewData.deepPreviewError.detail}
                   />
@@ -2712,9 +2700,9 @@ export function NewsSourcesModals({
                   </Col>
                 </Row>
                 {previewData.deepFailureStats?.byCode?.length ? (
-                  <Space wrap style={{ marginTop: 12 }}>
+                  <Space wrap className="!mt-3">
                     {previewData.deepFailureStats.byCode.map((entry) => (
-                      <Tag color="red" key={`deep-failure-code-${entry.code}`}>
+                      <Tag key={`deep-failure-code-${entry.code}`}>
                         {entry.code}: {entry.count}
                       </Tag>
                     ))}
@@ -2723,7 +2711,7 @@ export function NewsSourcesModals({
                 {previewData.deepFailureStats?.lastFailureAt ? (
                   <Typography.Text
                     type="secondary"
-                    style={{ display: "block", marginTop: 8 }}
+                    style={{ display: "block" }} className="!mt-2"
                   >
                     {t("newsSources.preview.deepFailure.lastFailureAt", {
                       time: formatDateTime(

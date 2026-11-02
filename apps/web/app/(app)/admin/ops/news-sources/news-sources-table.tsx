@@ -542,14 +542,6 @@ export function NewsSourcesTable({
           mode === null
             ? null
             : (() => {
-                const color =
-                  mode === "rss"
-                    ? "blue"
-                    : mode === "list"
-                      ? "gold"
-                      : mode === "deep"
-                        ? "geekblue"
-                        : "purple";
                 const label =
                   mode === "rss"
                     ? t("newsSources.seedMode.rss")
@@ -558,17 +550,9 @@ export function NewsSourcesTable({
                       : mode === "deep"
                         ? t("newsSources.seedMode.deep")
                         : t("newsSources.seedMode.sitemap");
-                return <Tag color={color}>{label}</Tag>;
+                return <Tag>{label}</Tag>;
               })();
         const rssAdaptive = resolveRssAdaptiveObservability(record);
-        const rssAdaptiveTierColor =
-          rssAdaptive?.tier === "hot"
-            ? "volcano"
-            : rssAdaptive?.tier === "warm"
-              ? "gold"
-              : rssAdaptive?.tier === "cold"
-                ? "blue"
-                : "default";
         const rssAdaptiveTierLabel =
           rssAdaptive?.tier === "hot"
             ? t("newsSources.rssAdaptive.tier.hot")
@@ -622,7 +606,7 @@ export function NewsSourcesTable({
                     </Space>
                   }
                 >
-                  <Tag color={rssAdaptiveTierColor}>
+                  <Tag>
                     {t("newsSources.rssAdaptive.tierTag", {
                       tier: rssAdaptiveTierLabel,
                     })}
@@ -646,14 +630,14 @@ export function NewsSourcesTable({
             </Space>
             <Space size={6} wrap>
               {record.crawlTaskQueuedCount > 0 ? (
-                <Tag color="cyan">
+                <Tag color="processing">
                   {t("newsSources.queueCounts.queued", {
                     count: record.crawlTaskQueuedCount,
                   })}
                 </Tag>
               ) : null}
               {record.crawlTaskRunningCount > 0 ? (
-                <Tag color="blue">
+                <Tag color="processing">
                   {t("newsSources.queueCounts.active", {
                     count: record.crawlTaskRunningCount,
                   })}
@@ -705,7 +689,7 @@ export function NewsSourcesTable({
           return <Tag color="default">{value}</Tag>;
         }
         return (
-          <Tag color={template.isActive ? "blue" : "orange"}>
+          <Tag color={template.isActive ? "success" : undefined}>
             {template.isActive
               ? template.name
               : `${template.name} (${t("common.disabled")})`}
@@ -781,7 +765,7 @@ export function NewsSourcesTable({
                 : t("newsSources.health.circuitOpen")
             }
           >
-            <Tag color="red">
+            <Tag color="error">
               {t("newsSources.health.circuitOpen")}
             </Tag>
           </Tooltip>
@@ -798,14 +782,14 @@ export function NewsSourcesTable({
                 : t("newsSources.health.failing")
             }
           >
-            <Tag color="orange">
+            <Tag color="warning">
               {t("newsSources.health.failingCount", {
                 count: failureCount,
               })}
             </Tag>
           </Tooltip>
         ) : value ? (
-          <Tag color="green">
+          <Tag color="success">
             {t("newsSources.health.healthy")}
           </Tag>
         ) : null;
@@ -818,7 +802,7 @@ export function NewsSourcesTable({
                 onChange={(next) => void handleToggleActive(record, next)}
               />
             ) : (
-              <Tag color={value ? "green" : "default"}>
+              <Tag color={value ? "success" : undefined}>
                 {value ? t("common.enabled") : t("common.disabled")}
               </Tag>
             )}
@@ -852,7 +836,7 @@ export function NewsSourcesTable({
         return (
           <Space size={6} wrap>
             {overdue ? (
-              <Tag color="gold">
+              <Tag color="warning">
                 {t("newsSources.nextRun.due")}
               </Tag>
             ) : null}
@@ -880,7 +864,7 @@ export function NewsSourcesTable({
                   </Space>
                 }
               >
-                <Tag color="orange">
+                <Tag color="warning">
                   {t("newsSources.nextRun.backpressure")}
                 </Tag>
               </Tooltip>
@@ -948,11 +932,11 @@ export function NewsSourcesTable({
         const color =
           typeof successRate === "number" && Number.isFinite(successRate)
             ? successRate >= 0.9
-              ? "green"
+              ? "success"
               : successRate >= 0.7
-                ? "orange"
-                : "red"
-            : "default";
+                ? "warning"
+                : "error"
+            : undefined;
 
         const avgLabel =
           typeof avgDurationMs === "number" && Number.isFinite(avgDurationMs)
@@ -1038,21 +1022,21 @@ export function NewsSourcesTable({
           <Typography.Text type="secondary">-</Typography.Text>
         );
         const ingestPathTag = isRssPrefetched ? (
-          <Tag color="cyan">
+          <Tag>
             {t("newsSources.latest.rssPrefetched")}
           </Tag>
         ) : null;
         const prefetchedMarkdownSourceTag =
           prefetchedMarkdownSource === "content" ? (
-            <Tag color="green">
+            <Tag>
               {t("newsSources.latest.rssPrefetchedContent")}
             </Tag>
           ) : prefetchedMarkdownSource === "description" ? (
-            <Tag color="gold">
+            <Tag>
               {t("newsSources.latest.rssPrefetchedSummary")}
             </Tag>
           ) : prefetchedMarkdownSource === "stub" ? (
-            <Tag color="orange">
+            <Tag>
               {t("newsSources.latest.rssPrefetchedStub")}
             </Tag>
           ) : null;

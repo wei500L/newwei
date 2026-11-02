@@ -316,7 +316,7 @@ export function NewsSourcesContent() {
             <Space direction="vertical" size={2} style={{ width: "100%" }}>
               <Space wrap>
                 <Tag>{liveLastEvent.source}</Tag>
-                <Tag color="blue">{liveLastEvent.event}</Tag>
+                <Tag>{liveLastEvent.event}</Tag>
               </Space>
               {liveLastEvent.jobId ? (
                 <Typography.Text
@@ -341,7 +341,7 @@ export function NewsSourcesContent() {
           )}
         </Space>
 
-        <Divider style={{ margin: "4px 0" }} />
+        <Divider className="!my-1" />
 
         <Space direction="vertical" size={6} style={{ width: "100%" }}>
           <Typography.Text type="secondary">
@@ -1027,7 +1027,8 @@ export function NewsSourcesContent() {
   if (status === "loading") {
     return (
       <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+        style={{ display: "flex", justifyContent: "center" }}
+        className="mt-12"
       >
         <Typography.Text type="secondary">
           {t("common.loading")}
@@ -1129,11 +1130,11 @@ export function NewsSourcesContent() {
                       style={{ cursor: "pointer" }}
                       color={
                         liveError
-                          ? "red"
+                          ? "error"
                           : liveStatus === "connected"
-                            ? "green"
+                            ? "success"
                             : liveStatus === "connecting"
-                              ? "blue"
+                              ? "processing"
                               : undefined
                       }
                     >
