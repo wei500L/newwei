@@ -37,13 +37,6 @@
   background: rgba(148, 163, 184, 0.2);
 }
 
-.heroKicker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  color: rgba(71, 85, 105, 0.95);
-}
-
 .panel {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -394,10 +387,6 @@
 
 :global(.dark) .pageFrame::after {
   background: rgba(100, 116, 139, 0.22);
-}
-
-:global(.dark) .heroKicker {
-  color: rgba(148, 163, 184, 0.92);
 }
 
 :global(.dark) .panel {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftOutlined, CalendarOutlined } from "@ant-design/icons";
+import { CalendarOutlined } from "@ant-design/icons";
 import { gql, useQuery } from "@apollo/client";
 import {
   Alert,
@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { ArticlePublishedTime } from "@/components/article-published-time";
 import { MarkdownViewer } from "@/components/markdown-viewer";
+import { PageHeader } from "@/components/page-header";
 import {
   useNewsEventBriefQuery,
   useProcessedItemByIdQuery,
@@ -857,21 +858,16 @@ export function EventDetail({ eventId }: { eventId: string }) {
           ]}
         />
 
-        <Space align="center" wrap size={[8, 6]}>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            type="link"
-            onClick={() => router.push("/events")}
-          >
-            {t("common.back")}
-          </Button>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {title}
-          </Typography.Title>
-          <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
-            <Tag>{timeZoneLabel || timeZone}</Tag>
-          </Tooltip>
-        </Space>
+        <PageHeader
+          kicker={t("nav.groups.situation")}
+          back={{ href: "/events", label: t("common.back") }}
+          title={<span className="line-clamp-2">{title}</span>}
+          meta={
+            <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
+              <Tag className="m-0">{timeZoneLabel || timeZone}</Tag>
+            </Tooltip>
+          }
+        />
 
         <Space wrap size={[6, 6]}>
           <Tag color={event.status === "active" ? "green" : "default"}>

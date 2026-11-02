@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navigation";
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
+import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useTheme } from "@/hooks/use-theme";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -383,31 +384,24 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <Space direction="vertical" size={2}>
-        <Space align="center" wrap size={[8, 6]}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t("pages.events.title")}
-          </Typography.Title>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.situation")}
+        title={t("pages.events.title")}
+        description={t("pages.events.subtitle")}
+        meta={
           <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
-            <Tag>{timeZoneLabel || timeZone}</Tag>
+            <Tag className="m-0">{timeZoneLabel || timeZone}</Tag>
           </Tooltip>
-        </Space>
-        <Typography.Text type="secondary">
-          {t("pages.events.subtitle")}
-        </Typography.Text>
-        <Space wrap size={[8, 8]}>
-          <Button size="small" onClick={() => router.push("/news-hub")}>
-            {t("pages.events.quickNav.hub")}
-          </Button>
-          <Button size="small" onClick={() => router.push("/newsnow/hottest")}>
-            {t("pages.events.quickNav.newsnow")}
-          </Button>
-          <Button size="small" onClick={() => router.push("/items")}>
-            {t("pages.events.quickNav.items")}
-          </Button>
-        </Space>
-      </Space>
+        }
+        actions={
+          <>
+            <Button onClick={() => router.push("/news-hub")}>{t("pages.events.quickNav.hub")}</Button>
+            <Button onClick={() => router.push("/newsnow/hottest")}>{t("pages.events.quickNav.newsnow")}</Button>
+            <Button onClick={() => router.push("/items")}>{t("pages.events.quickNav.items")}</Button>
+          </>
+        }
+      />
 
       <AnalysisToolbar
         surface="events"

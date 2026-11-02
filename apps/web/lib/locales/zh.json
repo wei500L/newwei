@@ -722,6 +722,9 @@
       "economicLong": "长期经济",
       "livelihoodPrices": "民生价格"
     },
+    "overview": {
+      "subtitle": "跨市场、事件与新闻的实时态势总览。"
+    },
     "dataEmpty": "无数据",
     "dataEmptyHint": "所选时间范围内暂无数据，请尝试扩大时间范围。",
     "dataAbnormal": "数据异常",
@@ -2089,6 +2092,13 @@
     }
   },
   "pages": {
+    "items": {
+      "subtitle": "全部已入库内容，可按来源、时间与情感筛选。"
+    },
+    "newsHub": {
+      "title": "新闻中枢",
+      "subtitle": "统一入口：先看热榜，再进深读，最后回到事件脉络校验。"
+    },
     "today": {
       "title": "今日要闻",
       "subtitle": "快速理解今日重要新闻。",
@@ -4181,6 +4191,10 @@
     }
   },
   "settings": {
+    "security": {
+      "title": "账号安全",
+      "description": "管理身份验证器与恢复码。"
+    },
     "rateLimits": {
       "riskTitle": "安全影响提示",
       "riskDescription": "调整限流与策略可能导致访问受阻或防护下降。相关变更会记录在",
@@ -8350,7 +8364,9 @@
     },
     "workspace": {
       "title": "分析工作台",
-      "subtitle": "协调共享看板、保存视图和任务讨论。"
+      "subtitle": "协调共享看板、保存视图和任务讨论。",
+      "selectBoard": "选择看板",
+      "newBoard": "新建看板"
     },
     "toolbar": {
       "updateSuccess": "保存视图已更新。",

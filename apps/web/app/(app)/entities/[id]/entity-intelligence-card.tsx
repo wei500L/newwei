@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowLeftOutlined,
   CopyOutlined,
   LinkOutlined,
   ReloadOutlined,
@@ -32,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import {
   useEntityIntelligenceCardQuery,
@@ -51,7 +51,7 @@ interface EntityIntelligenceCardProps {
   entityId: string;
 }
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 const WINDOW_OPTIONS = [
   { label: "7D", value: 7 },
@@ -233,61 +233,40 @@ export function EntityIntelligenceCard({
 
   return (
     <Space direction="vertical" size="large" className="w-full">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <Space direction="vertical" size={8} className="min-w-0">
-          <Link href="/knowledge-graph" className="inline-flex items-center gap-2 text-sm">
-            <ArrowLeftOutlined />
-            {t("nav.main.knowledgeGraph")}
-          </Link>
-          <div>
-            <Space wrap align="center">
-              <Title level={3} style={{ margin: 0 }}>
-                {card.entity.name}
-              </Title>
-              <Tag color="blue">
-                {t(`pages.knowledgeGraph.nodeTypes.${card.entity.type}`, {
-                  defaultValue: formatKnowledgeGraphLabel(card.entity.type),
-                })}
-              </Tag>
-            </Space>
-            <Text type="secondary">
+      <PageHeader
+        kicker={t("nav.groups.research")}
+        back={{ href: "/knowledge-graph", label: t("nav.main.knowledgeGraph") }}
+        title={card.entity.name}
+        meta={
+          <>
+            <Tag color="blue">
+              {t(`pages.knowledgeGraph.nodeTypes.${card.entity.type}`, {
+                defaultValue: formatKnowledgeGraphLabel(card.entity.type),
+              })}
+            </Tag>
+            <span className="font-mono">
               {t("entities.intelligence.generatedAt")}{" "}
               {dayjs(card.generatedAt).format("YYYY-MM-DD HH:mm")}
-            </Text>
-          </div>
-          {card.aliases.length > 0 ? (
-            <Space wrap>
-              {card.aliases.slice(0, 8).map((alias) => (
-                <Tag key={alias}>{alias}</Tag>
-              ))}
-            </Space>
-          ) : null}
-        </Space>
-        <Space wrap>
-          <Segmented
-            value={windowDays}
-            options={WINDOW_OPTIONS}
-            onChange={handleWindowChange}
-          />
-          <Button icon={<SearchOutlined />} href={searchHref}>
-            {t("pages.knowledgeGraph.actions.openSearch")}
-          </Button>
-          <Button icon={<ShareAltOutlined />} href={explorerHref}>
-            {t("pages.knowledgeGraph.actions.openExplorer")}
-          </Button>
-          <Button icon={<CopyOutlined />} onClick={() => void copyLink()}>
-            {t("common.copy")}
-          </Button>
-          <Tooltip title={t("dashboard.actions.retryFetch")}>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={() => {
-                void Promise.all([refetchCard(), refetchEvidence()]);
-              }}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+            </span>
+            {card.aliases.length > 0
+              ? card.aliases.slice(0, 8).map((alias) => (
+                  <Tag key={alias}>{alias}</Tag>
+                ))
+              : null}
+          </>
+        }
+        actions={
+          <Space wrap>
+            <Segmented value={windowDays} options={WINDOW_OPTIONS} onChange={handleWindowChange} />
+            <Button icon={<SearchOutlined />} href={searchHref}>{t("pages.knowledgeGraph.actions.openSearch")}</Button>
+            <Button icon={<ShareAltOutlined />} href={explorerHref}>{t("pages.knowledgeGraph.actions.openExplorer")}</Button>
+            <Button icon={<CopyOutlined />} onClick={() => void copyLink()}>{t("common.copy")}</Button>
+            <Tooltip title={t("dashboard.actions.retryFetch")}>
+              <Button icon={<ReloadOutlined />} onClick={() => void Promise.all([refetchCard(), refetchEvidence()])} />
+            </Tooltip>
+          </Space>
+        }
+      />
 
       {error ? (
         <RequestErrorBanner

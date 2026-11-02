@@ -27,6 +27,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import {
   AlertChannelType,
   NotificationType,
@@ -1224,14 +1225,11 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("subscriptions.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("subscriptions.subtitle")}
-        </Typography.Text>
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.workspace")}
+        title={t("subscriptions.title")}
+        description={t("subscriptions.subtitle")}
+      />
 
       <Tabs
         activeKey={activeTab}

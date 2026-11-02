@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NewsCard } from '@/app/(app)/items/components/news-card';
 import { ArticlePublishedTime } from '@/components/article-published-time';
+import { PageHeader } from '@/components/page-header';
 import dayjs from '@/lib/dayjs';
 import { formatDateTime, resolveLocale } from '@/lib/i18n';
 
@@ -339,17 +340,12 @@ export function TopicsContent({ initialData = null }: TopicsContentProps) {
     );
   } else {
     content = (
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <Space direction="vertical" size={2}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {t('pages.topics.title')}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {t('pages.topics.subtitle')}
-            </Typography.Text>
-          </Space>
-        </div>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.situation")}
+          title={t("pages.topics.title")}
+          description={t("pages.topics.subtitle")}
+        />
 
         <Card
           size="small"

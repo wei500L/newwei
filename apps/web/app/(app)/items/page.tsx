@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
+import { ItemsPageHeader } from "./items-page-header";
 import { ItemsView } from "./items-view";
 
 export default async function ItemsPage() {
@@ -10,5 +11,10 @@ export default async function ItemsPage() {
     redirect("/login");
   }
 
-  return <ItemsView />;
+  return (
+    <div className="flex flex-col gap-6">
+      <ItemsPageHeader />
+      <ItemsView />
+    </div>
+  );
 }

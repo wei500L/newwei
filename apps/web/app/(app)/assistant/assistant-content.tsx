@@ -1102,12 +1102,12 @@ export function AssistantContent() {
       ) : null}
 
       <section className={styles.pageFrame}>
-        <header className="relative z-[1] border-b border-white/70 px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5 dark:border-white/10">
+        <header className="relative z-[1] border-b border-[var(--border)] px-5 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="space-y-2">
-              <p className={styles.heroKicker}>{designKicker}</p>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">{title}</h1>
-              <p className="max-w-3xl text-sm font-medium text-slate-600 sm:text-[15px] dark:text-slate-300">{subtitle}</p>
+              <p className="kicker m-0">{designKicker}</p>
+              <h1 className="m-0 font-serif text-2xl font-semibold leading-tight tracking-tight text-[var(--foreground)] md:text-[28px]">{title}</h1>
+              <p className="m-0 max-w-measure text-sm text-muted-foreground">{subtitle}</p>
             </div>
             <Space size={8} wrap>
               <Button

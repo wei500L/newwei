@@ -722,6 +722,9 @@
       "economicLong": "Economic long",
       "livelihoodPrices": "Livelihood prices"
     },
+    "overview": {
+      "subtitle": "A live overview across markets, events and news."
+    },
     "dataEmpty": "No data",
     "dataEmptyHint": "No data for the selected range. Try expanding the range.",
     "dataAbnormal": "Data error",
@@ -2089,6 +2092,13 @@
     }
   },
   "pages": {
+    "items": {
+      "subtitle": "Everything ingested, filterable by source, time and sentiment."
+    },
+    "newsHub": {
+      "title": "News Hub",
+      "subtitle": "One entry point: scan what's trending, read in depth, then verify against the event timeline."
+    },
     "today": {
       "title": "Today Brief",
       "subtitle": "Get a quick read on today's most important news.",
@@ -4181,6 +4191,10 @@
     }
   },
   "settings": {
+    "security": {
+      "title": "Account security",
+      "description": "Manage your authenticator app and recovery codes."
+    },
     "rateLimits": {
       "riskTitle": "Security impact",
       "riskDescription": "Rate limit and policy changes can lock out users or weaken protections. Review the audit trail in",
@@ -8350,7 +8364,9 @@
     },
     "workspace": {
       "title": "Analysis workspace",
-      "subtitle": "Coordinate shared boards, saved views, and task discussions."
+      "subtitle": "Coordinate shared boards, saved views, and task discussions.",
+      "selectBoard": "Select board",
+      "newBoard": "New board"
     },
     "toolbar": {
       "updateSuccess": "Saved view updated.",

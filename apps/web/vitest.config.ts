@@ -203,6 +203,9 @@ export default defineConfig({
         "components/filter-bar.tsx",
         // FE-UI 批2B：子导航激活项解析
         "lib/resolve-active-route.ts",
+        // FE-UI 批3A：内容页 PageHeader 客户端包装组件
+        "app/(app)/items/items-page-header.tsx",
+        "app/(app)/news-hub/news-hub-page-header.tsx",
       ],
       exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
       thresholds: {

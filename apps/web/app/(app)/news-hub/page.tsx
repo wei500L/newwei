@@ -2,6 +2,8 @@ import Link from 'next/link';
 
 import { PageContainer } from '../components/page-container';
 
+import { NewsHubPageHeader } from './news-hub-page-header';
+
 
 const pillars = [
   {
@@ -35,14 +37,7 @@ export default function NewsHubPage() {
     // shell 是页面级 padding 的唯一所有者（默认档 p-4 md:p-6）；本页只
     // 叠加纵向节奏。article 宽度档修复原先 1200px+px-4 的双重容器约束。
     <PageContainer contentWidth="article" className="flex flex-col gap-6">
-      <header className="rounded-2xl border border-white/10 bg-[linear-gradient(120deg,rgba(15,23,42,0.92),rgba(2,6,23,0.85))] p-5 text-zinc-100 shadow-[0_26px_70px_-42px_rgba(15,23,42,0.9)]">
-        <h1 className="mb-2 text-2xl font-semibold text-inherit">
-          News Hub
-        </h1>
-        <p className="mb-0 text-zinc-200/90">
-          统一入口：先看热榜，再进深读，最后回到事件脉络校验。
-        </p>
-      </header>
+      <NewsHubPageHeader />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {pillars.map((pillar) => (

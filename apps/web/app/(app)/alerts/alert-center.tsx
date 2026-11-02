@@ -4,8 +4,6 @@ import {
   Button,
   Col,
   Row,
-  Space,
-  Typography,
   message,
 } from "antd";
 import { useSession } from "next-auth/react";
@@ -13,6 +11,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DataStateBoundary, type DataStateBoundaryState } from "@/components/data-state-boundary";
+import { PageHeader } from "@/components/page-header";
 import type { AlertMetricProvider } from "@/graphql/generated";
 import { useAlertRuleTuningSuggestionQuery } from "@/graphql/generated";
 import { useChartTheme } from "@/hooks/use-chart-theme";
@@ -397,16 +396,11 @@ export function AlertCenterContent() {
     <div className="flex flex-col gap-6">
       {messageContext}
 
-      <Space align="center" size="middle" wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("alerts.center.title")}
-        </Typography.Title>
-        {isContentReady ? (
-          <Button size="small" onClick={onRetry}>
-            {t("common.refresh")}
-          </Button>
-        ) : null}
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.workspace")}
+        title={t("alerts.center.title")}
+        actions={isContentReady ? <Button onClick={onRetry}>{t("common.refresh")}</Button> : undefined}
+      />
 
       <DataStateBoundary
         state={dataState}

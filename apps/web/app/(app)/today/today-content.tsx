@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { ItemsView } from "@/app/(app)/items/items-view";
 import { AuraBentoCard } from "@/components/aura-bento-card";
+import { PageHeader } from "@/components/page-header";
 import dayjs from "@/lib/dayjs";
 
 import { BreakingAlerts } from "./components/breaking-alerts";
@@ -29,16 +30,11 @@ export function TodayContent() {
   return (
     <div className="flex flex-col gap-6 pb-10">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <Typography.Title level={3} style={{ margin: 0 }} suppressHydrationWarning>
-            {todayLabel}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("pages.today.subtitle")}
-          </Typography.Text>
-        </div>
-      </div>
+      <PageHeader
+        kicker={t("nav.groups.today")}
+        title={<span suppressHydrationWarning>{todayLabel}</span>}
+        description={t("pages.today.subtitle")}
+      />
 
       {/* Bento Grid Layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

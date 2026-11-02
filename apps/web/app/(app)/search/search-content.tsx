@@ -39,6 +39,7 @@ import {
   EnhancedSearchBox,
   type SearchSuggestionStatus,
 } from "@/components/enhanced-search-box";
+import { PageHeader } from "@/components/page-header";
 import { useItemFacetsQuery } from "@/graphql/generated";
 import dayjs from "@/lib/dayjs";
 import { parseSearchHistory, SEARCH_HISTORY_KEY } from "@/lib/search-history";
@@ -708,15 +709,12 @@ export function SearchContent() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("pages.search.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("pages.search.subtitle")}
-        </Typography.Text>
-      </Space>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.today")}
+        title={t("pages.search.title")}
+        description={t("pages.search.subtitle")}
+      />
 
       <AnalysisToolbar
         surface="search"

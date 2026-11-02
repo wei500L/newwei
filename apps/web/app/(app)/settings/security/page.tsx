@@ -3,7 +3,9 @@
 import { Alert, Button, Card, Form, Input, Spin, Typography, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 
 interface MfaStatusResponse {
@@ -15,6 +17,7 @@ interface MfaStatusResponse {
 }
 
 export default function SecuritySettingsPage() {
+  const { t } = useTranslation();
   const { data: session, status } = useSession();
   const apiClient = useMemo(
     () => createApiClient({ accessToken: session?.accessToken }),
@@ -43,7 +46,7 @@ export default function SecuritySettingsPage() {
 
   if (status === "loading" || loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin />
       </div>
     );
@@ -51,18 +54,21 @@ export default function SecuritySettingsPage() {
 
   if (!session) {
     return (
-      <Card className="content-card" title="Security settings">
+      <Card className="content-card" title={t("settings.security.title")}>
         <Alert type="warning" showIcon message="Sign in to manage your security settings." />
       </Card>
     );
   }
 
   return (
-    <Card className="content-card" title="Security settings">
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary">
-        Manage your authenticator app and recovery codes.
-      </Typography.Paragraph>
+      <PageHeader
+        kicker={t("nav.groups.workspace")}
+        title={t("settings.security.title")}
+        description={t("settings.security.description")}
+      />
+      <Card className="content-card">
       <Alert
         type={statusPayload?.enabled ? "success" : "info"}
         showIcon
@@ -129,6 +135,7 @@ export default function SecuritySettingsPage() {
           </Form>
         </Card>
       ) : null}
-    </Card>
+      </Card>
+    </div>
   );
 }

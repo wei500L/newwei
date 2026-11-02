@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AvatarFallback } from "@/components/avatar-fallback";
+import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import type { AuthenticatedUser } from "@/lib/auth";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -338,10 +339,8 @@ export function ProfileContent() {
 
   if (status === "loading") {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Spin size="large" />
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Spin />
       </div>
     );
   }
@@ -351,12 +350,15 @@ export function ProfileContent() {
   }
 
   return (
-    <Card className="content-card" title={t("profile.title")}>
+    <div className="flex flex-col gap-6">
       {contextHolder}
-      <Typography.Paragraph type="secondary">
-        {t("profile.description")}
-      </Typography.Paragraph>
-      <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.workspace")}
+        title={t("profile.title")}
+        description={t("profile.description")}
+      />
+      <Card className="content-card">
+        <div className="flex flex-col gap-6">
         <div className="flex items-center gap-4">
           <AvatarFallback
             size={72}
@@ -625,6 +627,7 @@ export function ProfileContent() {
           </Form>
         </div>
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

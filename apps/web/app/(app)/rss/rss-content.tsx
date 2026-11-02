@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { FilterState } from "@/app/(app)/items/components/faceted-search";
+import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import dayjs from "@/lib/dayjs";
@@ -473,22 +474,14 @@ export function RssContent() {
   );
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.today")}
+        title={t("pages.rss.title")}
+        description={<>{t("pages.rss.subtitle")} {t("pages.rss.readerHint")}</>}
+      />
       <Card className="content-card">
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <div>
-            <Typography.Title level={3} style={{ marginBottom: 8 }}>
-              {t("pages.rss.title")}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {t("pages.rss.subtitle")}
-            </Typography.Text>
-            <br />
-            <Typography.Text type="secondary">
-              {t("pages.rss.readerHint")}
-            </Typography.Text>
-          </div>
-
           {error ? (
             <Alert
               type="error"
@@ -759,6 +752,6 @@ export function RssContent() {
           onTranslationError={setTranslationError}
         />
       ) : null}
-    </Space>
+    </div>
   );
 }

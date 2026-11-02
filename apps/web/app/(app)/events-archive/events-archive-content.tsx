@@ -18,6 +18,7 @@ import {
   Input,
   Select,
   Spin,
+  Tag,
   Typography,
 } from "antd";
 import type { Dayjs } from "dayjs";
@@ -25,6 +26,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import dayjs from "@/lib/dayjs";
 import { trackSearchTelemetry } from "@/lib/search-telemetry";
 import { safeHttpUrl } from "@/lib/url";
@@ -1005,36 +1007,21 @@ export function EventsArchiveContent() {
   );
 
   return (
-    <div className="flex flex-col gap-5">
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/75 px-5 py-5 shadow-[0_24px_70px_-48px_rgba(15,23,42,0.55)] dark:border-slate-700/70 dark:bg-slate-900/45 sm:px-6 sm:py-6">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.12),transparent_30%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.18),transparent_30%)]" />
-        <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="flex max-w-3xl flex-col gap-2">
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {t("pages.eventsArchive.title")}
-            </Typography.Title>
-            <Typography.Text type="secondary" className="max-w-2xl">
-              {t("pages.eventsArchive.subtitle")}
-            </Typography.Text>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 xl:justify-end">
-            <span className="inline-flex items-center gap-2 rounded-2xl border border-slate-300/80 bg-white/72 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
-              <span className="h-2 w-2 rounded-full bg-sky-500 dark:bg-sky-300" />
-              {currentRegionLabel}
-            </span>
-            <span className="inline-flex items-center rounded-2xl border border-slate-300/80 bg-white/72 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600/80 dark:bg-slate-950/60 dark:text-slate-200">
-              {archiveDateDisplay}
-            </span>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.situation")}
+        title={t("pages.eventsArchive.title")}
+        description={t("pages.eventsArchive.subtitle")}
+        meta={
+          <>
+            <Tag className="m-0">{currentRegionLabel}</Tag>
+            <Tag className="m-0 font-mono">{archiveDateDisplay}</Tag>
             {currentSearch ? (
-              <span className="inline-flex max-w-full items-center gap-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3.5 py-2 text-xs font-medium text-cyan-800 shadow-sm dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-100">
-                <SearchOutlined className="text-[11px]" />
-                <span className="max-w-[16rem] truncate">{currentSearch}</span>
-              </span>
+              <Tag className="m-0 max-w-[16rem] truncate" icon={<SearchOutlined />}>{currentSearch}</Tag>
             ) : null}
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       <Card className="content-card !overflow-hidden">
         <div className="flex flex-col gap-5">
