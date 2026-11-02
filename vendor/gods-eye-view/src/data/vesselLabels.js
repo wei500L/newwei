@@ -1,0 +1,161 @@
+/**
+ * @module vesselLabels
+ * @description AIS type formatting and shared world-overlay policy retained
+ * after the vessel cards moved out of their dedicated canvas renderer.
+ */
+
+import { t, msg } from '../i18n/index.js';
+import { normalizeVesselType } from './vesselTypes.js';
+
+export { normalizeVesselType };
+
+export const VESSEL_OVERLAY_SOURCE_ID = 'ais-live-vessels';
+/** Existing selector grid size; one ambient winner is retained per cell. */
+export const VESSEL_LABEL_GRID_PX = 118;
+/** Existing environment-default ceiling for ambient vessel rows. */
+export const VESSEL_DEFAULT_LABEL_LIMIT = 900;
+/** Existing configured absolute ceiling; viewport grid demand is usually lower. */
+export const VESSEL_OVERLAY_MAX_COHORT = VESSEL_DEFAULT_LABEL_LIMIT;
+/** Existing ambient vessel-card distance fade reaches zero at 5000 km. */
+export const VESSEL_CARD_FADE_DISTANCE_M = 5_000_000;
+/** Share of VESSEL_CARD_FADE_DISTANCE_M at which ambient cards begin to fade. */
+export const VESSEL_CARD_FADE_START_RATIO = 0.7;
+
+/**
+ * AIS type family → chevron hue + card accent. Single source of truth for
+ * vessel type colors so billboard chevrons and host cards cannot drift apart.
+ */
+const TYPE_STYLES = [
+  { pattern: /tanker/i, css: '#ffb347', accent: '255, 179, 71' },
+  {
+    pattern: /cargo|container|bulk|carrier/i,
+    css: '#39d5ff',
+    accent: '57, 213, 255',
+  },
+  {
+    pattern: /passenger|ferry|cruise/i,
+    css: '#ff7adf',
+    accent: '255, 122, 223',
+  },
+  { pattern: /fishing/i, css: '#7cff9b', accent: '124, 255, 155' },
+  {
+    pattern: /tug|tow|pilot|supply|service/i,
+    css: '#f7f0a3',
+    accent: '247, 240, 163',
+  },
+];
+const DEFAULT_STYLE = { css: '#39d5ff', accent: '57, 213, 255' };
+
+// Card text for the type tokens above. The tokens stay English: TYPE_STYLES
+// and tests match on them.
+const TYPE_DISPLAY_KEYS = Object.freeze({
+  FISHING: msg('FISHING'),
+  TOWING: msg('TOWING'),
+  DREDGER: msg('DREDGER'),
+  'DIVE OPS': msg('DIVE OPS'),
+  MILITARY: msg('MILITARY'),
+  SAILING: msg('SAILING'),
+  PLEASURE: msg('PLEASURE'),
+  PILOT: msg('PILOT'),
+  SAR: msg('SAR'),
+  TUG: msg('TUG'),
+  'PORT TENDER': msg('PORT TENDER'),
+  'ANTI-POLLUTION': msg('ANTI-POLLUTION'),
+  'LAW ENFORCE': msg('LAW ENFORCE'),
+  MEDICAL: msg('MEDICAL'),
+  'HIGH-SPEED': msg('HIGH-SPEED'),
+  PASSENGER: msg('PASSENGER'),
+  CARGO: msg('CARGO'),
+  TANKER: msg('TANKER'),
+  OTHER: msg('OTHER'),
+});
+
+/**
+ * Card-display form of a normalized AIS type: known tokens translate through
+ * the catalog; free-text types and unknown codes render unchanged.
+ * @param {string} type Raw AIS type.
+ * @returns {string}
+ */
+export function displayVesselType(type) {
+  const normalized = normalizeVesselType(type);
+  const key = TYPE_DISPLAY_KEYS[normalized.toUpperCase()];
+  return key ? t(key) : normalized;
+}
+
+/** AIS ship type → CSS hex hue for the billboard chevron. */
+export function vesselTypeCss(type) {
+  return styleForType(type).css;
+}
+
+/** AIS ship type → "r, g, b" accent string for the host card. */
+export function accentForVesselType(type) {
+  return styleForType(type).accent;
+}
+
+function styleForType(type) {
+  const text = normalizeVesselType(type);
+  return TYPE_STYLES.find((entry) => entry.pattern.test(text)) || DEFAULT_STYLE;
+}
+
+/**
+ * Derive the source's ambient cohort from the shipped selector grid. This is
+ * an upper bound; the existing greedy 150 px separation usually yields fewer.
+ * Selected vessels are protected and do not consume this budget.
+ * @param {number} width CSS viewport width.
+ * @param {number} height CSS viewport height.
+ * @param {number} [rowLimit=900] Configured source row ceiling.
+ * @returns {number}
+ */
+export function vesselOverlayCohortLimit(
+  width,
+  height,
+  rowLimit = VESSEL_DEFAULT_LABEL_LIMIT,
+) {
+  const w = Number(width);
+  const h = Number(height);
+  const requested = Number(rowLimit);
+  if (!(w > 0) || !(h > 0) || !(requested > 0)) return 0;
+  const gridCapacity =
+    Math.ceil(w / VESSEL_LABEL_GRID_PX) * Math.ceil(h / VESSEL_LABEL_GRID_PX);
+  return Math.min(
+    VESSEL_OVERLAY_MAX_COHORT,
+    Math.floor(requested),
+    gridCapacity,
+  );
+}
+
+/**
+ * Add host-owned layout, fade, collision and paint-lane fields to a formatted
+ * vessel card. Ambient and selected cards share `ambient-card`, so the host's
+ * protected selected rectangle excludes ambient cards while bypassing quotas.
+ * @param {Object} card Source-formatted vessel card.
+ * @param {number} [fadeDistance=5000000] Ambient distance-fade endpoint.
+ * @returns {Object}
+ */
+export function applyVesselOverlayPolicy(
+  card,
+  fadeDistance = VESSEL_CARD_FADE_DISTANCE_M,
+) {
+  const selected = card?.selected === true;
+  const rawGap = Number(card?.gapPx) || 10;
+  const gapPx = Math.max(selected ? 28 : 12, rawGap + 8);
+  return {
+    ...card,
+    variant: selected ? 'selected' : 'card',
+    protected: selected,
+    collisionGroup: 'ambient-card',
+    cardStyle: 'tactical',
+    gapPx,
+    leaderOffsetPx: Math.max(2, gapPx - 6),
+    // Selected detail cards may move beside the contact to clear solid panels.
+    verticalOnly: !selected,
+    viewportMargin: 4,
+    maxDistance: selected ? Number.POSITIVE_INFINITY : fadeDistance,
+    distanceFadeStartRatio: VESSEL_CARD_FADE_START_RATIO,
+    edgeFade: 'keyhole',
+    horizonCull: true,
+    terrainOcclusion: false,
+    // Only MMSI-keyed cards can resolve back to one actionable vessel.
+    interactive: card?.actionable === true,
+  };
+}
