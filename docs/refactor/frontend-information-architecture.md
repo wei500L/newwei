@@ -102,5 +102,6 @@ REST     → 单一类型化客户端（现 apiClient）+ TanStack Query（缓�
 | FE-批5B | CreateCrawlTaskDrawer 拆分（3147 行 → 134 行编排层 + 24 领域模块，全部 ≤500 行）。FE-TEST-01 mock 边界收口；保护网先行（68 例旧实现远端跑绿）；消费入口/Props/Form 契约锁定；8 处 as any 清零；FE-TPL-01/A11Y-03/SUBMIT-01/I18N-02 修复。realtime-signals/crawl-monitor/quality 未开始 | revert |
 | FE-批6A | realtime-signals 设置与诊断面板拆分（3009 行 → 240 行编排层 + 17 领域模块，全部 ≤500 行）。本轮以功能修复为核心（不先建 characterization）：FE-RT-01（初始 GET 失败以 EMPTY_SETTINGS 伪装服务器状态、可保存覆盖未知配置 → 三态 loadState 阻断 + Retry）、FE-RT-02（Save/Reset 无 handler 层互斥 → 操作门禁）、FE-RT-03（diagnostics 失败污染 settings 域 → 独立状态域 + 诊断区独立 Retry）；secret touched/omit/null 语义、API 路径/权限（settings.manage）、保存/重置/诊断展示契约全部保持；最小关键测试 2 例（阻断/Retry、secret 语义 + 单次 PUT + diagnostics 隔离）；crawl-monitor/quality 未开始（FE-批6B+） | revert |
 | FE-批5+ | 其余巨型组件（CreateCrawlTaskDrawer/realtime-signals/crawl-monitor/quality 等）按 §4 顺序分批；直接 fetch 迁移；FE-02/03 清理 | 逐 PR |
+| FE-UI 视觉打磨 | 视觉层系统打磨（「情报编辑台」风格：纸墨 token、实色纸面卡片、PageHeader/FilterBar 原语、布局 bug、表格抽屉响应式、暗色清理、招牌页面）。批0–7 执行提示词见 [frontend-ui-polish/](frontend-ui-polish/README.md)；未开始 | revert |
 
 验收：每批 `pnpm lint/typecheck + web test --coverage`（真实全仓覆盖率）+ 目标页人工冒烟清单；批 2 起每批补 1–2 个行为测试（用户可见断言，非源码文本断言）。
