@@ -2444,6 +2444,7 @@ export function ItemsView({
               layoutState.isReaderPreset ? "items-reader-feed-list" : undefined
             }
             itemLayout="vertical"
+            split={false}
             dataSource={pageData}
             rowKey="id"
             pagination={{
@@ -2457,7 +2458,7 @@ export function ItemsView({
               onShowSizeChange: handlePaginationChange,
             }}
             renderItem={(item) => (
-              <List.Item key={item.id}>
+              <List.Item key={item.id} className="!p-0">
                 {renderFeedCard(item)}
               </List.Item>
             )}
@@ -2665,53 +2666,51 @@ export function ItemsView({
         </Row>
 
         {!isUnsearched ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
             {search ? (
-              <Tooltip title={search}>
-                <Tag
-                  className="text-xs max-w-[320px] truncate"
-                  closable
-                  onClose={() => handleSearch("")}
-                >
-                  {t("items.stats.query")}: {search}
-                </Tag>
-              </Tooltip>
+              <Tag
+                closable
+                onClose={() => handleSearch("")}
+                className="m-0 max-w-[320px] truncate font-sans"
+              >
+                {t("items.stats.query")}: {search}
+              </Tag>
             ) : null}
             {filterSummary.text ? (
               <Tooltip title={filterSummary.text}>
-                <Tag className="text-xs">
+                <span className="max-w-[360px] truncate">
                   {t("items.stats.filters")}: {filterSummary.text}
-                </Tag>
+                </span>
               </Tooltip>
             ) : null}
-            <Tag className="text-xs">
+            <span>
               {t("items.stats.matches")}:{" "}
               {typeof resolvedTotalCount === "number"
                 ? totalCount.toLocaleString(locale)
                 : t("common.loading")}
-            </Tag>
+            </span>
             {showingRange ? (
-              <Tag className="text-xs">
+              <span>
                 {t("items.stats.showing", {
                   from: showingRange.from,
                   to: showingRange.to,
                   total: totalCount,
                 })}
-              </Tag>
+              </span>
             ) : null}
             {rssTranslationStats ? (
-              <Tag className="text-xs">
+              <span>
                 {t("pages.rss.translation.translatedCount", {
                   count: rssTranslationStats.translated,
                 })}
-              </Tag>
+              </span>
             ) : null}
             {rssTranslationStats ? (
-              <Tag className="text-xs">
+              <span>
                 {t("pages.rss.translation.originalCount", {
                   count: rssTranslationStats.original,
                 })}
-              </Tag>
+              </span>
             ) : null}
           </div>
         ) : null}

@@ -332,7 +332,7 @@ function NewsCardComponent({
 
   const metricsContent = (
     <div className="flex flex-col gap-2 text-xs min-w-[220px]">
-      <div className="font-semibold border-b pb-2 mb-1 text-gray-700 dark:text-gray-300">
+      <div className="font-semibold border-b border-[var(--border)] pb-2 mb-1 text-[var(--foreground)]">
         {t("items.metrics.title")}
       </div>
       {qualityScore && (
@@ -366,7 +366,7 @@ function NewsCardComponent({
       {item.llm?.model && (
         <div className="flex justify-between">
           <span className="text-muted-foreground">{t("items.metrics.model")}:</span>
-          <span className="text-gray-600 dark:text-gray-400">
+          <span className="text-muted-foreground">
             {item.llm.model}
           </span>
         </div>
@@ -374,7 +374,7 @@ function NewsCardComponent({
       {item.llm?.promptVersion && (
         <div className="flex justify-between">
           <span className="text-muted-foreground">{t("items.metrics.prompt")}:</span>
-          <span className="text-gray-600 dark:text-gray-400">
+          <span className="text-muted-foreground">
             {item.llm.promptVersion}
           </span>
         </div>
@@ -419,7 +419,7 @@ function NewsCardComponent({
         <Paragraph
           type="secondary"
           ellipsis={summaryEllipsis}
-          className="text-sm mb-3 text-gray-600 dark:text-gray-300"
+          className="text-sm mb-3 text-muted-foreground"
           style={{ lineHeight: 1.6 }}
         >
           {summaryText}
@@ -458,7 +458,7 @@ function NewsCardComponent({
         <div className="flex items-center gap-2 flex-wrap">
           <SentimentBadge sentiment={item.sentiment} />
           {item.source ? (
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span className="text-xs font-medium text-muted-foreground">
               {item.source}
             </span>
           ) : null}
@@ -486,11 +486,7 @@ function NewsCardComponent({
           showLabel={false}
           primaryStrong={isReaderVariant}
           formatOptions={{ dateStyle: "medium", timeStyle: "short" }}
-          primaryClassName={
-            isReaderVariant
-              ? "text-sm text-gray-600 dark:text-gray-300"
-              : "text-xs text-gray-500 dark:text-gray-400"
-          }
+          primaryClassName="text-muted-foreground"
           secondaryClassName="text-[11px]"
           secondaryStyle={{ fontSize: 11 }}
         />
@@ -528,7 +524,7 @@ function NewsCardComponent({
           </>
         )}
 
-        <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap">
+        <div className={`mt-auto flex flex-wrap items-center justify-between gap-2 ${isListLayout ? "pt-2" : "border-t border-[var(--border)] pt-3"}`}>
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <ClockCircleOutlined />
             <span>
@@ -600,14 +596,16 @@ function NewsCardComponent({
               </Button>
             ) : null}
 
-            <Button
-              type="link"
-              size="small"
-              href={itemHref}
-              onClick={handleOpenItem}
-            >
-              {openLabel}
-            </Button>
+            {!isListLayout ? (
+              <Button
+                type="link"
+                size="small"
+                href={itemHref}
+                onClick={handleOpenItem}
+              >
+                {openLabel}
+              </Button>
+            ) : null}
             {!isReaderVariant ? (
               <Dropdown
                 trigger={["click"]}
