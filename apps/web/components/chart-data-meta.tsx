@@ -37,9 +37,9 @@ export function ChartDataMeta({
 
   const statusTag =
     state === "delayed" ? (
-      <Tag color="orange">{t("dashboard.dataDelayed.short")}</Tag>
+      <Tag color="warning">{t("dashboard.dataDelayed.short")}</Tag>
     ) : state === "backfilling" ? (
-      <Tag color="blue">{t("dashboard.dataBackfilling.short")}</Tag>
+      <Tag color="processing">{t("dashboard.dataBackfilling.short")}</Tag>
     ) : null;
 
   const statusTooltip =
