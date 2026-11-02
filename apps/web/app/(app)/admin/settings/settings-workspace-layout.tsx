@@ -59,7 +59,7 @@ export function AdminSettingsWorkspaceLayout({
 
   if (status === 'loading') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'center' }} className="mt-12">
         <Spin size="large" />
       </div>
     );
@@ -120,7 +120,7 @@ export function AdminSettingsWorkspaceLayout({
               <div>
                 <Typography.Paragraph
                   type="secondary"
-                  style={{ marginBottom: 0 }}
+                  className="!mb-0"
                 >
                   {t('adminSettings.workspace.description')}
                 </Typography.Paragraph>

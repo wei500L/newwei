@@ -380,9 +380,9 @@ export function OrgAdminContent() {
                     <Space>
                       <Typography.Text strong>{org.name}</Typography.Text>
                       {org.id === currentOrgId ? (
-                        <Tag color="blue">{t("orgAdmin.current")}</Tag>
+                        <Tag>{t("orgAdmin.current")}</Tag>
                       ) : null}
-                      <Tag color={org.isActive ? "green" : "red"}>
+                      <Tag color={org.isActive ? "success" : undefined}>
                         {org.isActive
                           ? t("orgAdmin.active")
                           : t("orgAdmin.inactive")}
@@ -430,7 +430,7 @@ export function OrgAdminContent() {
                 dataIndex: "isActive",
                 key: "isActive",
                 render: (value: boolean) => (
-                  <Tag color={value ? "green" : "red"}>
+                  <Tag color={value ? "success" : undefined}>
                     {value ? t("orgAdmin.active") : t("orgAdmin.inactive")}
                   </Tag>
                 ),
@@ -440,7 +440,7 @@ export function OrgAdminContent() {
                 key: "current",
                 render: (_: unknown, org: OrgRow) =>
                   org.id === currentOrgId ? (
-                    <Tag color="blue">{t("orgAdmin.current")}</Tag>
+                    <Tag>{t("orgAdmin.current")}</Tag>
                   ) : (
                     <Typography.Text type="secondary">—</Typography.Text>
                   )

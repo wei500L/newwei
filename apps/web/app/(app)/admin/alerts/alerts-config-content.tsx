@@ -10,9 +10,9 @@ import { PageHeader } from "@/components/page-header";
 import { useAlertRulesQuery, useTriggerAlertRuleMutation } from "@/graphql/generated";
 
 const severityColor: Record<string, string> = {
-  low: "green",
-  medium: "orange",
-  high: "red"
+  low: "default",
+  medium: "warning",
+  high: "error"
 };
 
 const buildThresholdSummary = (
@@ -160,7 +160,7 @@ export function AlertsConfigContent() {
                     title={
                       <Space size="small">
                         <Typography.Text strong>{rule.name}</Typography.Text>
-                        <Tag color={severityColor[rule.severity] ?? "blue"}>{rule.severity}</Tag>
+                        <Tag color={severityColor[rule.severity] ?? "default"}>{rule.severity}</Tag>
                         <Tag>{rule.status}</Tag>
                       </Space>
                     }

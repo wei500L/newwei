@@ -959,7 +959,7 @@ function WorkflowStudioInner({
               <Alert
                 type="error"
                 showIcon
-                style={{ marginBottom: 16 }}
+                className="!mb-4"
                 message={t("crawl.proxy.unsupportedLegacyTitle")}
                 description={formatPolicyIssues(workflowPolicyIssues, t)}
               />
@@ -1671,7 +1671,7 @@ function WorkflowStudioInner({
                                     },
                                   }))
                                 }
-                                style={{ width: "100%", marginTop: 4 }}
+                                style={{ width: "100%" }} className="!mt-1"
                                 options={property.enum.map((entry) => ({
                                   label: entry,
                                   value: entry,
@@ -1703,7 +1703,7 @@ function WorkflowStudioInner({
                                     },
                                   }))
                                 }
-                                style={{ width: "100%", marginTop: 4 }}
+                                style={{ width: "100%" }} className="!mt-1"
                                 options={[
                                   { label: "true", value: "true" },
                                   { label: "false", value: "false" },
@@ -1738,7 +1738,7 @@ function WorkflowStudioInner({
                                     },
                                   }))
                                 }
-                                style={{ width: "100%", marginTop: 4 }}
+                                style={{ width: "100%" }} className="!mt-1"
                               />
                             </div>
                           );
@@ -1768,7 +1768,7 @@ function WorkflowStudioInner({
                                     },
                                   }))
                                 }
-                                style={{ width: "100%", marginTop: 4 }}
+                                style={{ width: "100%" }} className="!mt-1"
                                 tokenSeparators={[","]}
                               />
                             </div>
@@ -1798,10 +1798,7 @@ function WorkflowStudioInner({
                                     return;
                                   }
                                 }}
-                                style={{
-                                  marginTop: 4,
-                                  fontFamily: "monospace",
-                                }}
+                                className="!mt-1 font-mono"
                               />
                             </div>
                           );
@@ -1826,7 +1823,7 @@ function WorkflowStudioInner({
                                   },
                                 }))
                               }
-                              style={{ marginTop: 4 }}
+                              className="!mt-1"
                             />
                           </div>
                         );
@@ -2131,11 +2128,7 @@ function WorkflowStudioInner({
                               ) : null}
                               {event.details ? (
                                 <Typography.Paragraph
-                                  style={{
-                                    marginBottom: 0,
-                                    whiteSpace: "pre-wrap",
-                                    fontFamily: "monospace",
-                                  }}
+                                  className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                 >
                                   {stringify(event.details)}
                                 </Typography.Paragraph>
@@ -2374,11 +2367,7 @@ function WorkflowStudioInner({
                                           )}
                                         </p>
                                         <Typography.Paragraph
-                                          style={{
-                                            marginBottom: 0,
-                                            whiteSpace: "pre-wrap",
-                                            fontFamily: "monospace",
-                                          }}
+                                          className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                         >
                                           {stringify(
                                             entry.beforeSnapshot ?? {},
@@ -2394,11 +2383,7 @@ function WorkflowStudioInner({
                                           )}
                                         </p>
                                         <Typography.Paragraph
-                                          style={{
-                                            marginBottom: 0,
-                                            whiteSpace: "pre-wrap",
-                                            fontFamily: "monospace",
-                                          }}
+                                          className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                         >
                                           {stringify(entry.afterSnapshot ?? {})}
                                         </Typography.Paragraph>
@@ -2411,11 +2396,7 @@ function WorkflowStudioInner({
                           />
                           {entry.details ? (
                             <Typography.Paragraph
-                              style={{
-                                marginBottom: 0,
-                                whiteSpace: "pre-wrap",
-                                fontFamily: "monospace",
-                              }}
+                              className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                             >
                               {stringify(entry.details)}
                             </Typography.Paragraph>

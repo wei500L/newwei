@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, Card, Empty, List, Spin } from "antd";
+import { Alert, Card, List, Spin } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { PageHeader } from "@/components/page-header";
 
 import { canViewQueueOps } from "./queue-ops/queue-ops-access";
@@ -135,7 +136,7 @@ export function OpsContent() {
             )}
           />
         ) : (
-          <Empty description={t("common.empty")} />
+          <ChartEmptyState presentation="banner" description={t("common.empty")} />
         )}
       </Card>
     </div>

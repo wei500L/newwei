@@ -338,12 +338,12 @@ function renderKind(
 ) {
   if (kind === "http") {
     return (
-      <Tag color="blue">{t("errors.kinds.http")}</Tag>
+      <Tag>{t("errors.kinds.http")}</Tag>
     );
   }
   if (kind === "graphql") {
     return (
-      <Tag color="purple">
+      <Tag>
         {t("errors.kinds.graphql")}
       </Tag>
     );
@@ -662,10 +662,10 @@ export function AdminLogsContent() {
   }, [activeTab, auditRefreshNonce, canView, loadAuditData]);
 
   const taskStatusColors: Record<TaskLogStatus, string> = {
-    pending: "gold",
-    processing: "blue",
-    completed: "green",
-    failed: "red",
+    pending: "warning",
+    processing: "processing",
+    completed: "success",
+    failed: "error",
   };
 
   const errorCountsByKind = useMemo(() => {
@@ -874,7 +874,7 @@ export function AdminLogsContent() {
         dataIndex: "action",
         key: "action",
         width: 160,
-        render: (value: string) => <Tag color="blue">{value}</Tag>,
+        render: (value: string) => <Tag>{value}</Tag>,
       },
       {
         title: t("auditLogs.columns.ipAddress"),
@@ -1261,7 +1261,7 @@ export function AdminLogsContent() {
                             dataIndex: "errorName",
                             key: "errorName",
                             render: (value: string) => (
-                              <Tag color="red">{value}</Tag>
+                              <Tag color="error">{value}</Tag>
                             ),
                           },
                           {
@@ -1660,8 +1660,8 @@ export function AdminLogsContent() {
                 {t("adminLogs.task.detail.data")}
               </Typography.Title>
               <pre
+                className="m-0"
                 style={{
-                  margin: 0,
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
@@ -1674,8 +1674,8 @@ export function AdminLogsContent() {
                 {t("adminLogs.task.detail.error")}
               </Typography.Title>
               <pre
+                className="m-0"
                 style={{
-                  margin: 0,
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
@@ -1736,8 +1736,8 @@ export function AdminLogsContent() {
                 {t("adminLogs.errors.detail.stack")}
               </Typography.Title>
               <pre
+                className="m-0"
                 style={{
-                  margin: 0,
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
@@ -1776,7 +1776,7 @@ export function AdminLogsContent() {
               <Descriptions.Item
                 label={t("auditLogs.columns.action")}
               >
-                <Tag color="blue">{detailState.record.action}</Tag>
+                <Tag>{detailState.record.action}</Tag>
               </Descriptions.Item>
               <Descriptions.Item
                 label={t("auditLogs.columns.ipAddress")}
@@ -1789,8 +1789,8 @@ export function AdminLogsContent() {
                 {t("auditLogs.columns.metadata")}
               </Typography.Title>
               <pre
+                className="m-0"
                 style={{
-                  margin: 0,
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}

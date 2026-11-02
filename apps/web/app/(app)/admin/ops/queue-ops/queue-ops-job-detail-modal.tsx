@@ -145,7 +145,7 @@ export function QueueOpsJobDetailModal({
           </section>
 
           <section>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
+            <Typography.Title level={5} className="!mt-0">
               {t("ops.queueOps.detail.sections.returnValue")}
             </Typography.Title>
             <pre data-testid="queue-ops-job-returnvalue" style={JSON_BLOCK_STYLE}>
@@ -154,7 +154,7 @@ export function QueueOpsJobDetailModal({
           </section>
 
           <section>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
+            <Typography.Title level={5} className="!mt-0">
               {t("ops.queueOps.detail.sections.stacktrace")}
             </Typography.Title>
             {job.stacktrace.length > 0 ? (
@@ -172,7 +172,7 @@ export function QueueOpsJobDetailModal({
           </section>
 
           <section>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
+            <Typography.Title level={5} className="!mt-0">
               {t("ops.queueOps.detail.sections.logs")}
             </Typography.Title>
             {job.logs.length > 0 ? (

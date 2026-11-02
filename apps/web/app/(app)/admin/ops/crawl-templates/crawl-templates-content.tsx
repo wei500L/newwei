@@ -503,7 +503,8 @@ export function CrawlTemplatesContent() {
   if (status === "loading") {
     return (
       <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
+        style={{ display: "flex", justifyContent: "center" }}
+        className="mt-12"
       >
         <Typography.Text type="secondary">
           {t("common.loading")}
@@ -674,7 +675,7 @@ export function CrawlTemplatesContent() {
       dataIndex: "isActive",
       key: "isActive",
       render: (value: boolean) => (
-        <Tag color={value ? "green" : "default"}>
+        <Tag color={value ? "success" : "default"}>
           {value
             ? t("common.enabled")
             : t("common.disabled")}
@@ -785,14 +786,14 @@ export function CrawlTemplatesContent() {
             <Switch />
           </Form.Item>
 
-          <Typography.Title level={5} style={{ marginBottom: 0 }}>
+          <Typography.Title level={5} className="!mb-0">
             {t("crawlTemplates.sections.commonOptions")}
           </Typography.Title>
 
           <Alert
             type="warning"
             showIcon
-            style={{ marginBottom: 12 }}
+            className="!mb-3"
             message={t("crawlTemplates.proxy.disabledTitle")}
             description={t("crawlTemplates.proxy.disabledDescription")}
           />
@@ -1008,7 +1009,7 @@ export function CrawlTemplatesContent() {
           <Alert
             type="info"
             showIcon
-            style={{ marginBottom: 12 }}
+            className="!mb-3"
             message={t("crawlTemplates.hints.noLlmTitle")}
             description={t("crawlTemplates.hints.noLlmDescription", {
               defaultValue: CRAWL4AI_LLM_OPTION_GUARD_MESSAGE,
@@ -1016,7 +1017,7 @@ export function CrawlTemplatesContent() {
           />
           <Form.Item noStyle shouldUpdate>
             {({ getFieldValue, setFieldsValue }) => (
-              <Space style={{ marginBottom: 8 }}>
+              <Space className="!mb-2">
                 <Button
                   size="small"
                   onClick={() => {

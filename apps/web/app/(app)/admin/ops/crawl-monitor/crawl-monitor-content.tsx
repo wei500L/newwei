@@ -1490,35 +1490,35 @@ export function CrawlMonitorContent({
   const connectionTag = (() => {
     if (mode === "polling") {
       return (
-        <Tag color={pollError ? "red" : "green"}>
+        <Tag color={pollError ? "error" : "success"}>
           {t("crawl.monitor.transport.polling")}
         </Tag>
       );
     }
     if (wsStatus === "connected") {
       return (
-        <Tag color="green">
+        <Tag color="success">
           {t("crawl.monitor.ws.connected")}
         </Tag>
       );
     }
     if (wsStatus === "connecting") {
       return (
-        <Tag color="blue">
+        <Tag color="processing">
           {t("crawl.monitor.ws.connecting")}
         </Tag>
       );
     }
     if (wsStatus === "reconnecting") {
       return (
-        <Tag color="orange">
+        <Tag color="warning">
           {t("crawl.monitor.ws.reconnectingShort")}
         </Tag>
       );
     }
     if (wsStatus === "error") {
       return (
-        <Tag color="red">
+        <Tag color="error">
           {t("crawl.monitor.ws.errorShort")}
         </Tag>
       );
@@ -1671,8 +1671,8 @@ export function CrawlMonitorContent({
         const isOk =
           success ??
           (status ? status === "success" || status === "ok" : undefined);
-        if (isOk === true) return <Tag color="green">success</Tag>;
-        if (isOk === false) return <Tag color="red">error</Tag>;
+        if (isOk === true) return <Tag color="success">success</Tag>;
+        if (isOk === false) return <Tag color="error">error</Tag>;
         return <Tag>unknown</Tag>;
       },
     },
@@ -1724,7 +1724,7 @@ export function CrawlMonitorContent({
       render: (value: unknown) => {
         if (!isRecord(value)) return "-";
         const hit = asBoolean(getRecordValue(value, ["pool_hit", "poolHit"]));
-        if (hit === true) return <Tag color="blue">yes</Tag>;
+        if (hit === true) return <Tag>yes</Tag>;
         if (hit === false) return <Tag>no</Tag>;
         return "-";
       },
@@ -1786,16 +1786,7 @@ export function CrawlMonitorContent({
       render: (value: unknown) => {
         if (!isRecord(value)) return "-";
         const type = asString(getRecordValue(value, ["type", "tier"])) ?? "";
-        const normalized = type.toLowerCase();
-        const color =
-          normalized === "permanent"
-            ? "purple"
-            : normalized === "hot"
-              ? "orange"
-              : normalized === "cold"
-                ? "cyan"
-                : undefined;
-        return type ? <Tag color={color}>{type}</Tag> : "-";
+        return type ? <Tag>{type}</Tag> : "-";
       },
     },
     {
@@ -2349,11 +2340,11 @@ export function CrawlMonitorContent({
                     title={t("crawl.monitor.overview.runtime")}
                     extra={
                       runtimeProbe?.xvfb?.supported === true ? (
-                        <Tag color="green">
+                        <Tag color="success">
                           {t("crawl.monitor.runtime.headedOk")}
                         </Tag>
                       ) : runtimeProbe?.headed ? (
-                        <Tag color="red">
+                        <Tag color="error">
                           {t("crawl.monitor.runtime.headedFailed")}
                         </Tag>
                       ) : null
@@ -2522,7 +2513,7 @@ export function CrawlMonitorContent({
                                   <Space
                                     direction="vertical"
                                     size={2}
-                                    style={{ marginTop: 6 }}
+                                    className="!mt-2"
                                   >
                                     <Typography.Text type="secondary">
                                       {t("crawl.runtimeGuide.noAutoBootstrap")}
@@ -2925,7 +2916,7 @@ export function CrawlMonitorContent({
               label: t("crawl.monitor.tabs.builtin"),
               children: normalizedDashboardUrl ? (
                 <div className="content-card">
-                  <Typography.Paragraph style={{ marginBottom: 12 }}>
+                  <Typography.Paragraph className="!mb-3">
                     <Typography.Text type="secondary">
                       {t("crawl.monitor.currentUrl")}{" "}
                     </Typography.Text>
@@ -2964,7 +2955,7 @@ export function CrawlMonitorContent({
                 <Card size="small" className="content-card">
                   <Typography.Paragraph
                     type="secondary"
-                    style={{ marginBottom: 12 }}
+                    className="!mb-3"
                   >
                     {t("crawl.monitor.raw.description")}
                   </Typography.Paragraph>

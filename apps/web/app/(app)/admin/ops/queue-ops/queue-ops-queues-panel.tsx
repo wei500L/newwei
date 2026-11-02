@@ -169,13 +169,13 @@ export function QueueOpsQueuesPanel({
       key: "status",
       render: (_value: unknown, record) => (
         <Space size={4} wrap>
-          <Tag color={record.paused ? "orange" : "green"}>
+          <Tag color={record.paused ? undefined : "processing"}>
             {record.paused
               ? t("ops.queueOps.queues.tags.paused")
               : t("ops.queueOps.queues.tags.running")}
           </Tag>
           {record.isDLQ ? (
-            <Tag color="red">{t("ops.queueOps.queues.tags.dlq")}</Tag>
+            <Tag color="error">{t("ops.queueOps.queues.tags.dlq")}</Tag>
           ) : null}
         </Space>
       ),

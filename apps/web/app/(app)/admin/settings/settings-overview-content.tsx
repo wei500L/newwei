@@ -1,11 +1,12 @@
 'use client';
 
 import { ArrowRightOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Col, Empty, Row, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Col, Row, Space, Tag, Typography } from 'antd';
 import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ChartEmptyState } from '@/components/chart-empty-state';
 import { PageHeader } from '@/components/page-header';
 import { SectionHeader } from '@/components/section-header';
 
@@ -58,7 +59,7 @@ export function AdminSettingsOverviewContent() {
         <SectionHeader title={t('adminSettings.workspace.quickLinks')} className="mb-3" />
         {featuredLinks.length === 0 ? (
           <Card className="content-card">
-            <Empty description={t('common.empty')} />
+            <ChartEmptyState presentation="banner" description={t('common.empty')} />
           </Card>
         ) : (
           <Row gutter={[16, 16]}>
@@ -76,12 +77,12 @@ export function AdminSettingsOverviewContent() {
                         {t('adminSettings.workspace.quickLinkTag')}
                       </Tag>
                       <div>
-                        <Typography.Title level={5} style={{ marginBottom: 6 }}>
+                        <Typography.Title level={5} className="!mb-2">
                           {t(item.panelDefinition.titleKey, {
                             defaultValue: item.panelDefinition.defaultTitle,
                           })}
                         </Typography.Title>
-                        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                        <Typography.Paragraph type="secondary" className="!mb-0">
                           {t(getAdminSettingsPanelDescriptionKey(item.panel), {
                             defaultValue: item.panelDefinition.defaultDescription,
                           })}
@@ -112,10 +113,10 @@ export function AdminSettingsOverviewContent() {
                   <Space direction="vertical" size={12} className="w-full">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <Typography.Title level={5} style={{ marginBottom: 6 }}>
+                        <Typography.Title level={5} className="!mb-2">
                           {t(page.titleKey, { defaultValue: page.defaultTitle })}
                         </Typography.Title>
-                        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                        <Typography.Paragraph type="secondary" className="!mb-0">
                           {t(getAdminSettingsPageDescriptionKey(page.id), {
                             defaultValue: page.defaultDescription,
                           })}

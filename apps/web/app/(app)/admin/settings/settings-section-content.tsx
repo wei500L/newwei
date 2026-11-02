@@ -164,7 +164,7 @@ function SettingsPanelSection({
         <SectionHeader
           title={t(panel.titleKey, { defaultValue: panel.defaultTitle })}
         />
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" className="!mb-0">
           {t(getAdminSettingsPanelDescriptionKey(panel.id), {
             defaultValue: panel.defaultDescription,
           })}

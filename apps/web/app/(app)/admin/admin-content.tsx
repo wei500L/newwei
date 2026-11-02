@@ -11,12 +11,13 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Alert, Collapse, Empty, Spin } from "antd";
+import { Alert, Collapse, Spin } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buildAdminLogsHref } from "@/lib/admin-logs";
 
@@ -392,7 +393,7 @@ export function AdminContent() {
             </div>
           </>
         ) : (
-          <Empty description={t("common.empty")} />
+          <ChartEmptyState description={t("common.empty")} />
         )}
       </>
     </div>

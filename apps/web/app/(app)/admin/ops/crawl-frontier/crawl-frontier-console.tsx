@@ -8,7 +8,6 @@ import {
   Collapse,
   Descriptions,
   Drawer,
-  Empty,
   Form,
   Input,
   InputNumber,
@@ -32,6 +31,7 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
@@ -1778,7 +1778,7 @@ export function CrawlFrontierConsole() {
                           <Button loading={profilePreviewLoading} onClick={() => void previewProfileMatch()}>{t("crawlFrontier.console.actions.previewMatch")}</Button>
                         </Space>
                         {profileMatchPreview ? (
-                          <Space direction="vertical" size="middle" style={{ width: "100%", marginTop: 16 }}>
+                          <Space direction="vertical" size="middle" style={{ width: "100%" }} className="!mt-4">
                             <Alert
                               type={profileMatchPreview.draftMatches ? "success" : "warning"}
                               showIcon
@@ -1961,7 +1961,7 @@ export function CrawlFrontierConsole() {
                         <Form.Item name="configJson" label={t("crawlFrontier.console.profileForm.configJson")}>
                           <Input.TextArea rows={18} spellCheck={false} disabled={!profileRawMode} />
                         </Form.Item>
-                        <Collapse items={[{ key: "preview", label: "Resolved config preview", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(resolvedProfileConfig.config ?? {})}</Typography.Paragraph> }]} />
+                        <Collapse items={[{ key: "preview", label: "Resolved config preview", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(resolvedProfileConfig.config ?? {})}</Typography.Paragraph> }]} />
                       </Space>
                     </Card>
                   </Space>
@@ -2067,7 +2067,7 @@ export function CrawlFrontierConsole() {
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.overview.rootDiagnosis")}>
                       <Collapse items={[
                         { key: "structured", label: "Structured diagnosis", children: <Descriptions size="small" column={2}><Descriptions.Item label={t("crawlFrontier.console.labels.failureKind")}>{selectedRunDiagnostics?.failureKind ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.lastError")}>{selectedRun.lastError ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.startedAt")}>{formatDateTime(selectedRun.startedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.finishedAt")}>{formatDateTime(selectedRun.finishedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeAccepted")}>{asNumber(selectedRunRootDiagnosis?.nativeAcceptedResults) ?? "-"}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.run.nativeSelected")}>{asNumber(selectedRunRootDiagnosis?.nativeSelectedResults) ?? "-"}</Descriptions.Item></Descriptions> },
-                        { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
+                        { key: "json", label: "Root diagnosis JSON", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedRunRootDiagnosis)}</Typography.Paragraph> },
                       ]} />
                     </Card>
                   </Space>
@@ -2152,7 +2152,7 @@ export function CrawlFrontierConsole() {
                         <Alert
                           type="info"
                           showIcon
-                          style={{ marginBottom: 16 }}
+                          className="!mb-4"
                           message={t("crawlFrontier.console.runDrawer.workflow.legacyBridgeNotice")}
                         />
                       ) : null}
@@ -2177,7 +2177,7 @@ export function CrawlFrontierConsole() {
                         size="small"
                         column={2}
                         bordered
-                        style={{ marginTop: 16 }}
+                        className="!mt-4"
                       >
                         <Descriptions.Item label={t("crawlFrontier.console.labels.workflow")}>
                           {selectedWorkflowRun.workflow?.name ?? "Legacy bridge"}
@@ -2274,11 +2274,7 @@ export function CrawlFrontierConsole() {
                                       ) : null}
                                       {event.details ? (
                                         <Typography.Paragraph
-                                          style={{
-                                            marginBottom: 0,
-                                            whiteSpace: "pre-wrap",
-                                            fontFamily: "monospace",
-                                          }}
+                                          className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                         >
                                           {stringifyJson(event.details)}
                                         </Typography.Paragraph>
@@ -2325,9 +2321,9 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label={t("crawlFrontier.console.labels.judgeCount")}>{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.count, 0)}</Descriptions.Item>
                         <Descriptions.Item label={t("crawlFrontier.console.labels.avgConfidence")}>{formatNumber(asRecord(selectedRunSummary?.judgeSummary)?.averageConfidence)}</Descriptions.Item>
                       </Descriptions>
-                      <Space wrap size={[4, 4]} style={{ marginTop: 12 }}>{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="warning">{flag}</Tag>)}</Space>
+                      <Space wrap size={[4, 4]} className="!mt-3">{(selectedRunSummary?.warningFlags ?? []).filter((flag) => flag.startsWith("llm_")).map((flag) => <Tag key={flag} color="warning">{flag}</Tag>)}</Space>
                       {canViewLogLinks ? (
-                        <Space style={{ marginTop: 12 }}>
+                        <Space className="!mt-3">
                           <Button href={buildLlmLogsHref({ feature: "crawl_frontier_judge", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View judge logs</Button>
                           <Button href={buildLlmLogsHref({ feature: "crawl_frontier_learn", runId: selectedRun.id, ...(selectedRun.profile?.id ? { profileId: selectedRun.profile.id } : {}) })}>View learn logs</Button>
                         </Space>
@@ -2338,7 +2334,7 @@ export function CrawlFrontierConsole() {
                         <Descriptions.Item label={t("crawlFrontier.console.labels.shadowProfile")}>{asString(asRecord(selectedRunSummary?.shadowSummary)?.profileId) ?? "-"}</Descriptions.Item>
                         <Descriptions.Item label={t("crawlFrontier.console.labels.publishedProfile")}>{asString(asRecord(selectedRunSummary?.shadowSummary)?.publishedProfileId) ?? "-"}</Descriptions.Item>
                       </Descriptions>
-                      <Collapse style={{ marginTop: 12 }} items={[{ key: "shadowComparison", label: "Shadow comparison", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(asRecord(selectedRunSummary?.shadowSummary)?.comparison)}</Typography.Paragraph> }]} />
+                      <Collapse className="!mt-3" items={[{ key: "shadowComparison", label: "Shadow comparison", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(asRecord(selectedRunSummary?.shadowSummary)?.comparison)}</Typography.Paragraph> }]} />
                     </Card>
                   </Space>
                 ),
@@ -2368,8 +2364,8 @@ export function CrawlFrontierConsole() {
                     </Card>
                     <Card size="small" title={t("crawlFrontier.console.runDrawer.diagnostics.payloads")}>
                       <Collapse items={[
-                        { key: "seedDiagnostics", label: "Seed diagnostics", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.diagnostics))}</Typography.Paragraph> },
-                        { key: "runMetadata", label: "Run metadata", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedRun.metadata)}</Typography.Paragraph> },
+                        { key: "seedDiagnostics", label: "Seed diagnostics", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(asRecord(asRecord(selectedRunSummary?.seedSummary)?.diagnostics))}</Typography.Paragraph> },
+                        { key: "runMetadata", label: "Run metadata", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedRun.metadata)}</Typography.Paragraph> },
                       ]} />
                     </Card>
                   </Space>
@@ -2387,7 +2383,7 @@ export function CrawlFrontierConsole() {
                         <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.repairApplied")} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.applied) ?? 0} /></Col>
                         <Col xs={24} md={6}><Statistic title={t("crawlFrontier.console.runDrawer.repair.repairFailed")} value={asNumber(asRecord(selectedRunSummary?.repairSummary)?.failed) ?? 0} /></Col>
                       </Row>
-                      <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>Use node inspection to see which fields were repaired, what extraction artifacts were available, and why repair was skipped or failed.</Typography.Paragraph>
+                      <Typography.Paragraph type="secondary" className="!mt-3">Use node inspection to see which fields were repaired, what extraction artifacts were available, and why repair was skipped or failed.</Typography.Paragraph>
                     </Card>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} lg={8}>
@@ -2589,11 +2585,7 @@ export function CrawlFrontierConsole() {
                                   <div className="hairline-b pb-3">
                                     <div className="kicker mb-1">{t("crawlFrontier.console.workflowCandidate.before")}</div>
                                     <Typography.Paragraph
-                                      style={{
-                                        marginBottom: 0,
-                                        whiteSpace: "pre-wrap",
-                                        fontFamily: "monospace",
-                                      }}
+                                      className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                     >
                                       {stringifyJson(entry.beforeSnapshot ?? {})}
                                     </Typography.Paragraph>
@@ -2603,11 +2595,7 @@ export function CrawlFrontierConsole() {
                                   <div className="hairline-b pb-3">
                                     <div className="kicker mb-1">{t("crawlFrontier.console.workflowCandidate.after")}</div>
                                     <Typography.Paragraph
-                                      style={{
-                                        marginBottom: 0,
-                                        whiteSpace: "pre-wrap",
-                                        fontFamily: "monospace",
-                                      }}
+                                      className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                                     >
                                       {stringifyJson(entry.afterSnapshot ?? {})}
                                     </Typography.Paragraph>
@@ -2620,11 +2608,7 @@ export function CrawlFrontierConsole() {
                       />
                       {entry.details ? (
                         <Typography.Paragraph
-                          style={{
-                            marginBottom: 0,
-                            whiteSpace: "pre-wrap",
-                            fontFamily: "monospace",
-                          }}
+                          className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}
                             >
                               {stringifyJson(entry.details)}
                             </Typography.Paragraph>
@@ -2693,7 +2677,7 @@ export function CrawlFrontierConsole() {
               </Descriptions>
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.crawlResult")}>
-              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label={t("crawlFrontier.console.labels.crawlResultID")}>{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.fetchedAt")}>{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.sourceURL")}>{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.markdownRef")}>{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noCrawlResult")} />}
+              {selectedNode.crawlResult ? <Descriptions size="small" column={2} bordered><Descriptions.Item label={t("crawlFrontier.console.labels.crawlResultID")}>{selectedNode.crawlResult.id}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.fetchedAt")}>{formatDateTime(selectedNode.crawlResult.fetchedAt)}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.sourceURL")}>{selectedNode.crawlResult.sourceUrl}</Descriptions.Item><Descriptions.Item label={t("crawlFrontier.console.labels.markdownRef")}>{selectedNode.crawlResult.markdownRef}</Descriptions.Item></Descriptions> : <ChartEmptyState presentation="banner" description={t("crawlFrontier.console.nodeDrawer.empty.noCrawlResult")} />}
             </Card>
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.articleExtraction")}>
               {selectedNode.article || selectedNode.processedArticle ? (
@@ -2726,9 +2710,9 @@ export function CrawlFrontierConsole() {
                       </Descriptions>
                     </div>
                   ) : null}
-                  {selectedNode.article?.llmRepair ? <Collapse items={[{ key: "repair", label: "Repair diagnostics JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.article.llmRepair)}</Typography.Paragraph> }]} /> : null}
+                  {selectedNode.article?.llmRepair ? <Collapse items={[{ key: "repair", label: "Repair diagnostics JSON", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedNode.article.llmRepair)}</Typography.Paragraph> }]} /> : null}
                 </Space>
-              ) : <Empty description={t("crawlFrontier.console.nodeDrawer.empty.noArticle")} />}
+              ) : <ChartEmptyState presentation="banner" description={t("crawlFrontier.console.nodeDrawer.empty.noArticle")} />}
             </Card>
             {canViewLogLinks &&
             (selectedNode.llmLogFilters?.judge ||
@@ -2744,9 +2728,9 @@ export function CrawlFrontierConsole() {
             ) : null}
             <Card size="small" title={t("crawlFrontier.console.nodeDrawer.cards.metadata")}>
               <Collapse items={[
-                { key: "nodeMetadata", label: "Node metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.metadata)}</Typography.Paragraph> },
-                { key: "articleMetadata", label: "Article metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.article?.metadata)}</Typography.Paragraph> },
-                { key: "crawlResultMetadata", label: "Crawl result metadata JSON", children: <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{stringifyJson(selectedNode.crawlResult?.metadata)}</Typography.Paragraph> },
+                { key: "nodeMetadata", label: "Node metadata JSON", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedNode.metadata)}</Typography.Paragraph> },
+                { key: "articleMetadata", label: "Article metadata JSON", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedNode.article?.metadata)}</Typography.Paragraph> },
+                { key: "crawlResultMetadata", label: "Crawl result metadata JSON", children: <Typography.Paragraph className="!mb-0 font-mono" style={{ whiteSpace: "pre-wrap" }}>{stringifyJson(selectedNode.crawlResult?.metadata)}</Typography.Paragraph> },
               ]} />
             </Card>
           </Space>
