@@ -38,9 +38,10 @@ const WIDE_LAYOUT_PATHS = [
 const FLUID_LAYOUT_PATHS = [
   "/assistant", // Chat layout benefits from using almost full width
   "/newsnow", // News board should feel edge-to-edge
+  "/globe", // 3D globe fills the viewport
 ] as const;
 
-const EDGE_TO_EDGE_LAYOUT_PATHS = ["/newsnow"] as const;
+const EDGE_TO_EDGE_LAYOUT_PATHS = ["/newsnow", "/globe"] as const;
 
 // 内容宽度档位的单一真源在 @/lib/content-widths（服务端安全模块）：
 // shell 的页面级容器与 PageContainer 的页内容容器共用同一份类型与

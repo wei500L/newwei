@@ -5,6 +5,7 @@ import {
   BellOutlined,
   BookOutlined,
   ClusterOutlined,
+  CompassOutlined,
   DashboardOutlined,
   EnvironmentOutlined,
   ExclamationCircleOutlined,
@@ -135,6 +136,12 @@ export const NAV_GROUP_DEFINITIONS: readonly NavGroupDefinition[] = [
         path: "/map",
         icon: EnvironmentOutlined,
         labelKey: "nav.main.map",
+      },
+      {
+        key: "/globe",
+        path: "/globe",
+        icon: CompassOutlined,
+        labelKey: "nav.main.globe",
       },
       {
         key: "/finance",

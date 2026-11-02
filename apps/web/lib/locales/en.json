@@ -2318,6 +2318,7 @@
       "eventsArchive": "Events Archive",
       "rss": "RSS Reader",
       "map": "Situation Map",
+      "globe": "3D Globe",
       "knowledgeGraph": "Knowledge Graph",
       "finance": "Finance Panel",
       "alerts": "Alert Center",
@@ -12121,6 +12122,15 @@
         "explorer": "Explorer",
         "impact": "Impact Analysis"
       }
+    }
+  },
+  "globe": {
+    "title": "3D Globe",
+    "status": {
+      "starting": "Starting the 3D globe\u2026"
+    },
+    "error": {
+      "title": "The 3D globe failed to start"
     }
   }
 }

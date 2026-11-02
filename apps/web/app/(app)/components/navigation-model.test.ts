@@ -9,7 +9,7 @@ import {
   resolveNavigationGroups,
 } from "./navigation-model";
 
-/** 迁移前 buildActionRailNavConfig 的全部 20 个入口路径（17 主项 + 3 管理项）。 */
+/** 迁移前 buildActionRailNavConfig 的全部入口路径（17 主项 + 3 管理项 + G2 的 /globe）。 */
 const LEGACY_ROUTE_INVENTORY = [
   "/today",
   "/news-hub",
@@ -22,6 +22,7 @@ const LEGACY_ROUTE_INVENTORY = [
   "/topics",
   "/situation-monitor",
   "/map",
+  "/globe",
   "/finance",
   "/analysis",
   "/assistant",
@@ -98,6 +99,7 @@ describe("navigation-model（五组信息架构）", () => {
       "/topics",
       "/situation-monitor",
       "/map",
+      "/globe",
       "/finance",
     ]);
     expect(pathsByGroup.research).toEqual([

@@ -50,13 +50,13 @@ describe("ActionRail（五组导航的桌面呈现）", () => {
     }
   });
 
-  it("全权限下保留全部 20 个入口，活跃项带 aria-current 与 active 状态类", () => {
+  it("全权限下保留全部 21 个入口，活跃项带 aria-current 与 active 状态类", () => {
     mocks.permissions = FULL_PERMISSIONS;
     mocks.pathname = "/events";
     renderWithProviders(<ActionRail mode="rail" />);
 
     const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(20);
+    expect(links).toHaveLength(21);
 
     const active = screen.getByRole("link", { name: "News Events" });
     expect(active).toHaveAttribute("aria-current", "page");

@@ -220,8 +220,19 @@ export default defineConfig({
         "components/page-title-sync.tsx",
         // FE-UI 批13B：KpiStrip 指标条原语
         "components/kpi-strip.tsx",
+        // 3D 地球 G2：React 桥接纯逻辑（不依赖引擎）
+        "lib/globe/runtime-lifecycle.ts",
+        "lib/globe/pinia-bridge.ts",
+        "lib/globe/gev-events.ts",
       ],
-      exclude: ["**/*.test.{ts,tsx}", "**/graphql/generated.ts"],
+      // runtime.ts 与 globe-stage.tsx 依赖 Cesium（在 jsdom 里无法运行），
+      // 因此不做单元测试；引擎行为由浏览器冒烟 + build 验证。
+      exclude: [
+        "**/*.test.{ts,tsx}",
+        "**/graphql/generated.ts",
+        "lib/globe/runtime.ts",
+        "app/(app)/globe/globe-stage.tsx",
+      ],
       thresholds: {
         lines: 35,
         functions: 3,

@@ -2318,6 +2318,7 @@
       "eventsArchive": "历史档案",
       "rss": "RSS 阅读",
       "map": "地图态势",
+      "globe": "全球 3D",
       "knowledgeGraph": "知识图谱",
       "finance": "金融面板",
       "alerts": "预警中心",
@@ -12120,6 +12121,15 @@
         "explorer": "探索",
         "impact": "影响分析"
       }
+    }
+  },
+  "globe": {
+    "title": "\u5168\u7403 3D",
+    "status": {
+      "starting": "\u6b63\u5728\u542f\u52a8 3D \u5730\u7403\u2026"
+    },
+    "error": {
+      "title": "3D \u5730\u7403\u542f\u52a8\u5931\u8d25"
     }
   }
 }
