@@ -1,3 +1,4 @@
+import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
@@ -30,11 +31,13 @@ export default async function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       </head>
       <body className="font-sans bg-background text-foreground antialiased">
-        <ThemeProvider>
-          <SessionProviders session={session}>
-            <AppProviders>{children}</AppProviders>
-          </SessionProviders>
-        </ThemeProvider>
+        <AntdRegistry>
+          <ThemeProvider>
+            <SessionProviders session={session}>
+              <AppProviders>{children}</AppProviders>
+            </SessionProviders>
+          </ThemeProvider>
+        </AntdRegistry>
       </body>
     </html>
   );
