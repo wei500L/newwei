@@ -152,7 +152,7 @@ export function NewsListTimeline({
               target="_blank"
               rel="noopener noreferrer"
               title={item.extra?.hover}
-              className={`block overflow-hidden rounded px-2 py-1.5 text-[var(--foreground)] font-medium transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
+              className={`block overflow-hidden rounded px-2 py-1.5 text-[var(--foreground)] font-medium transition-colors duration-150 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 visited:text-[var(--secondary-foreground)] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] ${
                 isComfortable
                   ? "text-sm leading-[1.45]"
                   : "text-[13px] leading-[1.4]"

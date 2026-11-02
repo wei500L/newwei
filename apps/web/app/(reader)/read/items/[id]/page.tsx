@@ -705,7 +705,7 @@ export default function ReaderPage() {
             ) : null}
 
             {aiInsights.controversies.length > 0 ? (
-              <div className="mt-3 rounded border border-[var(--destructive)]/30 bg-surface p-2">
+              <div className="mt-3 rounded border border-[#b91c1c]/30 dark:border-[#f87171]/30 bg-surface p-2">
                 <p className="kicker mb-1">
                   {t("reader.aiInsights.controversy")}
                 </p>

@@ -163,7 +163,7 @@ export function CommandBar() {
               onClick={() => executeSearch()}
               className={`mr-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-base transition-[transform,color,background-color] duration-300 ${
                 isActive
-                  ? "scale-105 bg-[var(--primary)]/10 text-[var(--primary)] dark:bg-[var(--primary)]/20"
+                  ? "scale-105 bg-[#1f3b7b]/10 text-[var(--primary)] dark:bg-[#8fb0ff]/20"
                   : "text-slate-500 hover:scale-105 hover:bg-slate-200/80 hover:text-[var(--primary)] dark:text-slate-300 dark:hover:bg-slate-700/80"
               }`}
               aria-label={runSearchLabel}
@@ -239,7 +239,7 @@ export function CommandBar() {
                     role="option"
                     tabIndex={-1}
                     onClick={() => handleSelect(edge.node.id)}
-                    className="command-bar-result-row group flex cursor-pointer items-center justify-between border-b border-[var(--border)]/60 px-4 py-3 last:border-0 hover:bg-slate-50/90 dark:hover:bg-slate-800/70"
+                    className="command-bar-result-row group flex cursor-pointer items-center justify-between border-b border-[var(--border)] px-4 py-3 last:border-0 hover:bg-slate-50/90 dark:hover:bg-slate-800/70"
                     style={{ animationDelay: `${80 + index * 30}ms` }}
                   >
                     <div className="flex items-center gap-3">
@@ -253,7 +253,7 @@ export function CommandBar() {
                         </span>
                       </div>
                     </div>
-                    <span className="rounded-sm border border-[var(--accent)]/30 px-1.5 py-0.5 text-[11px] text-[var(--accent)]">
+                    <span className="rounded-sm border border-[#b45309]/30 dark:border-[#f59e0b]/30 px-1.5 py-0.5 text-[11px] text-[var(--accent)]">
                       {statusLabel}
                     </span>
                   </div>

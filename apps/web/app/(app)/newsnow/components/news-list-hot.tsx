@@ -149,7 +149,7 @@ export function NewsListHot({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={item.extra?.hover}
-                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-2 text-[var(--foreground)] transition-colors duration-150 hover:bg-[var(--secondary)]/60 visited:text-[var(--secondary-foreground)] ${
+                className={`relative grid min-h-[52px] flex-1 grid-cols-[24px_minmax(0,1fr)] items-start gap-3 rounded px-2 py-2 text-[var(--foreground)] transition-colors duration-150 hover:bg-slate-100/70 dark:hover:bg-slate-800/60 visited:text-[var(--secondary-foreground)] ${
                   isFresh ? "animate-[pulse_1.8s_ease-in-out_1] bg-[var(--secondary)] ring-1 ring-[var(--accent)]" : ""
                 }`}
                 onClick={() => {

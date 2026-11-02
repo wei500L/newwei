@@ -1010,7 +1010,7 @@ export const NewsnowCard = memo(function NewsnowCard({
     if (isDragging) {
       return (
         <div className="flex h-full items-center justify-center p-4 text-center">
-          <span className="rounded-full border border-[var(--border)] bg-[var(--secondary)]/70 px-3 py-1 text-[11px] font-medium text-[var(--secondary-foreground)]">
+          <span className="rounded-full border border-[var(--border)] bg-slate-100/70 dark:bg-slate-800/60 px-3 py-1 text-[11px] font-medium text-[var(--secondary-foreground)]">
             {t("newsnow.card.dragging")}
           </span>
         </div>
@@ -1210,7 +1210,7 @@ export const NewsnowCard = memo(function NewsnowCard({
                 </span>
               ) : null}
             </div>
-            <p className="truncate text-xs text-[var(--secondary-foreground)]/80 mt-0.5 font-medium">
+            <p className="truncate text-xs text-muted-foreground mt-0.5 font-medium">
               {updatedText}
             </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
@@ -1424,7 +1424,7 @@ export const NewsnowCard = memo(function NewsnowCard({
                   : isDragging
                     ? "cursor-grabbing bg-[var(--background)] text-[var(--foreground)] shadow-sm"
                     : isAnyCardDragging
-                      ? "cursor-grab text-[var(--foreground)]/85"
+                      ? "cursor-grab text-[var(--foreground)]"
                   : "cursor-grab active:cursor-grabbing"
               }`}
             >

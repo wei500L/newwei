@@ -196,7 +196,7 @@ function DomesticOpinionPanel({
                 <div className="font-mono text-[40px] font-semibold leading-none tabular-nums text-[var(--foreground)]">
                   {formatPercent(latest.indexValue)}
                 </div>
-                <div className="mt-2 text-xs text-[var(--secondary-foreground)]/85">
+                <div className="mt-2 text-xs text-muted-foreground">
                   {t('newsnow.hottest.latestBucket', {
                     time: new Date(latest.bucketStart).toLocaleString(locale, {
                       month: '2-digit',
@@ -228,7 +228,7 @@ function DomesticOpinionPanel({
                     strokeLinejoin="round"
                   />
                 </svg>
-                <div className="mt-1 text-[11px] text-[var(--secondary-foreground)]/75">
+                <div className="mt-1 text-[11px] text-muted-foreground">
                   {t('newsnow.hottest.hotlistCandidatePipeline', {
                     newsnow: latestNewsnow?.candidateCount ?? latest.candidateCount,
                     pipeline: latestPipeline?.articleCount ?? 0,
@@ -237,7 +237,7 @@ function DomesticOpinionPanel({
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground md:grid-cols-4">
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Attention</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
@@ -264,7 +264,7 @@ function DomesticOpinionPanel({
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-[var(--secondary-foreground)]/85 md:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 text-xs text-muted-foreground md:grid-cols-3">
               <div className="rounded bg-[var(--surface-muted)] px-3 py-2">
                 <div className="text-[11px] uppercase tracking-[0.2em] opacity-60">Hotlist</div>
                 <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--foreground)]">
@@ -300,10 +300,10 @@ function DomesticOpinionPanel({
 
           <div className="rounded bg-[var(--surface-muted)] p-4">
             <div>
-              <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t('newsnow.hottest.topKeywords')}
               </div>
-              <div className="mt-3 text-[11px] uppercase tracking-[0.2em] text-[var(--secondary-foreground)]/60">
+              <div className="mt-3 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                 {t('newsnow.hottest.hotlistKeywords')}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -316,13 +316,13 @@ function DomesticOpinionPanel({
                   </span>
                 ))}
                 {newsnowKeywords.length === 0 ? (
-                  <span className="text-xs text-[var(--secondary-foreground)]/70">
+                  <span className="text-xs text-muted-foreground">
                     {t('newsnow.hottest.noHotlistKeywords')}
                   </span>
                 ) : null}
               </div>
 
-              <div className="mt-4 text-[11px] uppercase tracking-[0.2em] text-[var(--secondary-foreground)]/60">
+              <div className="mt-4 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                 {t('newsnow.hottest.pipelineKeywordsLabel')}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -335,7 +335,7 @@ function DomesticOpinionPanel({
                   </span>
                 ))}
                 {pipelineKeywords.length === 0 ? (
-                  <span className="text-xs text-[var(--secondary-foreground)]/70">
+                  <span className="text-xs text-muted-foreground">
                     {t('newsnow.hottest.noPipelineKeywords')}
                   </span>
                 ) : null}
@@ -343,7 +343,7 @@ function DomesticOpinionPanel({
             </div>
 
             <div className="mt-5">
-              <div className="text-xs font-medium text-[var(--secondary-foreground)]/80">
+              <div className="text-xs font-medium text-muted-foreground">
                 {t('newsnow.hottest.topCandidates')}
               </div>
               <div className="mt-3 space-y-2">
@@ -355,7 +355,7 @@ function DomesticOpinionPanel({
                     <div className="text-sm font-medium text-[var(--foreground)]">
                       {candidate.label}
                     </div>
-                    <div className="mt-1 font-mono text-[11px] tabular-nums text-[var(--secondary-foreground)]/75">
+                    <div className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
                       {t('newsnow.hottest.scoreSources', {
                         score: formatPercent(candidate.candidateScore),
                         sources: candidate.sourceCount,
@@ -364,7 +364,7 @@ function DomesticOpinionPanel({
                   </div>
                 ))}
                 {(domesticOpinion?.topCandidates ?? []).length === 0 ? (
-                  <span className="text-xs text-[var(--secondary-foreground)]/70">
+                  <span className="text-xs text-muted-foreground">
                     {t('newsnow.hottest.noTopCandidates')}
                   </span>
                 ) : null}
