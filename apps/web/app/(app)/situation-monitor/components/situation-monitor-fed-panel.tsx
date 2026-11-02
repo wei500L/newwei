@@ -113,14 +113,14 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
 
           {fedSnapshot.moneyPrinter ? (
             <>
-              <Divider style={{ margin: "12px 0" }} />
+              <Divider className="!my-3" />
               <Space direction="vertical" size={6} style={{ width: "100%" }}>
                 <Space size={10} wrap>
                   <Tag
                     color={
                       fedSnapshot.moneyPrinter.changeTrillions > 0
-                        ? "green"
-                        : "red"
+                        ? "success"
+                        : "error"
                     }
                   >
                     {getFedMoneyPrinterLabel(
@@ -160,7 +160,7 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
 
           {fedSnapshot.news?.length ? (
             <>
-              <Divider style={{ margin: "12px 0" }} />
+              <Divider className="!my-3" />
               <List
                 size="small"
                 dataSource={fedSnapshot.news.slice(0, fedNewsPerPanel)}
@@ -185,15 +185,13 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
                         style={{ width: "100%" }}
                       >
                         <Space size={8} wrap>
-                          <Tag
-                            color={item.type === "powell" ? "orange" : "blue"}
-                          >
+                          <Tag>
                             {translateToZh
                               ? (item.typeLabelZh ?? item.typeLabel)
                               : item.typeLabel}
                           </Tag>
                           {item.hasVideo ? (
-                            <Tag color="purple">VIDEO</Tag>
+                            <Tag>VIDEO</Tag>
                           ) : null}
                           {href ? (
                             <Typography.Link
@@ -211,7 +209,7 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
                           <Typography.Paragraph
                             type="secondary"
                             ellipsis={{ rows: 2 }}
-                            style={{ marginBottom: 0 }}
+                            className="!mb-0"
                           >
                             {descriptionText}
                           </Typography.Paragraph>
@@ -229,7 +227,7 @@ export function SituationMonitorFedPanel(props: SituationMonitorFedPanelProps) {
                             secondaryStyle={{ fontSize: 12 }}
                           />
                           {item.isPowellRelated && item.type !== "powell" ? (
-                            <Tag color="orange">POWELL</Tag>
+                            <Tag>POWELL</Tag>
                           ) : null}
                         </Space>
                       </Space>

@@ -278,7 +278,7 @@ function LiveNewsVideoTile(props: {
     return (
       <div className="relative h-viz-xs overflow-hidden rounded border border-[var(--border)] bg-black">
         {hlsUrl ? (
-          <Tag color="orange" style={{ position: "absolute", top: 8, left: 8, zIndex: 2 }}>
+          <Tag color="warning" style={{ position: "absolute", top: 8, left: 8, zIndex: 2 }}>
             {cooldownActive ? cooldownLabel : fallbackLabel}
           </Tag>
         ) : channel.sourceMode === "hls-proxy" && proxyConfigured === false ? (
@@ -315,7 +315,7 @@ function LiveNewsVideoTile(props: {
             ? proxyUnavailableLabel
             : hlsOnlyLabel;
     const statusColor =
-      channel.sourceMode === "youtube-only" ? "default" : cooldownActive ? "orange" : "red";
+      channel.sourceMode === "youtube-only" ? "default" : cooldownActive ? "warning" : "error";
 
     return (
       <div className="relative flex h-viz-xs items-center justify-center rounded border border-[var(--border)] bg-surface-muted text-xs text-muted-foreground">
@@ -533,7 +533,7 @@ export function SituationMonitorLiveNewsPanel() {
         classNames={{ body: "rail-scrollbar" }}
         size="small"
       >
-        <Space wrap size={6} style={{ marginBottom: 10 }}>
+        <Space wrap size={6} className="!mb-3">
           {LIVE_NEWS_REGIONS.map((option) => (
             <Button
               key={option.key}
@@ -578,7 +578,7 @@ export function SituationMonitorLiveNewsPanel() {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
             {channels.map((channel) => (
               <div key={channel.id}>
-                <Typography.Text strong style={{ display: "block", marginBottom: 6 }}>
+                <Typography.Text strong className="!mb-2" style={{ display: "block" }}>
                   {channel.name}
                 </Typography.Text>
                 <LiveNewsVideoTile
@@ -617,7 +617,7 @@ export function SituationMonitorLiveNewsPanel() {
             </Button>,
           ]}
         >
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+          <Typography.Paragraph type="secondary" className="!mb-2">
             {t("situationMonitor.liveNews.manageHint")}
           </Typography.Paragraph>
 
@@ -658,7 +658,7 @@ export function SituationMonitorLiveNewsPanel() {
                     />
                     <Typography.Text>{channel.name}</Typography.Text>
                     {visible ? (
-                      <Tag color="blue">
+                      <Tag>
                         {t("situationMonitor.liveNews.inGrid")}
                       </Tag>
                     ) : null}

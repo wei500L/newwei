@@ -85,11 +85,11 @@ export function SituationMonitorTelegramFeedPanel(
               <InfoCircleOutlined />
             </Tag>
           </Popover>
-          <Tag color="geekblue">
+          <Tag>
             {telegramFeed?.count ?? telegramFeed?.items?.length ?? 0}
           </Tag>
           {telegramFeed?.channelSet ? (
-            <Tag color="cyan">{telegramFeed.channelSet}</Tag>
+            <Tag>{telegramFeed.channelSet}</Tag>
           ) : null}
           {telegramFeed && !telegramFeed.configured ? (
             <Tag color="default">
@@ -97,7 +97,7 @@ export function SituationMonitorTelegramFeedPanel(
             </Tag>
           ) : null}
           {telegramFeed && !telegramFeed.enabled ? (
-            <Tag color="orange">
+            <Tag>
               {t("situationMonitor.telegram.disabled")}
             </Tag>
           ) : null}
@@ -115,10 +115,10 @@ export function SituationMonitorTelegramFeedPanel(
           type="warning"
           showIcon
           message={signalErrorTelegram}
-          style={{ marginBottom: 12 }}
+          className="!mb-3"
         />
       ) : null}
-      <Space wrap size={8} style={{ marginBottom: 10 }}>
+      <Space wrap size={8} className="!mb-3">
         <Typography.Text type="secondary">
           {t("situationMonitor.telegram.filters.label")}
         </Typography.Text>
@@ -178,7 +178,7 @@ export function SituationMonitorTelegramFeedPanel(
               <List.Item key={item.id}>
                 <Space direction="vertical" size={2} style={{ width: "100%" }}>
                   <Space size={8} wrap>
-                    <Tag color="blue">{item.channelTitle || item.channel}</Tag>
+                    <Tag>{item.channelTitle || item.channel}</Tag>
                     {item.topic ? (
                       <Tag color="default">{item.topic}</Tag>
                     ) : null}
@@ -282,8 +282,8 @@ export function SituationMonitorOrefAlertsPanel(
               <InfoCircleOutlined />
             </Tag>
           </Popover>
-          <Tag color="geekblue">{orefAlerts?.alerts?.length ?? 0}</Tag>
-          <Tag color="purple">
+          <Tag>{orefAlerts?.alerts?.length ?? 0}</Tag>
+          <Tag>
             {t("situationMonitor.oref.history24h", {
               count:
                 orefAlerts?.historyCount24h ??
@@ -305,7 +305,7 @@ export function SituationMonitorOrefAlertsPanel(
           type="warning"
           showIcon
           message={signalErrorOref}
-          style={{ marginBottom: 12 }}
+          className="!mb-3"
         />
       ) : null}
       {!hasAccessToken ? (
@@ -362,7 +362,7 @@ export function SituationMonitorOrefAlertsPanel(
                       style={{ width: "100%" }}
                     >
                       <Space size={8} wrap>
-                        <Tag color="red">
+                        <Tag>
                           {translateOrefTextForLocale(alert.cat || "alert", {
                             translateToZh,
                           })}
@@ -373,7 +373,7 @@ export function SituationMonitorOrefAlertsPanel(
                           })}
                         </Typography.Text>
                         {recent ? (
-                          <Tag color="volcano">
+                          <Tag color="warning">
                             {t("situationMonitor.oref.recent")}
                           </Tag>
                         ) : null}
@@ -408,7 +408,7 @@ export function SituationMonitorOrefAlertsPanel(
 
           {orefHistory?.history?.length ? (
             <>
-              <Divider style={{ margin: "8px 0" }} />
+              <Divider />
               <Typography.Text type="secondary">
                 {t("situationMonitor.oref.recentWaves")}
               </Typography.Text>
@@ -437,7 +437,7 @@ export function SituationMonitorOrefAlertsPanel(
                         <Space size={8} wrap>
                           <Tag color="default">{waveCount}</Tag>
                           {recent ? (
-                            <Tag color="volcano">
+                            <Tag color="warning">
                               {t("situationMonitor.oref.recent")}
                             </Tag>
                           ) : null}

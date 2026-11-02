@@ -239,12 +239,12 @@ export function SituationMonitorFeedsPanel(
                   >
                     <Space wrap size={8}>
                       {cluster.isAlert ? (
-                        <Tag color="red">
+                        <Tag color="error">
                           {t("situationMonitor.feeds.alert")}
                         </Tag>
                       ) : null}
                       {cluster.mixedSource ? (
-                        <Tag color="green">
+                        <Tag>
                           {t("situationMonitor.feeds.mixedCluster")}
                         </Tag>
                       ) : null}
@@ -349,16 +349,13 @@ export function SituationMonitorFeedsPanel(
                               >
                                 <Space size={8} wrap>
                                   {entry.isAlert ? (
-                                    <Tag color="red">
+                                    <Tag color="error">
                                       {t("situationMonitor.feeds.alert")}
                                     </Tag>
                                   ) : null}
                                   {entry.origin === "gdelt" ? (
                                     <Popover content={gdeltFeedTooltip}>
-                                      <Tag
-                                        color="purple"
-                                        className="cursor-help"
-                                      >
+                                      <Tag className="cursor-help">
                                         {t(
                                           "situationMonitor.notice.gdeltLabel",
                                         )}
@@ -366,7 +363,7 @@ export function SituationMonitorFeedsPanel(
                                     </Popover>
                                   ) : (
                                     <Popover content={internalFeedTooltip}>
-                                      <Tag color="blue" className="cursor-help">
+                                      <Tag className="cursor-help">
                                         {t(
                                           "situationMonitor.notice.internalLabel",
                                         )}

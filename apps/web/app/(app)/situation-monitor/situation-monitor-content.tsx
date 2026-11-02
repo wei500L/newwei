@@ -1103,10 +1103,10 @@ export function SituationMonitorContent() {
                     <Tag color="default">
                       {t("situationMonitor.shared.label")}
                     </Tag>
-                    <Tag color="blue">
+                    <Tag>
                       {t("situationMonitor.notice.internalLabel")}
                     </Tag>
-                    <Tag color="purple">
+                    <Tag>
                       {t("situationMonitor.notice.gdeltLabel")}
                     </Tag>
                   </Space>
@@ -1126,14 +1126,14 @@ export function SituationMonitorContent() {
                 : t("situationMonitor.layout.edit")}
             </Button>
           ) : null}
-          <Divider style={{ margin: "12px 0" }} />
+          <Divider />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Space size={8} wrap>
               <Typography.Text>
                 {t("situationMonitor.presets.title")}
               </Typography.Text>
               {activePreset ? (
-                <Tag color="geekblue">
+                <Tag>
                   {activePreset.nameKey
                     ? t(activePreset.nameKey, {
                         defaultValue: activePreset.name,
@@ -1238,7 +1238,7 @@ export function SituationMonitorContent() {
           <Typography.Text type="secondary">
             {t("situationMonitor.narrative.reportMissedHint")}
           </Typography.Text>
-          <Divider style={{ margin: "12px 0" }} />
+          <Divider />
           <Space direction="vertical" size={10} style={{ width: "100%" }}>
             <Typography.Text>
               {t("situationMonitor.narrative.missedHeadline")}
@@ -1304,7 +1304,7 @@ export function SituationMonitorContent() {
                           })}
                         </Typography.Text>
                       ) : null}
-                      <Tag color="blue">
+                      <Tag>
                         {categoryLabels[headline.category]}
                       </Tag>
                     </Space>

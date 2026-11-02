@@ -118,9 +118,9 @@ export function SituationMonitorRealtimeSnapshotPanel(
         const normalized = value.toLowerCase();
         const color =
           normalized === "rising"
-            ? "red"
+            ? "error"
             : normalized === "falling"
-              ? "green"
+              ? "success"
               : "default";
         return (
           <Tag color={color}>
@@ -148,9 +148,9 @@ export function SituationMonitorRealtimeSnapshotPanel(
               <Tag
                 color={
                   data.pizzint.defcon <= 2
-                    ? "red"
+                    ? "error"
                     : data.pizzint.defcon <= 3
-                      ? "orange"
+                      ? "warning"
                       : "default"
                 }
               >
@@ -238,7 +238,7 @@ export function SituationMonitorRealtimeSnapshotPanel(
               realtimeSnapshotTensionLimit,
             )}
             pagination={false}
-            style={{ marginTop: 8 }}
+            className="!mt-2"
             tableLayout="fixed"
             scroll={screens.md ? undefined : { x: 420 }}
             locale={{

@@ -110,8 +110,8 @@ export function SituationMonitorCorrelationPanel(
             content={
               <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
                 <Space size={8} wrap>
-                  <Tag color="red">FP {fpCount}</Tag>
-                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>FP {fpCount}</Tag>
+                  <Tag>FN {fnCount}</Tag>
                   <Tag>SUP {suppressedCount}</Tag>
                 </Space>
                 {boosted.length ? (
@@ -203,9 +203,9 @@ export function SituationMonitorCorrelationPanel(
         const normalized = value.toLowerCase();
         const color =
           normalized === "surging"
-            ? "red"
+            ? "error"
             : normalized === "rising"
-              ? "orange"
+              ? "warning"
               : "default";
         return (
           <Tag color={color}>
@@ -235,8 +235,8 @@ export function SituationMonitorCorrelationPanel(
             content={
               <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
                 <Space size={8} wrap>
-                  <Tag color="red">FP {fpCount}</Tag>
-                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>FP {fpCount}</Tag>
+                  <Tag>FN {fnCount}</Tag>
                   <Tag>SUP {suppressedCount}</Tag>
                 </Space>
                 {boosted.length ? (
@@ -347,8 +347,8 @@ export function SituationMonitorCorrelationPanel(
             content={
               <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
                 <Space size={8} wrap>
-                  <Tag color="red">FP {fpCount}</Tag>
-                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>FP {fpCount}</Tag>
+                  <Tag>FN {fnCount}</Tag>
                   <Tag>SUP {suppressedCount}</Tag>
                 </Space>
                 {boosted.length ? (
@@ -483,8 +483,8 @@ export function SituationMonitorCorrelationPanel(
             content={
               <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
                 <Space size={8} wrap>
-                  <Tag color="red">FP {fpCount}</Tag>
-                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>FP {fpCount}</Tag>
+                  <Tag>FN {fnCount}</Tag>
                   <Tag>SUP {suppressedCount}</Tag>
                 </Space>
                 {boosted.length ? (
@@ -621,8 +621,8 @@ export function SituationMonitorCorrelationPanel(
               {t("situationMonitor.correlation.learningHint")}
             </Typography.Text>
             <Space size={8} wrap>
-              <Tag color="red">FP {fpCount}</Tag>
-              <Tag color="gold">FN {fnCount}</Tag>
+              <Tag>FP {fpCount}</Tag>
+              <Tag>FN {fnCount}</Tag>
               <Tag>SUP {suppressedCount}</Tag>
             </Space>
             {boosted.length ? (
@@ -662,7 +662,7 @@ export function SituationMonitorCorrelationPanel(
           <span>
             {t("situationMonitor.correlation.title")}
           </span>
-          <Tag color="geekblue">
+          <Tag>
             {(translateToZh
               ? (data?.correlationSummary?.statusZh ??
                 data?.correlationSummary?.status)

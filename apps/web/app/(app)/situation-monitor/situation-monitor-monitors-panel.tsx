@@ -172,13 +172,11 @@ function buildSelectedState(
   };
 }
 
-function buildTabsLabel(label: string, count: number, color?: string) {
+function buildTabsLabel(label: string, count: number) {
   return (
     <Space size={8}>
       <span>{label}</span>
-      <Tag color={color ?? "geekblue"} style={{ marginInlineEnd: 0 }}>
-        {count}
-      </Tag>
+      <span className="font-mono text-xs text-muted-foreground">{count}</span>
     </Space>
   );
 }
@@ -257,22 +255,14 @@ function buildSuggestionOptions(
           <Space size={6} wrap>
             <Typography.Text>{value}</Typography.Text>
             {suggestion ? (
-              <Tag
-                color={
-                  suggestion.reason === "rerank"
-                    ? "magenta"
-                    : suggestion.reason === "semantic"
-                      ? "blue"
-                      : "default"
-                }
-              >
+              <Tag>
                 {formatReasonLabel(suggestion.reason)}
               </Tag>
             ) : extraTagLabel ? (
               <Tag>{extraTagLabel}</Tag>
             ) : null}
             {suggestion?.taxonomyDisplayName ? (
-              <Tag color="cyan">{suggestion.taxonomyDisplayName}</Tag>
+              <Tag>{suggestion.taxonomyDisplayName}</Tag>
             ) : null}
             {typeof suggestion?.score === "number" ? (
               <Tag color="default">{suggestion.score.toFixed(2)}</Tag>
@@ -1004,7 +994,6 @@ export function SituationMonitorMonitorsPanel({
               label: buildTabsLabel(
                 t("situationMonitor.monitors.matchesTab"),
                 matches.length,
-                matches.length ? "red" : "default",
               ),
               children:
                 sortedMatches.length === 0 ? (
@@ -1093,7 +1082,7 @@ export function SituationMonitorMonitorsPanel({
                               <Typography.Paragraph
                                 type="secondary"
                                 ellipsis={{ rows: 2 }}
-                                style={{ marginBottom: 0 }}
+                                className="!mb-0"
                               >
                                 {summary}
                               </Typography.Paragraph>
@@ -1238,7 +1227,7 @@ export function SituationMonitorMonitorsPanel({
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedTopics.map((topic) => (
-                      <Tag key={`system-topic:${topic}`} color="blue">
+                      <Tag key={`system-topic:${topic}`}>
                         {topic}
                       </Tag>
                     ))}
@@ -1252,7 +1241,7 @@ export function SituationMonitorMonitorsPanel({
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedEntities.map((entity) => (
-                      <Tag key={`system-entity:${entity}`} color="purple">
+                      <Tag key={`system-entity:${entity}`}>
                         {entity}
                       </Tag>
                     ))}
@@ -1266,7 +1255,7 @@ export function SituationMonitorMonitorsPanel({
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedSources.map((source) => (
-                      <Tag key={`system-source:${source}`} color="gold">
+                      <Tag key={`system-source:${source}`}>
                         {source}
                       </Tag>
                     ))}
@@ -1280,7 +1269,7 @@ export function SituationMonitorMonitorsPanel({
                   </Typography.Text>
                   <Space size={6} wrap>
                     {editingMonitor.approvedGeos.map((geo) => (
-                      <Tag key={`system-geo:${geo}`} color="cyan">
+                      <Tag key={`system-geo:${geo}`}>
                         {geo}
                       </Tag>
                     ))}
@@ -1383,7 +1372,7 @@ export function SituationMonitorMonitorsPanel({
                     <Tag>{preview.modelInfo.embeddingModel}</Tag>
                   ) : null}
                   {preview.modelInfo.rerankModel ? (
-                    <Tag color="magenta">{preview.modelInfo.rerankModel}</Tag>
+                    <Tag>{preview.modelInfo.rerankModel}</Tag>
                   ) : null}
                 </Space>
               ) : null}

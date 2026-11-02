@@ -54,7 +54,7 @@ export function SituationMonitorNarrativePanel(
           <span>
             {translateToZh ? (record.nameZh ?? record.name) : record.name}
           </span>
-          <Tag color={record.severity === "disinfo" ? "red" : "default"}>
+          <Tag color={record.severity === "disinfo" ? "error" : "default"}>
             {t(`situationMonitor.narrative.${record.severity.toLowerCase()}`, {
               defaultValue: record.severity.toUpperCase(),
             })}
@@ -231,8 +231,8 @@ export function SituationMonitorNarrativePanel(
             content={
               <Space direction="vertical" size={6} style={{ maxWidth: 280 }}>
                 <Space size={8} wrap>
-                  <Tag color="red">FP {fpCount}</Tag>
-                  <Tag color="gold">FN {fnCount}</Tag>
+                  <Tag>FP {fpCount}</Tag>
+                  <Tag>FN {fnCount}</Tag>
                   <Tag>SUP {suppressedCount}</Tag>
                 </Space>
                 {boosted.length ? (
@@ -401,11 +401,11 @@ export function SituationMonitorNarrativePanel(
               </Typography.Text>
               <div className="mt-2">
                 <Space size={10} wrap>
-                  <Tag color="geekblue">
+                  <Tag>
                     {t("situationMonitor.narrative.consistency")}
                     : {Math.round((radar.consistency ?? 0) * 100)}%
                   </Tag>
-                  <Tag color="gold">
+                  <Tag>
                     {t("situationMonitor.narrative.divergence")}
                     : {Math.round((radar.divergence ?? 0) * 100)}%
                   </Tag>
@@ -474,7 +474,7 @@ export function SituationMonitorNarrativePanel(
                 {citation.topCited?.length ? (
                   <Space size={6} wrap>
                     {citation.topCited.slice(0, 8).map((entry) => (
-                      <Tag key={entry.source} color="cyan">
+                      <Tag key={entry.source}>
                         {entry.source} · {entry.weight}
                       </Tag>
                     ))}
@@ -513,10 +513,10 @@ export function SituationMonitorNarrativePanel(
                   </Typography.Text>
                   <div className="mt-2">
                     <Space size={8} wrap>
-                      <Tag color="red">
+                      <Tag>
                         FP {record.feedback?.falsePositive ?? 0}
                       </Tag>
-                      <Tag color="gold">
+                      <Tag>
                         FN {record.feedback?.falseNegative ?? 0}
                       </Tag>
                       <Tag>SUP {record.learning?.suppressedCount ?? 0}</Tag>
@@ -566,7 +566,7 @@ export function SituationMonitorNarrativePanel(
           <span>
             {t("situationMonitor.narrative.title")}
           </span>
-          <Tag color="geekblue">
+          <Tag>
             {(translateToZh
               ? (data?.narrativeSummary?.statusZh ??
                 data?.narrativeSummary?.status)
@@ -689,7 +689,7 @@ export function SituationMonitorMainCharacterPanel(props: {
           <span>
             {t("situationMonitor.mainCharacter.title")}
           </span>
-          <Tag color="geekblue">
+          <Tag>
             {(translateToZh
               ? (data?.mainCharacterSummary?.statusZh ??
                 data?.mainCharacterSummary?.status)

@@ -33,7 +33,7 @@ export function SituationMonitorLeadersPanel(
           <span>
             {t("situationMonitor.leaders.title")}
           </span>
-          <Tag color="geekblue">{data?.leaders?.length ?? 0}</Tag>
+          <Tag>{data?.leaders?.length ?? 0}</Tag>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"
@@ -126,9 +126,9 @@ export function SituationMonitorSituationCard(
       <Tag
         color={
           panel.level === "critical"
-            ? "red"
+            ? "error"
             : panel.level === "elevated"
-              ? "orange"
+              ? "warning"
               : "default"
         }
       >

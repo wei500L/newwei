@@ -91,7 +91,7 @@ export function SituationMonitorLiveWebcamsPanel() {
         classNames={{ body: "rail-scrollbar" }}
         size="small"
       >
-        <Space wrap size={6} style={{ marginBottom: 10 }}>
+        <Space wrap size={6} className="!mb-3">
           {REGION_OPTIONS.map((option) => (
             <Button
               key={option.key}
@@ -110,7 +110,7 @@ export function SituationMonitorLiveWebcamsPanel() {
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
             {feeds.map((feed) => (
               <div key={feed.id}>
-                <Space size={6} wrap style={{ marginBottom: 6 }}>
+                <Space size={6} wrap className="!mb-2">
                   <Typography.Text strong>{feed.city}</Typography.Text>
                   <Tag color="default">{feed.country}</Tag>
                 </Space>

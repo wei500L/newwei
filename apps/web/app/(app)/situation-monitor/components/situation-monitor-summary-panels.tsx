@@ -139,19 +139,19 @@ export function SituationMonitorCoveragePanel(
             )}
           </Tag>
           {data?.externalSnapshot?.stale ? (
-            <Tag color="volcano">
+            <Tag color="warning">
               {t("situationMonitor.snapshot.stale")}
             </Tag>
           ) : null}
           {freshSnapshotCategoryCount > 0 ? (
-            <Tag color="green">
+            <Tag>
               {t("situationMonitor.snapshot.freshCategories", {
                 count: freshSnapshotCategoryCount,
               })}
             </Tag>
           ) : null}
           {reusedSnapshotCategoryCount > 0 ? (
-            <Tag color="gold">
+            <Tag>
               {t("situationMonitor.snapshot.reusedCategories", {
                 count: reusedSnapshotCategoryCount,
               })}

@@ -68,13 +68,13 @@ export function getExternalSnapshotStatusColor(
   >["status"],
 ): string {
   if (status === "completed") {
-    return "green";
+    return "success";
   }
   if (status === "partial") {
-    return "gold";
+    return "warning";
   }
   if (status === "failed") {
-    return "red";
+    return "error";
   }
   return "default";
 }
@@ -83,10 +83,10 @@ export function getExternalSnapshotCategoryStatusColor(
   status: SituationMonitorExternalSnapshotCategoryState["status"],
 ): string {
   if (status === "fresh") {
-    return "green";
+    return "success";
   }
   if (status === "reused") {
-    return "gold";
+    return "warning";
   }
   return "default";
 }
@@ -145,11 +145,11 @@ export function extractWarningCategories(
 export function toTagColor(level: string) {
   switch (level.toLowerCase()) {
     case "high":
-      return "red";
+      return "error";
     case "elevated":
-      return "orange";
+      return "warning";
     case "emerging":
-      return "blue";
+      return "default";
     default:
       return "default";
   }
@@ -158,11 +158,11 @@ export function toTagColor(level: string) {
 export function toCredibilityColor(level: string) {
   switch (level.toLowerCase()) {
     case "high":
-      return "green";
+      return "success";
     case "medium":
-      return "orange";
+      return "warning";
     case "low":
-      return "red";
+      return "error";
     default:
       return "default";
   }

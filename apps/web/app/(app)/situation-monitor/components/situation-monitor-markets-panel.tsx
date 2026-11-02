@@ -98,7 +98,7 @@ export function SituationMonitorMarketsPanel(props: SharedProps) {
                 dataSource={(marketsSnapshot.indices ?? []).slice(0, 4)}
                 scroll={{ x: "max-content" }}
               />
-              <Divider style={{ margin: "12px 0" }} />
+              <Divider className="!my-3" />
               <Table
                 rowKey="symbol"
                 size="small"
@@ -167,7 +167,7 @@ export function SituationMonitorCryptoPanel(props: SharedProps) {
           <span>
             {t("situationMonitor.crypto.title")}
           </span>
-          <Tag color="geekblue">{cryptoSnapshot?.length ?? 0}</Tag>
+          <Tag>{cryptoSnapshot?.length ?? 0}</Tag>
         </Space>
       }
       className="sm-panel-card glass-panel border border-[var(--border)] h-full"

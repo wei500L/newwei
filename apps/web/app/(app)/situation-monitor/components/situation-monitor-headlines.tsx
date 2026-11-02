@@ -64,7 +64,7 @@ export function useSituationMonitorHeadlines(
       <Typography.Paragraph
         type="secondary"
         ellipsis={{ rows: 2 }}
-        style={{ marginBottom: 0 }}
+        className="!mb-0"
       >
         {summary}
       </Typography.Paragraph>
@@ -122,12 +122,12 @@ export function useSituationMonitorHeadlines(
         content={
           <Space direction="vertical" size={8} style={{ maxWidth: 420 }}>
             {summary ? (
-              <Typography.Paragraph style={{ marginBottom: 0 }}>
+              <Typography.Paragraph className="!mb-0">
                 {summary}
               </Typography.Paragraph>
             ) : null}
             {keyPoints.length > 0 ? (
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <ul className="m-0" style={{ paddingLeft: 18 }}>
                 {keyPoints.map((point) => (
                   <li key={point}>
                     <Typography.Text>{point}</Typography.Text>
