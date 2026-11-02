@@ -32,6 +32,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
 import { applyAutoBrowserHeadersToCrawlOptions } from "@/lib/crawl-browser-headers";
@@ -513,16 +514,15 @@ export function CrawlTemplatesContent() {
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("crawlTemplates.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("crawlTemplates.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -704,17 +704,19 @@ export function CrawlTemplatesContent() {
   return (
     <>
       {contextHolder}
-      <Card
-        className="content-card"
-        title={t("crawlTemplates.title")}
-        extra={
-          canManage ? (
-            <Button type="primary" onClick={openCreate}>
-              {t("crawlTemplates.actions.new")}
-            </Button>
-          ) : null
-        }
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("crawlTemplates.title")}
+          actions={
+            canManage ? (
+              <Button type="primary" onClick={openCreate}>
+                {t("crawlTemplates.actions.new")}
+              </Button>
+            ) : undefined
+          }
+        />
+        <Card className="content-card">
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
           <Input
             id="crawl-templates-search"
@@ -736,7 +738,8 @@ export function CrawlTemplatesContent() {
             }}
           />
         </Space>
-      </Card>
+        </Card>
+      </div>
 
       <Modal
         open={modalState.open}

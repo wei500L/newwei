@@ -226,8 +226,11 @@ describe("CrawlTaskDetail presentation（加载态 / 头部 / 告警 / 策略 / 
     });
 
     await screen.findByText("Concurrency");
-    // displayName 回退 targetUrl
-    expect(screen.getByText("https://example.com")).toBeInTheDocument();
+    // displayName 回退 targetUrl：页头标题与 Descriptions 字段都会呈现该值，
+    // 迁移 PageHeader 后改用 getAllByText（原 getByText 依赖“仅一处渲染”的 DOM 结构）
+    expect(
+      screen.getAllByText("https://example.com").length,
+    ).toBeGreaterThan(0);
     expect(screen.getByText("alpha")).toBeInTheDocument();
     expect(screen.getByText("beta")).toBeInTheDocument();
     expect(screen.getByText("5 inserted, 2 skipped")).toBeInTheDocument();

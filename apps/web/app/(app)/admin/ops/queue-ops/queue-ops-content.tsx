@@ -1,9 +1,11 @@
 "use client";
 
-import { Alert, Card, Space, Typography, message } from "antd";
+import { Alert, Card, message } from "antd";
 import { useSession } from "next-auth/react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { PageHeader } from "@/components/page-header";
 
 import { canViewQueueOps } from "./queue-ops-access";
 import { QueueOpsDlqPanel } from "./queue-ops-dlq-panel";
@@ -53,27 +55,29 @@ export function QueueOpsContent() {
 
   if (!canView) {
     return (
-      <Card className="content-card" title={t("ops.queueOps.title")}>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("ops.queueOps.title")}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
       {contextHolder}
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("ops.queueOps.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("ops.queueOps.subtitle")}
-        </Typography.Text>
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("ops.queueOps.title")}
+        description={t("ops.queueOps.subtitle")}
+      />
 
       {legacyMode ? (
         <Alert

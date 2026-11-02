@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
+import { PageHeader } from "@/components/page-header";
 import { buildAdminLogsHref } from "@/lib/admin-logs";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -1831,9 +1832,7 @@ export function QualityContent() {
 
   if (status === "loading") {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -1841,16 +1840,15 @@ export function QualityContent() {
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("quality.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("quality.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -1858,103 +1856,97 @@ export function QualityContent() {
     <>
       {contextHolder}
       <div className="flex flex-col gap-6">
-        <Space
-          direction={screens.md ? "horizontal" : "vertical"}
-          style={{ width: "100%", justifyContent: "space-between" }}
-        >
-          <Space direction="vertical" size={2}>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              {t("quality.title")}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {t("quality.subtitle")}
-            </Typography.Text>
-          </Space>
-          <Space>
-            <Select
-              value={windowMinutes}
-              onChange={(value) => setWindowMinutes(value)}
-              options={[
-                {
-                  value: 60,
-                  label: t("quality.windows.60m"),
-                },
-                {
-                  value: 240,
-                  label: t("quality.windows.4h"),
-                },
-                {
-                  value: 1440,
-                  label: t("quality.windows.24h"),
-                },
-              ]}
-              style={{ minWidth: 160 }}
-            />
-            <Button onClick={() => void load()} loading={loading}>
-              {t("common.refresh")}
-            </Button>
-            <Space size={6} wrap>
-              <Typography.Text type="secondary">
-                {t("quality.autoRefresh.label")}
-              </Typography.Text>
-              <Switch
-                checked={autoRefreshEnabled}
-                onChange={(checked) => setAutoRefreshEnabled(checked)}
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("quality.title")}
+          description={t("quality.subtitle")}
+          actions={
+            <Space wrap>
+              <Select
+                value={windowMinutes}
+                onChange={(value) => setWindowMinutes(value)}
+                options={[
+                  {
+                    value: 60,
+                    label: t("quality.windows.60m"),
+                  },
+                  {
+                    value: 240,
+                    label: t("quality.windows.4h"),
+                  },
+                  {
+                    value: 1440,
+                    label: t("quality.windows.24h"),
+                  },
+                ]}
+                style={{ minWidth: 160 }}
               />
-              <InputNumber
-                min={5}
-                max={300}
-                step={5}
-                value={autoRefreshSeconds}
-                onChange={(value) =>
-                  setAutoRefreshSeconds(typeof value === "number" ? value : 30)
-                }
-                style={{ width: 88 }}
-              />
-              <Typography.Text type="secondary">s</Typography.Text>
-            </Space>
-            <Space size={6} wrap>
-              <Typography.Text type="secondary">
-                {t("quality.liveUpdates.label")}
-              </Typography.Text>
-              <Switch
-                checked={liveUpdatesEnabled}
-                onChange={(checked) => setLiveUpdatesEnabled(checked)}
-              />
-              {liveUpdatesEnabled ? (
-                <Popover
-                  content={livePopoverContent}
-                  trigger="click"
-                  placement="bottomRight"
-                >
-                  <Tag
-                    style={{ cursor: "pointer" }}
-                    color={
-                      liveError
-                        ? "red"
-                        : liveStatus === "connected"
-                          ? "green"
-                          : liveStatus === "connecting"
-                            ? "blue"
-                            : undefined
-                    }
+              <Button onClick={() => void load()} loading={loading}>
+                {t("common.refresh")}
+              </Button>
+              <Space size={6} wrap>
+                <Typography.Text type="secondary">
+                  {t("quality.autoRefresh.label")}
+                </Typography.Text>
+                <Switch
+                  checked={autoRefreshEnabled}
+                  onChange={(checked) => setAutoRefreshEnabled(checked)}
+                />
+                <InputNumber
+                  min={5}
+                  max={300}
+                  step={5}
+                  value={autoRefreshSeconds}
+                  onChange={(value) =>
+                    setAutoRefreshSeconds(typeof value === "number" ? value : 30)
+                  }
+                  style={{ width: 88 }}
+                />
+                <Typography.Text type="secondary">s</Typography.Text>
+              </Space>
+              <Space size={6} wrap>
+                <Typography.Text type="secondary">
+                  {t("quality.liveUpdates.label")}
+                </Typography.Text>
+                <Switch
+                  checked={liveUpdatesEnabled}
+                  onChange={(checked) => setLiveUpdatesEnabled(checked)}
+                />
+                {liveUpdatesEnabled ? (
+                  <Popover
+                    content={livePopoverContent}
+                    trigger="click"
+                    placement="bottomRight"
                   >
-                    {liveError
-                      ? t("quality.liveUpdates.error")
-                      : liveStatus === "connected"
-                        ? t("quality.liveUpdates.connected")
-                        : liveStatus === "connecting"
-                          ? t("quality.liveUpdates.connecting")
-                          : t("quality.liveUpdates.disconnected")}
-                    {liveStatus === "connected" && liveEventCount > 0
-                      ? ` · ${liveEventCount}`
-                      : ""}
-                  </Tag>
-                </Popover>
-              ) : null}
+                    <Tag
+                      style={{ cursor: "pointer" }}
+                      color={
+                        liveError
+                          ? "red"
+                          : liveStatus === "connected"
+                            ? "green"
+                            : liveStatus === "connecting"
+                              ? "blue"
+                              : undefined
+                      }
+                    >
+                      {liveError
+                        ? t("quality.liveUpdates.error")
+                        : liveStatus === "connected"
+                          ? t("quality.liveUpdates.connected")
+                          : liveStatus === "connecting"
+                            ? t("quality.liveUpdates.connecting")
+                            : t("quality.liveUpdates.disconnected")}
+                      {liveStatus === "connected" && liveEventCount > 0
+                        ? ` · ${liveEventCount}`
+                        : ""}
+                    </Tag>
+                  </Popover>
+                ) : null}
+              </Space>
             </Space>
-          </Space>
-        </Space>
+          }
+        />
 
         {lastUpdatedAt ? (
           <Typography.Text type="secondary">

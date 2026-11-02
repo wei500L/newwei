@@ -1,9 +1,11 @@
 "use client";
 
-import { Alert, Card, Empty, List, Space, Spin, Typography } from "antd";
+import { Alert, Card, Empty, List, Spin } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useTranslation } from "react-i18next";
+
+import { PageHeader } from "@/components/page-header";
 
 import { canViewQueueOps } from "./queue-ops/queue-ops-access";
 
@@ -92,7 +94,7 @@ export function OpsContent() {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -100,26 +102,25 @@ export function OpsContent() {
 
   if (!canViewOps) {
     return (
-      <Card className="content-card" title={t("ops.title")}>
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("ops.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("ops.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("ops.subtitle")}
-        </Typography.Text>
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("ops.title")}
+        description={t("ops.subtitle")}
+      />
       <Card className="content-card">
         {visibleLinks.length ? (
           <List

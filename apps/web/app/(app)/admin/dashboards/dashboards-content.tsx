@@ -1,11 +1,12 @@
 "use client";
 
-import { Alert, App, Button, Card, Select, Space, Spin, Typography } from "antd";
+import { Alert, App, Button, Select, Spin } from "antd";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardEditor } from "@/app/(app)/dashboard/dashboard-editor";
+import { PageHeader } from "@/components/page-header";
 import {
   useDashboardsQuery,
   useDeleteDashboardMutation,
@@ -74,7 +75,7 @@ export function DashboardsContent() {
 
   if (status === "loading" || loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -82,13 +83,18 @@ export function DashboardsContent() {
 
   if (!canManageDashboards) {
     return (
-      <Card className="content-card" title={t("dashboard.admin.title")}>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("dashboard.admin.title")}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -99,30 +105,28 @@ export function DashboardsContent() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Space align="center" size="middle">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("dashboard.admin.title")}
-        </Typography.Title>
-        <Button size="small" onClick={() => void refetch()}>
-          {t("common.refresh")}
-        </Button>
-        <Button
-          size="small"
-          onClick={() => {
-            setActiveId(null);
-          }}
-        >
-          {t("dashboard.admin.new")}
-        </Button>
-        <Select
-          style={{ minWidth: 220 }}
-          placeholder={t("dashboard.admin.select")}
-          value={activeId ?? undefined}
-          options={options}
-          onChange={(value) => setActiveId(value)}
-          allowClear
-        />
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("dashboard.admin.title")}
+        actions={
+          <>
+            <Button size="small" onClick={() => void refetch()}>
+              {t("common.refresh")}
+            </Button>
+            <Button size="small" onClick={() => setActiveId(null)}>
+              {t("dashboard.admin.new")}
+            </Button>
+            <Select
+              style={{ minWidth: 220 }}
+              placeholder={t("dashboard.admin.select")}
+              value={activeId ?? undefined}
+              options={options}
+              onChange={(value) => setActiveId(value)}
+              allowClear
+            />
+          </>
+        }
+      />
 
       <DashboardEditor
         dashboard={activeDashboard}

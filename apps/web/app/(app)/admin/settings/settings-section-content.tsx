@@ -1,6 +1,6 @@
 'use client';
 
-import { Alert, Button, Card, Space, Spin, Typography } from 'antd';
+import { Alert, Button, Card, Spin, Typography } from 'antd';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
@@ -9,6 +9,8 @@ import {
   type MutableRefObject,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { PageHeader } from '@/components/page-header';
 
 import {
   buildAdminSettingsPanelSelectionHref,
@@ -66,7 +68,7 @@ export function AdminSettingsSectionContent({
 
   if (status === 'loading') {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}>
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -74,13 +76,18 @@ export function AdminSettingsSectionContent({
 
   if (visiblePanels.length === 0) {
     return (
-      <Card className="content-card" title={t(page.titleKey, { defaultValue: page.defaultTitle })}>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t('nav.groups.admin')}
+          title={t(page.titleKey, { defaultValue: page.defaultTitle })}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t('settings.adminOnly.title')}
           description={t('settings.adminOnly.description')}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -91,30 +98,27 @@ export function AdminSettingsSectionContent({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t('nav.groups.admin')}
+        title={t(page.titleKey, { defaultValue: page.defaultTitle })}
+        description={t(getAdminSettingsPageDescriptionKey(page.id), {
+          defaultValue: page.defaultDescription,
+        })}
+      />
       <Card className="content-card">
-        <Space direction="vertical" size={10}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t(page.titleKey, { defaultValue: page.defaultTitle })}
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t(getAdminSettingsPageDescriptionKey(page.id), {
-              defaultValue: page.defaultDescription,
-            })}
-          </Typography.Paragraph>
-          <div className="flex flex-wrap gap-2">
-            {visiblePanels.map((panel) => (
-              <Button
-                key={panel.id}
-                size="small"
-                type={selectedPanelId === panel.id ? 'primary' : 'default'}
-                onClick={() => handlePanelSelect(panel.id)}
-              >
-                {t(panel.titleKey, { defaultValue: panel.defaultTitle })}
-              </Button>
-            ))}
-          </div>
-        </Space>
+        <div className="flex flex-wrap gap-2">
+          {visiblePanels.map((panel) => (
+            <Button
+              key={panel.id}
+              size="small"
+              type={selectedPanelId === panel.id ? 'primary' : 'default'}
+              onClick={() => handlePanelSelect(panel.id)}
+            >
+              {t(panel.titleKey, { defaultValue: panel.defaultTitle })}
+            </Button>
+          ))}
+        </div>
       </Card>
 
       {visiblePanels.map((panel) => (

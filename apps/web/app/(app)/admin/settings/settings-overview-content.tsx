@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PageHeader } from '@/components/page-header';
+
 import {
   buildAdminSettingsHref,
   getAdminSettingsPageDescriptionKey,
@@ -31,31 +33,25 @@ export function AdminSettingsOverviewContent() {
 
   if (pageCards.length === 0) {
     return (
-      <Card
-        className="content-card"
-        title={t('adminSettings.workspace.title')}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t('nav.groups.admin')} title={t('adminSettings.workspace.title')} />
         <Alert
           type="warning"
+          showIcon
           message={t('settings.adminOnly.title')}
           description={t('settings.adminOnly.description')}
         />
-      </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="content-card">
-        <Space direction="vertical" size={8}>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {t('adminSettings.workspace.title')}
-          </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {t('adminSettings.workspace.summary')}
-          </Typography.Paragraph>
-        </Space>
-      </Card>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t('nav.groups.admin')}
+        title={t('adminSettings.workspace.title')}
+        description={t('adminSettings.workspace.summary')}
+      />
 
       <div>
         <Typography.Title level={5}>

@@ -40,6 +40,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
+import { PageHeader } from "@/components/page-header";
 import type {
   CrawlMetadataInput,
   CrawlOptionsInput,
@@ -1412,37 +1413,30 @@ export function CrawlTasksView() {
 
   if (status === "loading") {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
-        <Typography.Text type="secondary">
-          {t("common.loading")}
-        </Typography.Text>
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Spin size="large" />
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("crawl.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("crawl.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card
-        className="content-card"
-        title={t("crawl.title")}
-      >
+    <div className="flex flex-col gap-6">
+      <PageHeader kicker={t("nav.groups.admin")} title={t("crawl.title")} />
+      <Card className="content-card">
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {sourceIdFilter ? (
             <Alert

@@ -1,10 +1,11 @@
 "use client";
 
-import { Alert, App, Card, Descriptions, Spin, Typography } from "antd";
+import { Alert, App, Descriptions, Spin, Typography } from "antd";
 import { useSession } from "next-auth/react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { createApiClient } from "@/lib/api-client";
 import { resolveLocale } from "@/lib/i18n";
 
@@ -167,16 +168,18 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("crawl.detail.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("crawl.detail.title")}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -201,7 +204,7 @@ export function CrawlTaskDetail({ taskId }: { taskId: string }) {
   const results = task.results ?? [];
 
   return (
-    <div className="content-card">
+    <div className="content-card flex flex-col gap-6">
       <TaskDetailHeader
         task={task}
         liveStatus={opsLiveStatus}

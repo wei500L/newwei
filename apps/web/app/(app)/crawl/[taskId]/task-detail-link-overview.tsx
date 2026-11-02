@@ -56,9 +56,9 @@ export function TaskDetailLinkOverview({
         ].map((item) => (
           <Space key={item.label} direction="vertical" size={0}>
             <Typography.Text type="secondary">{item.label}</Typography.Text>
-            <Typography.Title level={4} style={{ margin: 0 }}>
+            <span className="font-mono text-xl font-semibold tabular-nums text-[var(--foreground)]">
               {item.value}
-            </Typography.Title>
+            </span>
           </Space>
         ))}
       </Space>

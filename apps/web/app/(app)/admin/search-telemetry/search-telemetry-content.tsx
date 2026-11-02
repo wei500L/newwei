@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, DatePicker, Row, Space, Statistic, Table, Typography } from "antd";
+import { Alert, Card, Col, DatePicker, Row, Space, Statistic, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import type { EChartsOption } from "echarts";
@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { PageHeader } from "@/components/page-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { createApiClient } from "@/lib/api-client";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -216,18 +217,15 @@ export function SearchTelemetryContent() {
   }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("admin.searchTelemetry.title")}
+        description={t("admin.searchTelemetry.description")}
+      />
+
       <Card className="content-card">
         <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <div>
-            <Typography.Title level={4} style={{ marginBottom: 8 }}>
-              {t("admin.searchTelemetry.title")}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {t("admin.searchTelemetry.description")}
-            </Typography.Text>
-          </div>
-
           <Space wrap>
             <RangePicker
               value={range}
@@ -397,6 +395,6 @@ export function SearchTelemetryContent() {
           </Card>
         </Col>
       </Row>
-    </Space>
+    </div>
   );
 }

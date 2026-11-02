@@ -33,6 +33,8 @@ import { useTranslation } from "react-i18next";
 
 import { Crawl4aiHealthCard } from "@/app/(app)/crawl/components/Crawl4aiHealthCard";
 import type { CreateCrawlTaskFormValues } from "@/app/(app)/crawl/types";
+import { FilterBar } from "@/components/filter-bar";
+import { PageHeader } from "@/components/page-header";
 import { captureClientError } from "@/lib/client-telemetry";
 import { findUnsupportedProxyIssues } from "@/lib/crawl-config-policy";
 import { normalizeHeadlessModeFormValues } from "@/lib/crawl-headless-mode";
@@ -1037,96 +1039,27 @@ export function NewsSourcesContent() {
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("newsSources.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("newsSources.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
   return (
     <>
       {contextHolder}
-      <Card
-        className="content-card"
-        title={t("newsSources.title")}
-        extra={
-          <Space wrap>
-            <Button
-              size="small"
-              onClick={() => void refreshAll()}
-              loading={loading || crawlQueueLoading}
-            >
-              {t("common.refresh")}
-            </Button>
-            <Space size={6} wrap>
-              <Typography.Text type="secondary">
-                {t("newsSources.autoRefresh.label")}
-              </Typography.Text>
-              <Switch
-                checked={autoRefreshEnabled}
-                onChange={(checked) => setAutoRefreshEnabled(checked)}
-              />
-              <InputNumber
-                min={5}
-                max={300}
-                step={5}
-                value={autoRefreshSeconds}
-                onChange={(value) =>
-                  setAutoRefreshSeconds(typeof value === "number" ? value : 30)
-                }
-                style={{ width: 88 }}
-                disabled={!autoRefreshEnabled}
-              />
-              <Typography.Text type="secondary">s</Typography.Text>
-            </Space>
-            <Space size={6} wrap>
-              <Typography.Text type="secondary">
-                {t("newsSources.liveUpdates.label")}
-              </Typography.Text>
-              <Switch
-                checked={liveUpdatesEnabled}
-                onChange={(checked) => setLiveUpdatesEnabled(checked)}
-              />
-              {liveUpdatesEnabled ? (
-                <Popover
-                  content={livePopoverContent}
-                  trigger="click"
-                  placement="bottomRight"
-                >
-                  <Tag
-                    style={{ cursor: "pointer" }}
-                    color={
-                      liveError
-                        ? "red"
-                        : liveStatus === "connected"
-                          ? "green"
-                          : liveStatus === "connecting"
-                            ? "blue"
-                            : undefined
-                    }
-                  >
-                    {liveError
-                      ? t("newsSources.liveUpdates.error")
-                      : liveStatus === "connected"
-                        ? t("newsSources.liveUpdates.connected")
-                        : liveStatus === "connecting"
-                          ? t("newsSources.liveUpdates.connecting")
-                          : t("newsSources.liveUpdates.disconnected")}
-                    {liveStatus === "connected" && liveEventCount > 0
-                      ? ` · ${liveEventCount}`
-                      : ""}
-                  </Tag>
-                </Popover>
-              ) : null}
-            </Space>
-            {canManage ? (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("newsSources.title")}
+          actions={
+            canManage ? (
               <Space>
                 <Button onClick={() => void openOpmlImport()}>
                   {t("newsSources.actions.importOpml")}
@@ -1135,15 +1068,84 @@ export function NewsSourcesContent() {
                   {t("newsSources.actions.new")}
                 </Button>
               </Space>
-            ) : null}
-          </Space>
-
-        }
-      >
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Crawl4aiHealthCard
-            onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
-          />
+            ) : undefined
+          }
+        />
+        <Card className="content-card">
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <FilterBar>
+              <Button
+                size="small"
+                onClick={() => void refreshAll()}
+                loading={loading || crawlQueueLoading}
+              >
+                {t("common.refresh")}
+              </Button>
+              <Space size={6} wrap>
+                <Typography.Text type="secondary">
+                  {t("newsSources.autoRefresh.label")}
+                </Typography.Text>
+                <Switch
+                  checked={autoRefreshEnabled}
+                  onChange={(checked) => setAutoRefreshEnabled(checked)}
+                />
+                <InputNumber
+                  min={5}
+                  max={300}
+                  step={5}
+                  value={autoRefreshSeconds}
+                  onChange={(value) =>
+                    setAutoRefreshSeconds(typeof value === "number" ? value : 30)
+                  }
+                  style={{ width: 88 }}
+                  disabled={!autoRefreshEnabled}
+                />
+                <Typography.Text type="secondary">s</Typography.Text>
+              </Space>
+              <Space size={6} wrap>
+                <Typography.Text type="secondary">
+                  {t("newsSources.liveUpdates.label")}
+                </Typography.Text>
+                <Switch
+                  checked={liveUpdatesEnabled}
+                  onChange={(checked) => setLiveUpdatesEnabled(checked)}
+                />
+                {liveUpdatesEnabled ? (
+                  <Popover
+                    content={livePopoverContent}
+                    trigger="click"
+                    placement="bottomRight"
+                  >
+                    <Tag
+                      style={{ cursor: "pointer" }}
+                      color={
+                        liveError
+                          ? "red"
+                          : liveStatus === "connected"
+                            ? "green"
+                            : liveStatus === "connecting"
+                              ? "blue"
+                              : undefined
+                      }
+                    >
+                      {liveError
+                        ? t("newsSources.liveUpdates.error")
+                        : liveStatus === "connected"
+                          ? t("newsSources.liveUpdates.connected")
+                          : liveStatus === "connecting"
+                            ? t("newsSources.liveUpdates.connecting")
+                            : t("newsSources.liveUpdates.disconnected")}
+                      {liveStatus === "connected" && liveEventCount > 0
+                        ? ` · ${liveEventCount}`
+                        : ""}
+                    </Tag>
+                  </Popover>
+                ) : null}
+              </Space>
+            </FilterBar>
+            <Crawl4aiHealthCard
+              onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
+            />
           <NewsSourcesOpsPanels
             t={t}
             locale={locale}
@@ -1217,8 +1219,9 @@ export function NewsSourcesContent() {
             openSchedule={openSchedule}
             openBatchSchedule={openBatchSchedule}
           />
-        </Space>
-      </Card>
+          </Space>
+        </Card>
+      </div>
       <NewsSourcesModals
         t={t}
         locale={locale}

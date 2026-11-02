@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { AlertConfigForm } from "@/app/(app)/dashboard/alert-config-form";
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { PageHeader } from "@/components/page-header";
 import { useAlertRulesQuery, useTriggerAlertRuleMutation } from "@/graphql/generated";
 
 const severityColor: Record<string, string> = {
@@ -75,7 +76,7 @@ export function AlertsConfigContent() {
 
   if (status === "loading" || loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -83,13 +84,18 @@ export function AlertsConfigContent() {
 
   if (!canManageAlerts) {
     return (
-      <Card className="content-card" title={t("alerts.config.title")}>
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("alerts.config.title")}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -111,14 +117,15 @@ export function AlertsConfigContent() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Space align="center" size="middle">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("alerts.config.title")}
-        </Typography.Title>
-        <Button size="small" onClick={() => void refetch()}>
-          {t("common.refresh")}
-        </Button>
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("alerts.config.title")}
+        actions={
+          <Button size="small" onClick={() => void refetch()}>
+            {t("common.refresh")}
+          </Button>
+        }
+      />
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import type { BackendLoginResponse } from "@/lib/auth";
 import { setBrowserAuthSession, type BrowserAuthSession } from "@/lib/browser-auth-session";
 import { captureClientError } from "@/lib/client-telemetry";
@@ -188,13 +189,15 @@ export function OrgAdminContent() {
 
   if (!canManageOrganizations) {
     return (
-      <Card className="content-card" title={t("orgAdmin.title")}>
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("orgAdmin.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("orgAdmin.adminOnly")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -320,15 +323,17 @@ export function OrgAdminContent() {
   return (
     <>
       {contextHolder}
-      <Card
-        className="content-card"
-        title={t("orgAdmin.title")}
-        extra={
-          <Button type="primary" onClick={() => setCreateOpen(true)}>
-            {t("orgAdmin.new")}
-          </Button>
-        }
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("orgAdmin.title")}
+          actions={
+            <Button type="primary" onClick={() => setCreateOpen(true)}>
+              {t("orgAdmin.new")}
+            </Button>
+          }
+        />
+        <Card className="content-card">
         {!screens.md ? (
           <List
             dataSource={tableData}
@@ -488,7 +493,8 @@ export function OrgAdminContent() {
             ]}
           />
         )}
-      </Card>
+        </Card>
+      </div>
 
       <Form<CreateOrgInput>
         form={createForm}

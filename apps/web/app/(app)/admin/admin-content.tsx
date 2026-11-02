@@ -11,12 +11,13 @@ import {
   SettingOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import { Alert, Card, Collapse, Empty, Space, Spin, Typography } from "antd";
+import { Alert, Card, Collapse, Empty, Spin } from "antd";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
+import { PageHeader } from "@/components/page-header";
 import { buildAdminLogsHref } from "@/lib/admin-logs";
 
 import styles from "./admin-content.module.css";
@@ -195,9 +196,7 @@ export function AdminContent() {
 
   if (status === "loading") {
     return (
-      <div
-        style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}
-      >
+      <div className="flex min-h-[40vh] items-center justify-center">
         <Spin size="large" />
       </div>
     );
@@ -205,16 +204,18 @@ export function AdminContent() {
 
   if (!isAdminVisible) {
     return (
-      <Card
-        className="content-card"
-        title={t("adminConsole.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("adminConsole.title")}
+        />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -279,19 +280,12 @@ export function AdminContent() {
 
   return (
     <div className={styles.adminShell}>
-      <div className={styles.headerBlock}>
-        <Space direction="vertical" size={2}>
-          <Typography.Title
-            level={4}
-            className={styles.pageTitle}
-            style={{ margin: 0 }}
-          >
-            {t("adminConsole.title")}
-          </Typography.Title>
-          <Typography.Text className={styles.pageSubtitle}>
-            {t("adminConsole.subtitle")}
-          </Typography.Text>
-        </Space>
+      <div className="flex flex-col gap-4">
+        <PageHeader
+          kicker={t("nav.groups.admin")}
+          title={t("adminConsole.title")}
+          description={t("adminConsole.subtitle")}
+        />
 
         <div className={styles.metricsRail}>
           {highlightedMetrics.map((metric) => (

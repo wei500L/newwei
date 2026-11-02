@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { DashboardChart } from "@/components/echart";
+import { PageHeader } from "@/components/page-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
 import { classifyHeadedIssue } from "@/lib/crawl-runtime";
 import {
@@ -2025,16 +2026,15 @@ export function CrawlMonitorContent({
 
   if (!canView) {
     return (
-      <Card
-        className="content-card"
-        title={t("crawl.monitor.title")}
-      >
+      <div className="flex flex-col gap-6">
+        <PageHeader kicker={t("nav.groups.admin")} title={t("crawl.monitor.title")} />
         <Alert
           type="warning"
+          showIcon
           message={t("settings.adminOnly.title")}
           description={t("settings.adminOnly.description")}
         />
-      </Card>
+      </div>
     );
   }
 
@@ -2068,14 +2068,11 @@ export function CrawlMonitorContent({
           {detailModal ? safeJsonStringify(detailModal.payload) : ""}
         </pre>
       </Modal>
-      <Space direction="vertical" size={2}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t("crawl.monitor.title")}
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          {t("crawl.monitor.subtitle")}
-        </Typography.Text>
-      </Space>
+      <PageHeader
+        kicker={t("nav.groups.admin")}
+        title={t("crawl.monitor.title")}
+        description={t("crawl.monitor.subtitle")}
+      />
 
       <Card
         className="content-card"
