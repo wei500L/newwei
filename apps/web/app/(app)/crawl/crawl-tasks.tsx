@@ -31,6 +31,7 @@ import {
   Row,
   Col,
   Switch,
+  Collapse,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -40,6 +41,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { io, type Socket } from "socket.io-client";
 
+import { FilterBar } from "@/components/filter-bar";
 import { PageHeader } from "@/components/page-header";
 import type {
   CrawlMetadataInput,
@@ -919,55 +921,55 @@ export function CrawlTasksView() {
     const tags: ReactNode[] = [];
     if (summary.ingestToItems) {
       tags.push(
-        <Tag key="ingest" color="geekblue">
+        <Tag key="ingest">
           {t("crawl.settings.ingestToItems")}
         </Tag>,
       );
     }
     if (summary.scanFullPage) {
       tags.push(
-        <Tag key="scanFullPage" color="blue">
+        <Tag key="scanFullPage">
           {t("crawl.settings.scanFullPage")}
         </Tag>,
       );
     }
     if (summary.hasVirtualScroll) {
       tags.push(
-        <Tag key="virtualScroll" color="cyan">
+        <Tag key="virtualScroll">
           {t("crawl.virtualScroll.title")}
         </Tag>,
       );
     }
     if (qualityProfileLabel) {
       tags.push(
-        <Tag key="qualityProfile" color="purple">
+        <Tag key="qualityProfile">
           {qualityProfileLabel}
         </Tag>,
       );
     }
     if (pageTypeHintLabel) {
       tags.push(
-        <Tag key="pageTypeHint" color="magenta">
+        <Tag key="pageTypeHint">
           {pageTypeHintLabel}
         </Tag>,
       );
     }
     if (summary.antiBotMode === "enabled") {
       tags.push(
-        <Tag key="antiBotMode" color="volcano">
+        <Tag key="antiBotMode">
           {t("crawl.browser.antiBotModes.enabled")}
         </Tag>,
       );
     } else if (summary.antiBotMode === "disabled") {
       tags.push(
-        <Tag key="antiBotMode" color="default">
+        <Tag key="antiBotMode">
           {t("crawl.browser.antiBotModes.disabled")}
         </Tag>,
       );
     }
     if (summary.autoExpandDetails) {
       tags.push(
-        <Tag key="autoExpandDetails" color="green">
+        <Tag key="autoExpandDetails">
           {t("crawl.settings.autoExpandDetails")}
         </Tag>,
       );
@@ -1483,28 +1485,50 @@ export function CrawlTasksView() {
               }
             />
           ) : null}
-          <div
-            className="flex flex-col md:flex-row"
-            style={{
-              justifyContent: "space-between",
-              alignItems: screens.md ? "center" : "stretch",
-              gap: 12,
-            }}
+          <FilterBar
+            actions={
+              <>
+                <Tag
+                  color={
+                    opsLiveError
+                      ? "red"
+                      : opsLiveStatus === "connected"
+                        ? "green"
+                        : opsLiveStatus === "connecting"
+                          ? "blue"
+                          : undefined
+                  }
+                >
+                  {opsLiveError
+                    ? t("crawl.liveUpdates.error")
+                    : opsLiveStatus === "connected"
+                      ? t("crawl.liveUpdates.connected")
+                      : opsLiveStatus === "connecting"
+                        ? t("crawl.liveUpdates.connecting")
+                        : t("crawl.liveUpdates.disconnected")}
+                </Tag>
+                <Button
+                  icon={<DashboardOutlined />}
+                  onClick={() => router.push("/admin/ops/crawl-monitor")}
+                >
+                  {t("crawl.monitor.open")}
+                </Button>
+                <Button
+                  icon={<GlobalOutlined />}
+                  onClick={() => router.push("/admin/ops/news-sources")}
+                >
+                  {t("newsSources.title")}
+                </Button>
+                {canManage ? (
+                  <Button type="primary" onClick={() => setDrawerOpen(true)}>
+                    {t("crawl.createTask")}
+                  </Button>
+                ) : null}
+              </>
+            }
           >
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                flex: 1,
-                gap: 12,
-              }}
-            >
-              <Space.Compact
-                className="w-full md:w-[320px]"
-                style={{
-                  maxWidth: "100%",
-                }}
-              >
+            <FilterBar.Item width="lg">
+              <Space.Compact className="w-full">
                 <Input
                   id="crawl-task-search"
                   name="crawlTaskSearch"
@@ -1539,13 +1563,12 @@ export function CrawlTasksView() {
                   }}
                 />
               </Space.Compact>
+            </FilterBar.Item>
+            <FilterBar.Item width="sm">
               <Select<CrawlTaskStatus | null>
                 placeholder={t("crawl.filters.status")}
                 allowClear
-                style={{
-                  width: screens.md ? 180 : "100%",
-                  maxWidth: "100%",
-                }}
+                className="w-full"
                 value={statusFilter}
                 options={[
                   { value: "pending", label: t("crawl.status.pending") },
@@ -1560,59 +1583,13 @@ export function CrawlTasksView() {
                   setPagination((prev) => ({ ...prev, current: 1 }));
                 }}
               />
-            </div>
-            <Space
-              wrap
-              size={8}
-              style={{
-                justifyContent: screens.md ? "flex-end" : "flex-start",
-                width: screens.md ? "auto" : "100%",
-              }}
-            >
-              <Tag
-                color={
-                  opsLiveError
-                    ? "red"
-                    : opsLiveStatus === "connected"
-                      ? "green"
-                      : opsLiveStatus === "connecting"
-                        ? "blue"
-                        : undefined
-                }
-              >
-                {opsLiveError
-                  ? t("crawl.liveUpdates.error")
-                  : opsLiveStatus === "connected"
-                    ? t("crawl.liveUpdates.connected")
-                    : opsLiveStatus === "connecting"
-                      ? t("crawl.liveUpdates.connecting")
-                      : t("crawl.liveUpdates.disconnected")}
-              </Tag>
-              <Button
-                icon={<DashboardOutlined />}
-                onClick={() => router.push("/admin/ops/crawl-monitor")}
-              >
-                {t("crawl.monitor.open")}
-              </Button>
-              <Button
-                icon={<GlobalOutlined />}
-                onClick={() => router.push("/admin/ops/news-sources")}
-              >
-                {t("newsSources.title")}
-              </Button>
-              {canManage ? (
-                <Button type="primary" onClick={() => setDrawerOpen(true)}>
-                  {t("crawl.createTask")}
-                </Button>
-              ) : null}
-            </Space>
-          </div>
+            </FilterBar.Item>
+          </FilterBar>
         </Space>
       </Card>
 
       <Crawl4aiHealthCard
         className="content-card"
-        style={{ marginBottom: 0 }}
         onOpenMonitor={() => router.push("/admin/ops/crawl-monitor")}
       />
 
@@ -1684,7 +1661,6 @@ export function CrawlTasksView() {
                     }
                   />
                   <Button
-                    type="primary"
                     loading={queueActionLoading === "concurrency"}
                     disabled={!canManageQueueOps}
                     onClick={handleUpdateMaxConcurrency}
@@ -1815,7 +1791,6 @@ export function CrawlTasksView() {
                       }
                     />
                     <Button
-                      type="primary"
                       loading={batchFrequencyLoading}
                       onClick={handleBatchFrequencySubmit}
                     >
@@ -1832,11 +1807,146 @@ export function CrawlTasksView() {
         </Card>
       ) : null}
 
+      <Card
+        className="content-card"
+        title={t("crawl.taskList.title")}
+        extra={
+          <Typography.Text type="secondary">
+            {t("crawl.taskList.total", {
+              count: totalCount,
+            })}
+          </Typography.Text>
+        }
+      >
+        {!screens.md ? (
+          <List
+            itemLayout="vertical"
+            dataSource={tableData}
+            loading={tasksLoading}
+            pagination={{
+              total: totalCount,
+              current,
+              pageSize,
+              align: "center",
+              onChange: (page, size) => {
+                setPagination({ current: page, pageSize: size });
+              },
+            }}
+            renderItem={(record) => {
+              const configTags = buildTaskConfigTags(record);
+              const visibleConfigTags = configTags.slice(0, 4);
+              return (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="view"
+                      size="small"
+                      type="link"
+                      onClick={() => openTaskDetail(record.id)}
+                    >
+                      {t("common.view")}
+                    </Button>,
+                    canManage ? (
+                      <Tooltip
+                        key="retry"
+                        title={
+                          findTaskProxyIssuesFromConfig(record.config).length > 0
+                            ? unsupportedProxyActionHint
+                            : undefined
+                        }
+                      >
+                        <span>
+                          <Button
+                            size="small"
+                            type="link"
+                            onClick={() => handleRetry(record.id)}
+                            loading={retrying}
+                            disabled={
+                              findTaskProxyIssuesFromConfig(record.config)
+                                .length > 0
+                            }
+                          >
+                            {t("common.retry")}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    ) : null,
+                  ].filter(Boolean)}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space
+                        direction="vertical"
+                        size={2}
+                        style={{ width: "100%" }}
+                      >
+                        <Typography.Text
+                          strong
+                          style={{ maxWidth: "100%" }}
+                          ellipsis
+                        >
+                          {record.displayName ?? record.targetUrl}
+                        </Typography.Text>
+                        <Typography.Link
+                          href={record.targetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            maxWidth: "100%",
+                            display: "block",
+                            fontSize: 12,
+                          }}
+                          ellipsis
+                        >
+                          {record.targetUrl}
+                        </Typography.Link>
+                      </Space>
+                    }
+                    description={
+                      <Space className="mt-2" wrap size={[4, 4]}>
+                        <Tag color={statusColors[record.status]}>
+                          {t(`crawl.status.${record.status}`, {
+                            defaultValue: record.status,
+                          })}
+                        </Tag>
+                        {visibleConfigTags}
+                        {configTags.length > visibleConfigTags.length ? (
+                          <Tag>{`+${configTags.length - visibleConfigTags.length}`}</Tag>
+                        ) : null}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
+          />
+        ) : (
+          <Table
+            rowKey="id"
+            loading={tasksLoading}
+            columns={columns}
+            dataSource={tableData}
+            pagination={{
+              total: totalCount,
+              current,
+              pageSize,
+              showSizeChanger: true,
+            }}
+            scroll={{ x: 1100 }}
+            onChange={(pager) => setPagination(pager)}
+          />
+        )}
+      </Card>
+
       {canManageSettings ? (
-        <Card
+        <Collapse
           className="content-card"
-          title={t("settings.tabs.crawlClient")}
-        >
+          items={[
+            {
+              key: "crawlSettings",
+              label: t("crawl.tasks.settingsSection"),
+              children: (
+                <>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
             {t("settings.crawlClient.description")}
           </Typography.Paragraph>
@@ -2407,7 +2517,6 @@ export function CrawlTasksView() {
               </Row>
               <Form.Item style={{ marginBottom: 0 }}>
                 <Button
-                  type="primary"
                   htmlType="submit"
                   loading={crawlClientSettingsSaving}
                 >
@@ -2416,139 +2525,12 @@ export function CrawlTasksView() {
               </Form.Item>
             </Form>
           )}
-        </Card>
+                </>
+              ),
+            },
+          ]}
+        />
       ) : null}
-
-      <Card
-        className="content-card"
-        title={t("crawl.taskList.title")}
-        extra={
-          <Typography.Text type="secondary">
-            {t("crawl.taskList.total", {
-              count: totalCount,
-            })}
-          </Typography.Text>
-        }
-      >
-        {!screens.md ? (
-          <List
-            itemLayout="vertical"
-            dataSource={tableData}
-            loading={tasksLoading}
-            pagination={{
-              total: totalCount,
-              current,
-              pageSize,
-              align: "center",
-              onChange: (page, size) => {
-                setPagination({ current: page, pageSize: size });
-              },
-            }}
-            renderItem={(record) => {
-              const configTags = buildTaskConfigTags(record);
-              const visibleConfigTags = configTags.slice(0, 4);
-              return (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="view"
-                      size="small"
-                      type="link"
-                      onClick={() => openTaskDetail(record.id)}
-                    >
-                      {t("common.view")}
-                    </Button>,
-                    canManage ? (
-                      <Tooltip
-                        key="retry"
-                        title={
-                          findTaskProxyIssuesFromConfig(record.config).length > 0
-                            ? unsupportedProxyActionHint
-                            : undefined
-                        }
-                      >
-                        <span>
-                          <Button
-                            size="small"
-                            type="link"
-                            onClick={() => handleRetry(record.id)}
-                            loading={retrying}
-                            disabled={
-                              findTaskProxyIssuesFromConfig(record.config)
-                                .length > 0
-                            }
-                          >
-                            {t("common.retry")}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                    ) : null,
-                  ].filter(Boolean)}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space
-                        direction="vertical"
-                        size={2}
-                        style={{ width: "100%" }}
-                      >
-                        <Typography.Text
-                          strong
-                          style={{ maxWidth: "100%" }}
-                          ellipsis
-                        >
-                          {record.displayName ?? record.targetUrl}
-                        </Typography.Text>
-                        <Typography.Link
-                          href={record.targetUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            maxWidth: "100%",
-                            display: "block",
-                            fontSize: 12,
-                          }}
-                          ellipsis
-                        >
-                          {record.targetUrl}
-                        </Typography.Link>
-                      </Space>
-                    }
-                    description={
-                      <Space className="mt-2" wrap size={[4, 4]}>
-                        <Tag color={statusColors[record.status]}>
-                          {t(`crawl.status.${record.status}`, {
-                            defaultValue: record.status,
-                          })}
-                        </Tag>
-                        {visibleConfigTags}
-                        {configTags.length > visibleConfigTags.length ? (
-                          <Tag>{`+${configTags.length - visibleConfigTags.length}`}</Tag>
-                        ) : null}
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              );
-            }}
-          />
-        ) : (
-          <Table
-            rowKey="id"
-            loading={tasksLoading}
-            columns={columns}
-            dataSource={tableData}
-            pagination={{
-              total: totalCount,
-              current,
-              pageSize,
-              showSizeChanger: true,
-            }}
-            scroll={{ x: 1100 }}
-            onChange={(pager) => setPagination(pager)}
-          />
-        )}
-      </Card>
       {canManage ? (
         <>
           <MetadataExtractionCard

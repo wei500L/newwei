@@ -540,7 +540,7 @@ export function CrawlTemplatesContent() {
 
     if (options.scanFullPage === true) {
       tags.push(
-        <Tag key="scanFullPage" color="blue">
+        <Tag key="scanFullPage">
           {t("crawl.settings.scanFullPage")}
         </Tag>,
       );
@@ -548,13 +548,13 @@ export function CrawlTemplatesContent() {
 
     if (options.antiBotMode === "enabled") {
       tags.push(
-        <Tag key="antiBotMode" color="volcano">
+        <Tag key="antiBotMode">
           {t("crawlTemplates.fields.antiBotModeEnabled")}
         </Tag>,
       );
     } else if (options.antiBotMode === "disabled") {
       tags.push(
-        <Tag key="antiBotMode" color="default">
+        <Tag key="antiBotMode">
           {t("crawlTemplates.fields.antiBotModeDisabled")}
         </Tag>,
       );
@@ -566,7 +566,7 @@ export function CrawlTemplatesContent() {
       !Array.isArray(options.virtualScroll)
     ) {
       tags.push(
-        <Tag key="virtualScroll" color="cyan">
+        <Tag key="virtualScroll">
           {t("crawl.virtualScroll.title")}
         </Tag>,
       );
@@ -574,19 +574,19 @@ export function CrawlTemplatesContent() {
 
     if (options.qualityProfile === "quality_first") {
       tags.push(
-        <Tag key="qualityProfile" color="purple">
+        <Tag key="qualityProfile">
           {t("crawl.settings.qualityProfileOptions.qualityFirst")}
         </Tag>,
       );
     } else if (options.qualityProfile === "balanced") {
       tags.push(
-        <Tag key="qualityProfile" color="purple">
+        <Tag key="qualityProfile">
           {t("crawl.settings.qualityProfileOptions.balanced")}
         </Tag>,
       );
     } else if (options.qualityProfile === "speed_first") {
       tags.push(
-        <Tag key="qualityProfile" color="purple">
+        <Tag key="qualityProfile">
           {t("crawl.settings.qualityProfileOptions.speedFirst")}
         </Tag>,
       );
@@ -594,19 +594,19 @@ export function CrawlTemplatesContent() {
 
     if (options.pageTypeHint === "auto") {
       tags.push(
-        <Tag key="pageTypeHint" color="magenta">
+        <Tag key="pageTypeHint">
           {t("crawl.settings.pageTypeHintOptions.auto")}
         </Tag>,
       );
     } else if (options.pageTypeHint === "list") {
       tags.push(
-        <Tag key="pageTypeHint" color="magenta">
+        <Tag key="pageTypeHint">
           {t("crawl.settings.pageTypeHintOptions.list")}
         </Tag>,
       );
     } else if (options.pageTypeHint === "detail") {
       tags.push(
-        <Tag key="pageTypeHint" color="magenta">
+        <Tag key="pageTypeHint">
           {t("crawl.settings.pageTypeHintOptions.detail")}
         </Tag>,
       );
@@ -614,7 +614,7 @@ export function CrawlTemplatesContent() {
 
     if (options.autoExpandDetails === true) {
       tags.push(
-        <Tag key="autoExpandDetails" color="green">
+        <Tag key="autoExpandDetails">
           {t("crawl.settings.autoExpandDetails")}
         </Tag>,
       );
@@ -628,7 +628,7 @@ export function CrawlTemplatesContent() {
         : null;
     if (markdownOptions?.contentSource === "cleaned_html") {
       tags.push(
-        <Tag key="ragReady" color="geekblue">
+        <Tag key="ragReady">
           {t("crawl.markdown.ragReadyTitle")}
         </Tag>,
       );

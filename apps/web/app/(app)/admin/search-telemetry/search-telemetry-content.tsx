@@ -8,6 +8,8 @@ import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ChartEmptyState } from "@/components/chart-empty-state";
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { DashboardChart } from "@/components/echart";
 import { PageHeader } from "@/components/page-header";
 import { useChartTheme } from "@/hooks/use-chart-theme";
@@ -203,7 +205,7 @@ export function SearchTelemetryContent() {
   ];
 
   if (status === "loading") {
-    return <Card loading className="content-card" />;
+    return <DataStateBoundary state={{ kind: "initialLoading" }} />;
   }
 
   if (!canManageSettings) {
@@ -256,39 +258,31 @@ export function SearchTelemetryContent() {
             <Alert type="error" showIcon message={errorMessage} />
           ) : null}
 
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={8}>
-              <Card>
-                <Statistic
-                  title={t("admin.searchTelemetry.metrics.totalEvents")}
-                  value={summary.totals.totalEvents}
-                  loading={loading}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} md={8}>
-              <Card>
-                <Statistic
-                  title={t("admin.searchTelemetry.metrics.activeDays")}
-                  value={summary.daily.length}
-                  loading={loading}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} md={8}>
-              <Card>
-                <Statistic
-                  title={t("admin.searchTelemetry.metrics.averageDaily")}
-                  value={
-                    summary.daily.length > 0
-                      ? (summary.totals.totalEvents / summary.daily.length).toFixed(1)
-                      : 0
-                  }
-                  loading={loading}
-                />
-              </Card>
-            </Col>
-          </Row>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Statistic
+              title={t("admin.searchTelemetry.metrics.totalEvents")}
+              value={summary.totals.totalEvents}
+              loading={loading}
+            />
+            <div className="md:border-l md:border-[var(--border)] md:pl-4">
+              <Statistic
+                title={t("admin.searchTelemetry.metrics.activeDays")}
+                value={summary.daily.length}
+                loading={loading}
+              />
+            </div>
+            <div className="md:border-l md:border-[var(--border)] md:pl-4">
+              <Statistic
+                title={t("admin.searchTelemetry.metrics.averageDaily")}
+                value={
+                  summary.daily.length > 0
+                    ? (summary.totals.totalEvents / summary.daily.length).toFixed(1)
+                    : 0
+                }
+                loading={loading}
+              />
+            </div>
+          </div>
         </Space>
       </Card>
 
@@ -303,10 +297,8 @@ export function SearchTelemetryContent() {
             height={320}
           />
         ) : (
-          <Alert
-            type="info"
-            showIcon
-            message={t("admin.searchTelemetry.chart.empty")}
+          <ChartEmptyState
+            description={t("admin.searchTelemetry.chart.empty")}
           />
         )}
       </Card>

@@ -215,7 +215,7 @@ export function QueueOpsQueuesPanel({
           </Button>
           <Button
             size="small"
-            type="primary"
+            type="link"
             onClick={() => onSelectQueue(record.name)}
           >
             {t("ops.queueOps.queues.actions.viewJobs")}

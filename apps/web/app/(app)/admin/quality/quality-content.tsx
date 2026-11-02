@@ -1860,6 +1860,15 @@ export function QualityContent() {
           kicker={t("nav.groups.admin")}
           title={t("quality.title")}
           description={t("quality.subtitle")}
+          meta={
+            lastUpdatedAt ? (
+              <span>
+                {t("quality.updatedAt", {
+                  time: new Date(lastUpdatedAt).toLocaleString(),
+                })}
+              </span>
+            ) : undefined
+          }
           actions={
             <Space wrap>
               <Select
@@ -1947,14 +1956,6 @@ export function QualityContent() {
             </Space>
           }
         />
-
-        {lastUpdatedAt ? (
-          <Typography.Text type="secondary">
-            {t("quality.updatedAt", {
-              time: new Date(lastUpdatedAt).toLocaleString(),
-            })}
-          </Typography.Text>
-        ) : null}
 
         {dirtyLiveSources.length > 0 ? (
           <Alert

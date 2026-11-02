@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PageHeader } from '@/components/page-header';
+import { SectionHeader } from '@/components/section-header';
 
 import {
   buildAdminSettingsHref,
@@ -54,9 +55,7 @@ export function AdminSettingsOverviewContent() {
       />
 
       <div>
-        <Typography.Title level={5}>
-          {t('adminSettings.workspace.quickLinks')}
-        </Typography.Title>
+        <SectionHeader title={t('adminSettings.workspace.quickLinks')} className="mb-3" />
         {featuredLinks.length === 0 ? (
           <Card className="content-card">
             <Empty description={t('common.empty')} />
@@ -102,9 +101,7 @@ export function AdminSettingsOverviewContent() {
       </div>
 
       <div>
-        <Typography.Title level={5}>
-          {t('adminSettings.workspace.domains')}
-        </Typography.Title>
+        <SectionHeader title={t('adminSettings.workspace.domains')} className="mb-3" />
         <Row gutter={[16, 16]}>
           {pageCards.map(({ page, panels }) => {
             const href = buildAdminSettingsHref({ page: page.id });
@@ -133,7 +130,7 @@ export function AdminSettingsOverviewContent() {
                         </Tag>
                       ))}
                     </div>
-                    <Button type="primary" href={href}>
+                    <Button type="link" href={href}>
                       {t('adminSettings.workspace.enterDomain')}
                     </Button>
                   </Space>

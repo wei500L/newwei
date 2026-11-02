@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { DataStateBoundary } from "@/components/data-state-boundary";
 import { PageHeader } from "@/components/page-header";
 import type { BackendLoginResponse } from "@/lib/auth";
 import { setBrowserAuthSession, type BrowserAuthSession } from "@/lib/browser-auth-session";
@@ -181,9 +182,10 @@ export function OrgAdminContent() {
 
   if (status === "loading" || loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", marginTop: "3rem" }}>
-        <Typography.Text type="secondary">{t("orgAdmin.loading")}</Typography.Text>
-      </div>
+      <DataStateBoundary
+        state={{ kind: "initialLoading" }}
+        loadingLabel={t("orgAdmin.loading")}
+      />
     );
   }
 

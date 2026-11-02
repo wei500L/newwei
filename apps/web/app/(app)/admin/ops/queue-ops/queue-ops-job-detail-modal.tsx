@@ -12,6 +12,7 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SectionHeader } from "@/components/section-header";
 import { resolveLocale } from "@/lib/i18n";
 import type { QueueOpsJobDetail, QueueOpsJobState } from "@/lib/queue-ops";
 
@@ -130,18 +131,14 @@ export function QueueOpsJobDetailModal({
           ) : null}
 
           <section>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
-              {t("ops.queueOps.detail.sections.data")}
-            </Typography.Title>
+            <SectionHeader title={t("ops.queueOps.detail.sections.data")} as="h3" />
             <pre data-testid="queue-ops-job-data" style={JSON_BLOCK_STYLE}>
               {formatQueueOpsJson(job.data)}
             </pre>
           </section>
 
           <section>
-            <Typography.Title level={5} style={{ marginTop: 0 }}>
-              {t("ops.queueOps.detail.sections.opts")}
-            </Typography.Title>
+            <SectionHeader title={t("ops.queueOps.detail.sections.opts")} as="h3" />
             <pre data-testid="queue-ops-job-opts" style={JSON_BLOCK_STYLE}>
               {formatQueueOpsJson(job.opts)}
             </pre>

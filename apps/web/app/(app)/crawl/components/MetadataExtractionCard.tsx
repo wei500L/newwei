@@ -312,7 +312,7 @@ export function MetadataExtractionCard({
             />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading}>
+            <Button htmlType="submit" loading={loading}>
               {t("crawl.metadata.submit")}
             </Button>
           </Form.Item>
