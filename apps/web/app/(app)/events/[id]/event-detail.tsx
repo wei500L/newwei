@@ -832,7 +832,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
       );
     }
     return (
-      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>
+      <Typography.Paragraph className="!mb-0" style={{ whiteSpace: "pre-line" }}>
         {normalized}
       </Typography.Paragraph>
     );
@@ -931,7 +931,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
         </Space>
 
         {event.summary ? (
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" className="!mb-0">
             {event.summary}
           </Typography.Paragraph>
         ) : null}
@@ -977,7 +977,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
               {t("pages.events.detail.blogSources")}:{" "}
               {sourceEvidence.blogSourceCount}
             </Tag>
-            <Tag color={sourceEvidence.corroborated ? "green" : "orange"}>
+            <Tag color={sourceEvidence.corroborated ? "success" : "warning"}>
               {sourceEvidence.corroborated
                 ? t("pages.events.detail.corroboratedYes")
                 : t("pages.events.detail.corroboratedNo")}
@@ -1085,7 +1085,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
 
                         <section className="flex flex-col gap-3 hairline-b pb-4 last:border-b-0">
                           <SectionHeader title={t("pages.events.detail.tldr")} />
-                          <Typography.Paragraph style={{ marginBottom: 0 }}>
+                          <Typography.Paragraph className="!mb-0">
                             {brief.tldr}
                           </Typography.Paragraph>
                         </section>
@@ -1265,7 +1265,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                             <Typography.Paragraph
                                               type="secondary"
                                               ellipsis={{ rows: 2 }}
-                                              style={{ marginBottom: 0 }}
+                                              className="!mb-0"
                                             >
                                               {summary}
                                             </Typography.Paragraph>
@@ -1290,7 +1290,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                 children: (
                   <div className="flex flex-col gap-4">
                     <div>
-                      <Typography.Title level={5} style={{ marginBottom: 8 }}>
+                      <Typography.Title level={5} className="!mb-2">
                         {t("pages.events.detail.representativeTitle")}
                       </Typography.Title>
 
@@ -1342,7 +1342,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                           {representativeSummary ? (
                             <Typography.Paragraph
                               type="secondary"
-                              style={{ marginBottom: 0 }}
+                              className="!mb-0"
                             >
                               {representativeSummary}
                             </Typography.Paragraph>
@@ -1411,10 +1411,10 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       )}
                     </div>
 
-                    <Divider style={{ margin: "8px 0" }} />
+                    <Divider />
 
                     <div>
-                      <Typography.Title level={5} style={{ marginBottom: 8 }}>
+                      <Typography.Title level={5} className="!mb-2">
                         {t("pages.events.drawer.tabs.timeline")}
                       </Typography.Title>
 
@@ -1422,7 +1422,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                         <Alert
                           type="warning"
                           showIcon
-                          style={{ marginBottom: 12 }}
+                          className="!mb-3"
                           message={t("pages.events.detail.topicDrift")}
                           description={
                             event.topicDriftSummary ??
@@ -1434,7 +1434,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       {timelinePhases.length > 0 ? (
                         <Card
                           size="small"
-                          style={{ marginBottom: 12 }}
+                          className="!mb-3"
                           title={t("pages.events.detail.timelinePhases")}
                         >
                           <Space
@@ -1453,7 +1453,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                 </Space>
                                 <Typography.Paragraph
                                   type="secondary"
-                                  style={{ margin: "4px 0 0" }}
+                                  className="!mt-1 !mb-0"
                                 >
                                   {phase.summary}
                                 </Typography.Paragraph>
@@ -1464,7 +1464,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                       ) : null}
 
                       {categoryDistribution.length > 0 ? (
-                        <Space wrap size={[6, 6]} style={{ marginBottom: 12 }}>
+                        <Space wrap size={[6, 6]} className="!mb-3">
                           {categoryDistribution.slice(0, 8).map((entry) => (
                             <Tag key={entry.categoryPath}>
                               {entry.categoryPath} ·{" "}
@@ -1521,9 +1521,9 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                         <Tag
                                           color={
                                             isTentative
-                                              ? "orange"
+                                              ? "warning"
                                               : isAnchor
-                                                ? "green"
+                                                ? "success"
                                                 : "default"
                                           }
                                         >
@@ -1556,7 +1556,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                         <Typography.Paragraph
                                           type="secondary"
                                           ellipsis={{ rows: 4 }}
-                                          style={{ marginBottom: 0 }}
+                                          className="!mb-0"
                                         >
                                           {entry.summary}
                                         </Typography.Paragraph>
@@ -1702,7 +1702,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
                                     <Typography.Paragraph
                                       type="secondary"
                                       ellipsis={{ rows: 3 }}
-                                      style={{ marginBottom: 0 }}
+                                      className="!mb-0"
                                     >
                                       {processed.summary}
                                     </Typography.Paragraph>
@@ -1781,7 +1781,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
             {selectedSummary ? (
               <Typography.Paragraph
                 type="secondary"
-                style={{ marginBottom: 0 }}
+                className="!mb-0"
               >
                 {selectedSummary}
               </Typography.Paragraph>

@@ -1,7 +1,7 @@
 "use client";
 
 import { gql, useQuery } from "@apollo/client";
-import { Button, Card, Empty, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Card, List, Select, Skeleton, Space, Tag, Tooltip, Typography } from "antd";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { buildAdminSettingsHref } from "@/app/(app)/admin/settings/settings-navi
 import { AnalysisToolbar } from "@/components/analysis/analysis-toolbar";
 import { AnnotationPanel } from "@/components/analysis/annotation-panel";
 import { FilterBar } from "@/components/filter-bar";
+import { ChartEmptyState } from "@/components/chart-empty-state";
 import { PageHeader } from "@/components/page-header";
 import { RequestErrorBanner } from "@/components/request-error-banner";
 import { useTheme } from "@/hooks/use-theme";
@@ -501,7 +502,6 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
             </FilterBar.Item>
             {entityFilter ? (
               <Tag
-                color="purple"
                 closable
                 onClose={(event) => {
                   event.preventDefault();
@@ -532,24 +532,25 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
           ) : loading && !resolvedData ? (
             <Skeleton active paragraph={{ rows: 6 }} />
           ) : sortedEvents.length === 0 ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            <ChartEmptyState
+              presentation="banner"
               description={t("pages.events.empty")}
-            >
-              <Button
-                type="primary"
-                onClick={() =>
-                  router.push(
-                    buildAdminSettingsHref({
-                      page: "news",
-                      panel: "news-events",
-                    }),
-                  )
-                }
-              >
-                {t("pages.events.emptyCta")}
-              </Button>
-            </Empty>
+              action={
+                <Button
+                  type="primary"
+                  onClick={() =>
+                    router.push(
+                      buildAdminSettingsHref({
+                        page: "news",
+                        panel: "news-events",
+                      }),
+                    )
+                  }
+                >
+                  {t("pages.events.emptyCta")}
+                </Button>
+              }
+            />
           ) : (
             <List
               split={false}
@@ -676,7 +677,7 @@ export function EventsContent({ initialData = null }: EventsContentProps) {
                       description={
                         <div className="flex flex-col gap-2">
                           {event.summary ? (
-                            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 0 }}>
+                            <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} className="!mb-0">
                               {event.summary}
                             </Typography.Paragraph>
                           ) : null}

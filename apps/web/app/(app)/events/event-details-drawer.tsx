@@ -719,7 +719,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
       );
     }
     return (
-      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-line" }}>
+      <Typography.Paragraph className="!mb-0" style={{ whiteSpace: "pre-line" }}>
         {normalized}
       </Typography.Paragraph>
     );
@@ -728,7 +728,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
   return (
     <div className="flex flex-col gap-3">
       <Space direction="vertical" size={6}>
-        <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        <Typography.Title level={5} className="!mb-0">
           {title}
         </Typography.Title>
         <Space wrap size={[8, 6]}>
@@ -839,13 +839,13 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
           </Typography.Text>
         </Space>
         {event.summary ? (
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" className="!mb-0">
             {event.summary}
           </Typography.Paragraph>
         ) : null}
       </Space>
 
-      <Divider style={{ margin: "8px 0" }} />
+      <Divider />
 
       <Tabs
         activeKey={activeTab}
@@ -918,7 +918,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                       className="content-card"
                       title={t("pages.events.drawer.tldr")}
                     >
-                      <Typography.Paragraph style={{ marginBottom: 0 }}>
+                      <Typography.Paragraph className="!mb-0">
                         {brief.tldr}
                       </Typography.Paragraph>
                     </Card>
@@ -1110,7 +1110,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                       <Typography.Paragraph
                                         type="secondary"
                                         ellipsis={{ rows: 3 }}
-                                        style={{ marginBottom: 0 }}
+                                        className="!mb-0"
                                       >
                                         {summary}
                                       </Typography.Paragraph>
@@ -1172,7 +1172,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                           </Space>
                           <Typography.Paragraph
                             type="secondary"
-                            style={{ margin: "4px 0 0" }}
+                            className="!mt-1 !mb-0"
                           >
                             {phase.summary}
                           </Typography.Paragraph>
@@ -1271,7 +1271,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                   <Typography.Paragraph
                                     type="secondary"
                                     ellipsis={{ rows: 3 }}
-                                    style={{ marginBottom: 0 }}
+                                    className="!mb-0"
                                   >
                                     {entry.summary}
                                   </Typography.Paragraph>
@@ -1402,7 +1402,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
                                 <Typography.Paragraph
                                   type="secondary"
                                   ellipsis={{ rows: 3 }}
-                                  style={{ marginBottom: 0 }}
+                                  className="!mb-0"
                                 >
                                   {processed.summary}
                                 </Typography.Paragraph>
@@ -1474,7 +1474,7 @@ export function EventDetailsDrawer({ eventId }: { eventId: string }) {
             {selectedSummary ? (
               <Typography.Paragraph
                 type="secondary"
-                style={{ marginBottom: 0 }}
+                className="!mb-0"
               >
                 {selectedSummary}
               </Typography.Paragraph>
