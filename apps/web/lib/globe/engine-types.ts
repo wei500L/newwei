@@ -99,10 +99,16 @@ export interface VisualSettingsLike {
   destroy(): void;
 }
 
-/** NavigationController 的窄接口。构造见 `ui/applicationShell.js:166`；`destroy` 见 `:269`。 */
+/** NavigationController 的窄接口。构造见 `ui/applicationShell.js:166`；`destroy` 见 `:269`。
+ * `_releaseFollowCamera` 见 `ui/navigationController.js:129`（G3 的「停止跟踪」用它释放相机与各图层跟随）。 */
 export interface NavigationControllerLike {
   stop(): void;
   destroy(): void;
+  _releaseFollowCamera?(options?: {
+    preserveVesselSelection?: boolean;
+    preserveCameraFlight?: boolean;
+    trackingOrigin?: string;
+  }): boolean;
 }
 
 /** LayerBindings 的窄接口。构造见 `ui/applicationShell.js:253`；
@@ -114,12 +120,18 @@ export interface LayerBindingsLike {
 }
 
 /** ContextControls 的窄接口。构造见 `ui/applicationShell.js:936`；
- * `connect` / `stop` / `restoreForDisposal` / `disconnect` 见 `ui/contextControls.js:70` / `:88` / `:94` / `:77`。 */
+ * `connect` / `stop` / `restoreForDisposal` / `disconnect` 见 `ui/contextControls.js:70` / `:88` / `:94` / `:77`。
+ * `setContextMode` 见 `ui/contextActions.js:57`；`clearSelectedLayers` 见 `ui/contextActions.js:184`。 */
 export interface ContextControlsLike {
   connect(dataManager: LayerLifecycleLike): unknown;
   stop(): void;
   restoreForDisposal(): Promise<void>;
   disconnect(): void;
+  setContextMode?(
+    mode: "contacts" | "space-missions" | "off" | null,
+    options?: Record<string, unknown>,
+  ): Promise<unknown>;
+  clearSelectedLayers?(options?: Record<string, unknown>): Promise<unknown>;
 }
 
 /** LocationNavigation 的窄接口。构造见 `ui/applicationShell.js:298`；`destroy` 见 `ui/locationNavigation.js:433`。 */
@@ -136,4 +148,21 @@ export interface GlobeOwners {
   context: ContextControlsLike | null;
   locationNavigation: LocationNavigationLike | null;
   cockpit: unknown;
+}
+
+
+/** 目标卡片/跟踪动作接收的记录（`gev:entity-selected` 或 `gev:awareness-subject-selected` 的 detail）。 */
+export interface GlobeTargetRecord {
+  id?: string | number;
+  layerId?: string;
+  layerName?: string;
+  label?: string;
+  name?: string;
+  targetId?: string;
+  latitude?: number;
+  longitude?: number;
+  altitudeM?: number;
+  position?: { x?: number; y?: number; z?: number };
+  properties?: Record<string, unknown>;
+  [key: string]: unknown;
 }

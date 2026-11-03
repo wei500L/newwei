@@ -12124,12 +12124,140 @@
     }
   },
   "globe": {
-    "title": "\u5168\u7403 3D",
+    "title": "全球 3D",
     "status": {
-      "starting": "\u6b63\u5728\u542f\u52a8 3D \u5730\u7403\u2026"
+      "starting": "正在启动 3D 地球…"
     },
     "error": {
-      "title": "3D \u5730\u7403\u542f\u52a8\u5931\u8d25"
+      "title": "3D 地球启动失败"
+    },
+    "layers": {
+      "title": "数据图层",
+      "aria": "数据图层",
+      "open": "打开图层面板",
+      "closeAll": "全部关闭",
+      "clearing": "正在关闭…",
+      "keyRequired": "需要密钥",
+      "keyRequiredHint": "在旁车的环境变量中配置",
+      "empty": "暂无可用图层。",
+      "state": {
+        "nominal": "正常",
+        "loading": "加载中",
+        "degraded": "降级",
+        "stale": "过期",
+        "partial": "部分",
+        "fallback": "备用源",
+        "unavailable": "不可用",
+        "enabling": "开启中",
+        "disabling": "关闭中",
+        "off": "关闭",
+        "uncertain": "不确定"
+      },
+      "groups": {
+        "movement": "移动",
+        "cameras": "摄像头",
+        "infrastructure": "基础设施",
+        "events": "事件",
+        "weather": "天气",
+        "audio": "音频",
+        "other": "其它"
+      }
+    },
+    "target": {
+      "aria": "目标详情",
+      "close": "关闭目标详情",
+      "noFields": "暂无更多字段。",
+      "kinds": {
+        "flights": "航班",
+        "military": "军机",
+        "adsb": "本地 ADS-B",
+        "vessel": "船舶",
+        "satellite": "卫星",
+        "earthquake": "地震",
+        "firm": "山火",
+        "cctv": "摄像头",
+        "installation": "设施",
+        "alpr": "车牌识别",
+        "intel": "情报",
+        "unknown": "目标"
+      },
+      "field": {
+        "callsign": "呼号",
+        "registration": "注册号",
+        "aircraftType": "机型",
+        "altitude": "高度",
+        "speed": "速度",
+        "heading": "航向",
+        "route": "出发地 / 目的地",
+        "operator": "运营方",
+        "mmsi": "MMSI",
+        "vesselType": "船型",
+        "course": "航向",
+        "destination": "目的港",
+        "noradId": "NORAD 编号",
+        "class": "类别",
+        "orbitAltitude": "轨道高度",
+        "magnitude": "震级",
+        "depth": "深度",
+        "place": "地点",
+        "time": "发生时间",
+        "frp": "辐射功率 (FRP)",
+        "confidence": "置信度",
+        "detectedAt": "探测时间",
+        "satellite": "卫星",
+        "cameraName": "摄像头名称",
+        "agency": "来源机构",
+        "lastFrame": "最后一帧时间",
+        "position": "位置"
+      },
+      "links": {
+        "external": "外部链接",
+        "flightaware": "FlightAware",
+        "marinetraffic": "MarineTraffic"
+      },
+      "actions": {
+        "track": "跟踪",
+        "untrack": "停止跟踪",
+        "flyTo": "飞过去",
+        "cockpit": "进入驾驶舱",
+        "cockpitHint": "下一版提供",
+        "search": "在控制台搜索"
+      }
+    },
+    "context": {
+      "aria": "目标与情境",
+      "tabs": {
+        "target": "目标",
+        "nearby": "附近",
+        "missions": "航天任务"
+      },
+      "targetEmptyTitle": "未选中目标",
+      "targetEmptyDescription": "点击地球上的飞机、船舶、卫星或设施查看详情。",
+      "nearby": {
+        "emptyTitle": "附近暂无目标",
+        "emptyDescription": "打开航班、船舶或设施图层，并选中一个目标，即可看到 250 公里范围内的接触目标。"
+      },
+      "missions": {
+        "loading": "正在加载 30 天任务索引",
+        "loadingDescription": "航天任务图层发布名单后会显示在这里。",
+        "available": "可用任务",
+        "empty": "暂无航天任务",
+        "emptyDescription": "当前时间窗口内没有可用的航天任务。",
+        "close": "取消选择任务",
+        "payloads": "有效载荷",
+        "previous": "上一个",
+        "next": "下一个",
+        "fields": {
+          "provider": "提供方",
+          "status": "状态",
+          "site": "发射场",
+          "time": "发射时间",
+          "orbit": "轨道",
+          "ascent": "上升段",
+          "distance": "距地距离",
+          "speed": "卫星速度"
+        }
+      }
     }
   }
 }

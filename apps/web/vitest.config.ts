@@ -224,6 +224,10 @@ export default defineConfig({
         "lib/globe/runtime-lifecycle.ts",
         "lib/globe/pinia-bridge.ts",
         "lib/globe/gev-events.ts",
+        // 3D 地球 G3：图层面板纯逻辑、目标格式化、详情卡展示组件
+        "lib/globe/layer-panel-model.ts",
+        "lib/globe/target-format.ts",
+        "app/(app)/globe/components/target-card.tsx",
       ],
       // runtime.ts 与 globe-stage.tsx 依赖 Cesium（在 jsdom 里无法运行），
       // 因此不做单元测试；引擎行为由浏览器冒烟 + build 验证。

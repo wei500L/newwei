@@ -12127,10 +12127,138 @@
   "globe": {
     "title": "3D Globe",
     "status": {
-      "starting": "Starting the 3D globe\u2026"
+      "starting": "Starting the 3D globe…"
     },
     "error": {
       "title": "The 3D globe failed to start"
+    },
+    "layers": {
+      "title": "Data Layers",
+      "aria": "Data layers",
+      "open": "Open layer panel",
+      "closeAll": "Turn all off",
+      "clearing": "Turning off…",
+      "keyRequired": "Key required",
+      "keyRequiredHint": "Configure it in the sidecar environment",
+      "empty": "No layers available.",
+      "state": {
+        "nominal": "Nominal",
+        "loading": "Loading",
+        "degraded": "Degraded",
+        "stale": "Stale",
+        "partial": "Partial",
+        "fallback": "Fallback",
+        "unavailable": "Unavailable",
+        "enabling": "Enabling",
+        "disabling": "Disabling",
+        "off": "Off",
+        "uncertain": "Uncertain"
+      },
+      "groups": {
+        "movement": "Movement",
+        "cameras": "Cameras",
+        "infrastructure": "Infrastructure",
+        "events": "Events",
+        "weather": "Weather",
+        "audio": "Audio",
+        "other": "Other"
+      }
+    },
+    "target": {
+      "aria": "Target details",
+      "close": "Close target details",
+      "noFields": "No more fields.",
+      "kinds": {
+        "flights": "Flights",
+        "military": "Military",
+        "adsb": "Local ADS-B",
+        "vessel": "Vessel",
+        "satellite": "Satellite",
+        "earthquake": "Earthquake",
+        "firm": "Active fire",
+        "cctv": "Camera",
+        "installation": "Installation",
+        "alpr": "ALPR",
+        "intel": "Intel",
+        "unknown": "Target"
+      },
+      "field": {
+        "callsign": "Callsign",
+        "registration": "Registration",
+        "aircraftType": "Aircraft type",
+        "altitude": "Altitude",
+        "speed": "Speed",
+        "heading": "Heading",
+        "route": "Origin / Destination",
+        "operator": "Operator",
+        "mmsi": "MMSI",
+        "vesselType": "Vessel type",
+        "course": "Course",
+        "destination": "Destination",
+        "noradId": "NORAD ID",
+        "class": "Class",
+        "orbitAltitude": "Orbit altitude",
+        "magnitude": "Magnitude",
+        "depth": "Depth",
+        "place": "Place",
+        "time": "Occurred",
+        "frp": "Fire radiative power (FRP)",
+        "confidence": "Confidence",
+        "detectedAt": "Detected",
+        "satellite": "Satellite",
+        "cameraName": "Camera",
+        "agency": "Source agency",
+        "lastFrame": "Last frame",
+        "position": "Position"
+      },
+      "links": {
+        "external": "External link",
+        "flightaware": "FlightAware",
+        "marinetraffic": "MarineTraffic"
+      },
+      "actions": {
+        "track": "Track",
+        "untrack": "Stop tracking",
+        "flyTo": "Fly here",
+        "cockpit": "Enter cockpit",
+        "cockpitHint": "Available in the next version",
+        "search": "Search in console"
+      }
+    },
+    "context": {
+      "aria": "Target and context",
+      "tabs": {
+        "target": "Target",
+        "nearby": "Nearby",
+        "missions": "Missions"
+      },
+      "targetEmptyTitle": "No target selected",
+      "targetEmptyDescription": "Click an aircraft, vessel, satellite, or installation on the globe to see its details.",
+      "nearby": {
+        "emptyTitle": "No nearby targets",
+        "emptyDescription": "Turn on flights, vessels, or installations and select a target to see contacts within 250 km."
+      },
+      "missions": {
+        "loading": "Loading the 30-day mission index",
+        "loadingDescription": "The Space Missions layer publishes its roster here.",
+        "available": "Available missions",
+        "empty": "No space missions",
+        "emptyDescription": "No space missions in the current window.",
+        "close": "Deselect mission",
+        "payloads": "Payloads",
+        "previous": "Prev",
+        "next": "Next",
+        "fields": {
+          "provider": "Provider",
+          "status": "Status",
+          "site": "Launch site",
+          "time": "Launch time",
+          "orbit": "Orbit",
+          "ascent": "Ascent path",
+          "distance": "Distance from Earth",
+          "speed": "Satellite speed"
+        }
+      }
     }
   }
 }

@@ -46,11 +46,13 @@ import { useContextStore as getContextStore } from "@gev/ui/stores/context.js";
 import { useLocationStore as getLocationStore } from "@gev/ui/stores/location.js";
 import { VisualSettings } from "@gev/ui/visualSettings.js";
 import { applicationPinia } from "@gev/ui/vueRuntime.js";
+import * as Cesium from "cesium";
 import { setActivePinia } from "pinia";
 
 import type {
   ContextControlsLike,
   GlobeOwners,
+  GlobeTargetRecord,
   LayerBindingsLike,
   LayerLifecycleLike,
   LocationNavigationLike,
@@ -68,6 +70,26 @@ export interface GlobeRuntimeOptions {
   onStatus?: (text: string) => void;
 }
 
+/** 图层面板上 React 侧可调用的动作。每个方法上都注明对应的 GEV 源码位置。 */
+export interface GlobeRuntimeActions {
+  /** `data/lifecycle.js:602`（`toggle`）。 */
+  toggleLayer(id: string): Promise<boolean>;
+  /** 跟踪：`layers/flights/queries.js:757` `trackById`、`layers/military/queries.js:677`、
+   *  `layers/satellites/controls.js:252`、`layers/vessels/queries.js:428` `selectById`、
+   *  `layers/installations/controls.js:172` `focusById`、`layers/localAdsb/index.js:819` `selectAircraft`。 */
+  track(record: GlobeTargetRecord): boolean;
+  /** 停止跟踪：`ui/navigationController.js:129` `_releaseFollowCamera`（内部会调用各图层的 `stopTracking`）。 */
+  untrack(): void;
+  /** 飞到目标：`locations.js:38-94` 的相机飞行写法 + `worldFocus.js:104` `flyToWorldTarget`。 */
+  flyTo(record: GlobeTargetRecord): boolean;
+  /** 切换 CONTACTS / SPACE MISSIONS：`ui/contextActions.js:57` `setContextMode`。 */
+  contextMode(
+    mode: "contacts" | "space-missions" | "off",
+  ): Promise<unknown>;
+  /** 全部关闭：`ui/contextActions.js:184` `clearSelectedLayers`（外壳在 `applicationShell.js:1571-1583` 接线）。 */
+  clearLayers(): Promise<unknown>;
+}
+
 export interface GlobeRuntime {
   /** Cesium.Viewer（窄类型见 engine-types；这里用 unknown 隔离 Cesium）。 */
   viewer: unknown;
@@ -75,6 +97,7 @@ export interface GlobeRuntime {
   mapStackController: MapStackControllerLike;
   owners: GlobeOwners;
   pinia: unknown;
+  actions: GlobeRuntimeActions;
   setLocale(locale: "zh-CN" | "en"): void;
   destroy(): Promise<void>;
 }
@@ -471,6 +494,131 @@ export async function createGlobeRuntime(
     // 10) 初始相机：整个地球（GEV 默认飞 Austin，这里不照搬）。
     flyToGlobeView(viewer);
 
+    // G3 React 侧动作。GEV 里这些行为由外壳的按钮/负责人触发，这里直接调用
+    // 同样的引擎方法（见上面 GlobeRuntimeActions 的源码位置注释）。
+    const trackableLayer = (layerId: string) =>
+      layers[
+        {
+          flights: "flightsLayer",
+          military: "militaryFlightsLayer",
+          satellites: "satellitesLayer",
+          "ais-live-vessels": "aisLiveVesselsLayer",
+          "military-installations": "militaryInstallationsLayer",
+          "local-adsb": "localAdsbLayer",
+        }[layerId] ?? ""
+      ] as
+        | {
+            trackById?: (id: unknown, options?: { origin?: string }) => boolean;
+            selectById?: (id: unknown) => boolean;
+            selectAircraft?: (id: string) => boolean;
+            focusById?: (id: unknown) => boolean;
+            clearSelection?: () => void;
+            stopTracking?: (options?: { origin?: string }) => void;
+          }
+        | undefined;
+
+    const actions: GlobeRuntimeActions = {
+      toggleLayer(id) {
+        return dataManager.toggle(id, { origin: "user" });
+      },
+      track(record) {
+        const layerId = String(record?.layerId ?? "");
+        const properties = record?.properties ?? {};
+        let targetId = record?.targetId ?? record?.id;
+        // AIS 的上下文记录 id 是 `ais-<mmsi>`，图层 API 要 mmsi 本体。
+        if (layerId === "ais-live-vessels" && properties.mmsi !== undefined) {
+          targetId = properties.mmsi as string | number;
+        }
+        // local-adsb 的实体 id 带前缀，图层 API 要裸 ICAO。
+        if (layerId === "local-adsb" && properties.icao !== undefined) {
+          targetId = properties.icao as string | number;
+        }
+        if (!layerId || targetId === undefined || targetId === null) return false;
+        const layer = trackableLayer(layerId);
+        if (!layer) return false;
+        switch (layerId) {
+          case "flights":
+          case "military":
+          case "satellites":
+            return Boolean(layer.trackById?.(targetId, { origin: "user" }));
+          case "ais-live-vessels":
+            return Boolean(layer.selectById?.(targetId));
+          case "military-installations":
+            return Boolean(layer.focusById?.(targetId));
+          case "local-adsb":
+            return Boolean(layer.selectAircraft?.(String(targetId)));
+          default:
+            return false;
+        }
+      },
+      untrack() {
+        navigation._releaseFollowCamera?.({
+          trackingOrigin: "user",
+          preserveVesselSelection: false,
+        });
+        // local-adsb 没有相机跟随，`_releaseFollowCamera` 不会碰到它。
+        trackableLayer("local-adsb")?.clearSelection?.();
+      },
+      flyTo(record) {
+        const camera = (
+          viewer as {
+            camera?: {
+              cancelFlight?: () => void;
+              heading?: number;
+              flyToBoundingSphere?: (
+                sphere: Cesium.BoundingSphere,
+                options?: {
+                  duration?: number;
+                  offset?: Cesium.HeadingPitchRange;
+                },
+              ) => void;
+            };
+          }
+        ).camera;
+        if (!camera?.flyToBoundingSphere) return false;
+        const point = record?.position;
+        let destination: Cesium.Cartesian3 | null = null;
+        if (
+          point &&
+          Number.isFinite(point.x) &&
+          Number.isFinite(point.y) &&
+          Number.isFinite(point.z)
+        ) {
+          destination = new Cesium.Cartesian3(
+            Number(point.x),
+            Number(point.y),
+            Number(point.z),
+          );
+        } else if (
+          Number.isFinite(record?.latitude) &&
+          Number.isFinite(record?.longitude)
+        ) {
+          destination = Cesium.Cartesian3.fromDegrees(
+            Number(record.longitude),
+            Number(record.latitude),
+            Number.isFinite(record.altitudeM) ? Number(record.altitudeM) : 0,
+          );
+        }
+        if (!destination) return false;
+        camera.cancelFlight?.();
+        camera.flyToBoundingSphere(new Cesium.BoundingSphere(destination, 1000), {
+          duration: 1.6,
+          offset: new Cesium.HeadingPitchRange(
+            Number.isFinite(camera.heading) ? Number(camera.heading) : 0,
+            Cesium.Math.toRadians(-35),
+            22000,
+          ),
+        });
+        return true;
+      },
+      contextMode(mode) {
+        return contextControls?.setContextMode?.(mode) ?? Promise.resolve(null);
+      },
+      clearLayers() {
+        return contextControls?.clearSelectedLayers?.() ?? Promise.resolve(null);
+      },
+    };
+
     const runtime: GlobeRuntime = {
       viewer,
       dataManager,
@@ -484,6 +632,7 @@ export async function createGlobeRuntime(
         cockpit: null,
       },
       pinia,
+      actions,
       setLocale(locale) {
         setGevLocale(locale);
       },
