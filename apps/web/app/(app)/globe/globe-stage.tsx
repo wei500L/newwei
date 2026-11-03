@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
+import { useGevWindowEvent } from "@/lib/globe/gev-events";
 import {
   createGlobeRuntime,
   type GlobeRuntime,
@@ -17,8 +18,10 @@ import {
   type GlobeShortcutActions,
 } from "@/lib/globe/shortcuts";
 
+import { CockpitDomContract } from "./components/cockpit-dom-contract";
 import { CommandDock } from "./components/command-dock";
 import { GlobeContextPanel } from "./components/globe-context-panel";
+import { IntelHudLayer } from "./components/intel-hud";
 import { LayerPanel } from "./components/layer-panel";
 
 export interface GlobeStageProps {
@@ -68,6 +71,14 @@ export default function GlobeStage({
     t("globe.status.starting"),
   );
   const [error, setError] = useState<string | null>(null);
+
+  // G5：是否处于驾驶舱。GEV 在进入 / 退出时广播 `gev:cockpit-mode-changed`
+  // （`ui/cockpitTrackingController.js:20-35`）。进入驾驶舱时隐藏左侧图层面板
+  // 和命令坞，只保留退出按钮与视觉切换。
+  const cockpitMode = useGevWindowEvent<{ active?: boolean }>(
+    "gev:cockpit-mode-changed",
+  );
+  const cockpitActive = Boolean(cockpitMode?.active);
 
   // 启动 / 销毁运行时。只运行一次；语言切换由下面的 effect 处理。
   useEffect(() => {
@@ -172,10 +183,16 @@ export default function GlobeStage({
 
       {runtime && (
         <GlobeRuntimeProvider runtime={runtime}>
-          {/* V 纯净视图隐藏所有 React 面板，只保留地球与数据署名。 */}
-          {!cleanView && layersOpen ? <LayerPanel /> : null}
-          {!cleanView ? <GlobeContextPanel /> : null}
-          {!cleanView ? <CommandDock /> : null}
+          {/* G5 HUD：地球之上、面板之下；纯净视图（V）时也不渲染。 */}
+          <IntelHudLayer cleanView={cleanView} />
+
+          {/* G5 驾驶舱骨架：始终挂载（不在驾驶舱时元素存在但隐藏）。 */}
+          <CockpitDomContract />
+
+          {/* V 纯净视图隐藏所有 React 面板；驾驶舱中只保留退出与视觉切换。 */}
+          {!cleanView && !cockpitActive && layersOpen ? <LayerPanel /> : null}
+          {!cleanView && !cockpitActive ? <GlobeContextPanel /> : null}
+          {!cleanView && !cockpitActive ? <CommandDock /> : null}
         </GlobeRuntimeProvider>
       )}
 

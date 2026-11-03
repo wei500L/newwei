@@ -17,6 +17,10 @@ export interface TargetCardProps {
   onUntrack: () => void;
   onFlyTo: () => void;
   onClose: () => void;
+  /** G5：是否可进入驾驶舱（`useCockpitStore().presence?.entryAvailable`）。 */
+  cockpitEntryAvailable?: boolean;
+  /** G5：点击「进入驾驶舱」（通常触发骨架里的 `#cockpit-entry`）。 */
+  onEnterCockpit?: () => void;
 }
 
 /**
@@ -32,6 +36,8 @@ export function TargetCard({
   onUntrack,
   onFlyTo,
   onClose,
+  cockpitEntryAvailable = false,
+  onEnterCockpit,
 }: TargetCardProps) {
   const { t } = useTranslation();
   const searchHref = `/search?q=${encodeURIComponent(view.title)}`;
@@ -99,9 +105,19 @@ export function TargetCard({
           <Button size="small" onClick={onFlyTo}>
             {t("globe.target.actions.flyTo")}
           </Button>
-          <Tooltip title={t("globe.target.actions.cockpitHint")}>
+          <Tooltip
+            title={
+              cockpitEntryAvailable
+                ? undefined
+                : t("globe.target.actions.cockpitHint")
+            }
+          >
             <span>
-              <Button size="small" disabled>
+              <Button
+                size="small"
+                disabled={!cockpitEntryAvailable}
+                onClick={onEnterCockpit}
+              >
                 {t("globe.target.actions.cockpit")}
               </Button>
             </span>

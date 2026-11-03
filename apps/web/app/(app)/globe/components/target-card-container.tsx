@@ -5,11 +5,13 @@ import {
   getContextStore,
 } from "@gev/data/contextStore.js";
 import { shownLayerName } from "@gev/ui/layerNames.js";
+import { useCockpitStore as getCockpitStore } from "@gev/ui/stores/cockpit.js";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { GlobeTargetRecord } from "@/lib/globe/engine-types";
 import type { GevSelection } from "@/lib/globe/gev-events";
+import { useGevStore } from "@/lib/globe/pinia-bridge";
 import { useGlobeRuntime } from "@/lib/globe/runtime-context";
 import { formatTarget } from "@/lib/globe/target-format";
 import { normalizeLocale } from "@/lib/i18n";
@@ -63,6 +65,18 @@ export function TargetCardContainer({
   const record = useLiveRecord(selection);
   const locale = normalizeLocale(i18n.language);
 
+  // G5：驾驶舱入场可用性（`presence.entryAvailable` 由 CockpitViewController 发布）。
+  const cockpitStore = useMemo(
+    () => getCockpitStore(runtime.pinia as never),
+    [runtime.pinia],
+  );
+  const presence = useGevStore(
+    cockpitStore,
+    (state: { presence: { entryAvailable?: boolean } | null }) =>
+      state.presence,
+  );
+  const cockpitEntryAvailable = Boolean(presence?.entryAvailable);
+
   const view = useMemo(
     () => (record ? formatTarget(record, { locale }) : null),
     [record, locale],
@@ -95,6 +109,12 @@ export function TargetCardContainer({
         runtime.actions.flyTo(record);
       }}
       onClose={close}
+      cockpitEntryAvailable={cockpitEntryAvailable}
+      onEnterCockpit={() => {
+        // G3 的按钮不能再占用 `id="cockpit-entry"`（id 唯一）；骨架里的
+        // `#cockpit-entry` 才是 GEV 绑定的入口，直接触发它的点击事件。
+        document.getElementById("cockpit-entry")?.click();
+      }}
     />
   );
 }

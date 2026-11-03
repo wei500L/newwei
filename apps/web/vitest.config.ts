@@ -1,5 +1,16 @@
+import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const require = createRequire(import.meta.url);
+const gevSrc = fileURLToPath(
+  new URL("../../vendor/gods-eye-view/src", import.meta.url),
+);
+// vendor 源码里的裸 import（pinia / vue）从 apps/web 的 node_modules 解析——
+// 与 next.config 的 resolve.modules 一致，避免测试环境从 vendor 目录向上找不到包。
+const piniaDir = path.dirname(require.resolve("pinia/package.json"));
+const vueDir = path.dirname(require.resolve("vue/package.json"));
 
 export default defineConfig({
   test: {
@@ -232,6 +243,9 @@ export default defineConfig({
         "lib/globe/command-model.ts",
         "lib/globe/shortcuts.ts",
         "lib/globe/external-store.ts",
+        // 3D 地球 G5：HUD 四角读数层、驾驶舱仪表（纯展示，传模拟视图对象）
+        "app/(app)/globe/components/intel-hud.tsx",
+        "app/(app)/globe/components/cockpit-instruments.tsx",
       ],
       // runtime.ts 与 globe-stage.tsx 依赖 Cesium（在 jsdom 里无法运行），
       // 因此不做单元测试；引擎行为由浏览器冒烟 + build 验证。
@@ -258,6 +272,12 @@ export default defineConfig({
       "@/hooks": path.resolve(__dirname, "hooks"),
       "@/store": path.resolve(__dirname, "store"),
       "@/test": path.resolve(__dirname, "test"),
+      // G5：HUD / 驾驶舱容器组件从 @gev 的 Pinia 仓库取数（与 next.config 的
+      // `@gev` 别名一致）；vendor 源码里的裸 pinia / vue 从 apps/web 的
+      // node_modules 解析（对齐 next.config 的 resolve.modules）。
+      "@gev": gevSrc,
+      pinia: piniaDir,
+      vue: vueDir,
     },
   },
   esbuild: {

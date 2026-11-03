@@ -8,6 +8,7 @@ import {
   interruptGlobeRotation,
 } from "@gev/cameraVerbs.js";
 import { CITY_POIS } from "@gev/cityPois.js";
+import { aircraftTrackingTarget } from "@gev/cockpitTracking.js";
 import {
   cycleMode as cycleDetectionMode,
   initDetection,
@@ -23,9 +24,16 @@ import {
 } from "@gev/data/detection.js";
 import { LayerLifecycle } from "@gev/data/lifecycle.js";
 import {
+  fetchRegionalBrief,
+  regionalDistanceM,
+  weatherCodeLabel,
+} from "@gev/data/regionalBrief.js";
+import { isTr3b, toggleTr3b } from "@gev/data/tr3bRegistry.js";
+import {
   initTrackedReadout,
   destroyTrackedReadout,
 } from "@gev/data/trackedReadout.js";
+import { IntelHUD } from "@gev/hud.js";
 import { setLocale as setGevLocale } from "@gev/i18n/index.js";
 import { flyToGlobeView, flyToLandmark } from "@gev/locations.js";
 import { MAP_STACKS } from "@gev/maps/catalog.js";
@@ -42,11 +50,14 @@ import {
 import { createApplicationRequestServices } from "@gev/services/requests.js";
 import { createStandaloneCatalog } from "@gev/standalone/catalog.js";
 import { createStandalonePlaceSearch } from "@gev/standalone/placeSearch.js";
+import { CockpitCoordinator } from "@gev/ui/cockpitCoordinator.js";
 import { ContextControls } from "@gev/ui/context.js";
 import { LayerBindings } from "@gev/ui/layerBindings.js";
 import { LocationNavigation } from "@gev/ui/locationNavigation.js";
 import { NavigationController } from "@gev/ui/navigationController.js";
+import { useCockpitStore as getCockpitStore } from "@gev/ui/stores/cockpit.js";
 import { useContextStore as getContextStore } from "@gev/ui/stores/context.js";
+import { useHudStore as getHudStore } from "@gev/ui/stores/hud.js";
 import { useLocationStore as getLocationStore } from "@gev/ui/stores/location.js";
 import { VisualSettings } from "@gev/ui/visualSettings.js";
 import { applicationPinia } from "@gev/ui/vueRuntime.js";
@@ -56,9 +67,12 @@ import { setActivePinia } from "pinia";
 import { placeKindFromTypes } from "./command-model";
 import { detectionModeStore } from "./detection-mode-store";
 import type {
+  CockpitCoordinatorLike,
+  CockpitViewLike,
   ContextControlsLike,
   GlobeOwners,
   GlobeTargetRecord,
+  IntelHUDLike,
   LayerBindingsLike,
   LayerLifecycleLike,
   LocationNavigationLike,
@@ -131,6 +145,8 @@ export interface GlobeRuntimeActions {
   setStyle(name: string): void;
   /** 当前风格：`ui/visualSettings.js` 的 `activeStyle`。 */
   getStyle(): string;
+  /** HUD 显隐：`hud.js:1014` `toggle`（外壳见 `ui/displayBindings.js:59-64`）。 */
+  toggleHud(): void;
   /** 切换检测框：`data/detection.js:410` `cycleMode`（Off ↔ 上一次非 Off 模式）。 */
   cycleDetection(): void;
   /** 当前检测框模式标签：`data/detection.js:446` `getMode`。 */
@@ -139,6 +155,8 @@ export interface GlobeRuntimeActions {
   resetGlobe(): void;
   /** 自动旋转：`orbit.js` `OrbitController.toggle`（外壳在 `_initOrbit` 里创建）。 */
   toggleOrbit(): boolean;
+  /** 创建 / 重建驾驶舱协调器（React 骨架挂载后调用）。返回销毁函数。 */
+  attachCockpit(): () => void;
 }
 
 export interface GlobeRuntime {
@@ -355,11 +373,32 @@ export async function createGlobeRuntime(
     // 初始模式（`getMode()` 此时为 OFF）；之后每次变化由上面的回调更新。
     detectionModeStore.set(getDetectionMode());
 
+    // 8b) Intel HUD —— 照 `applicationShell.js:350-356` 创建。HUD 只负责计算
+    //     相机读数并发布到 `hud` 仓库，React 一侧（`intel-hud.tsx`）负责绘制。
+    //     `summaryService` 默认会调用 OpenAI 生成摘要；我们没有 OpenAI，传入
+    //     一个「未配置」的假服务：`configured()` 恒为 false，HUD 因此不会发起
+    //     摘要请求，只显示确定性摘要行（`hud.js:_summaryAvailable`）。
+    const hudStore = getHudStore(pinia);
+    const hudSummaryService = {
+      configured: async () => false,
+      summarize: async () => ({ ok: false, status: 0, data: null }),
+    };
+    const hud = new IntelHUD(viewer, {
+      placeSearch,
+      summaryService: hudSummaryService,
+      publish: (view: unknown) => hudStore.publish(view),
+    }) as IntelHUDLike;
+    lifecycle.defer(() => hud.destroy());
+
     // 9) 负责人模块。
     const controlServices = (scene.operations.surface as {
       controlServices: {
         cachedGroundFloor: unknown;
+        cachedMeshFloor: unknown;
+        GROUND_FLOOR_LIFT_M: unknown;
+        meshFloorPreferred: unknown;
         warmGroundFloor: unknown;
+        sampleMeshFloorCells: unknown;
       };
     }).controlServices;
 
@@ -399,7 +438,7 @@ export async function createGlobeRuntime(
       services: visualServices,
       elements: { _ppToggles: null, _sliderPanel: null },
       operations: detachOperations,
-      readHud: () => null,
+      readHud: () => hud,
       readCockpit: () => null,
       readDataManager: () => dataManager,
       readShareLinks: () => null,
@@ -508,7 +547,7 @@ export async function createGlobeRuntime(
         cctvLayer: layers.cctvLayer,
       },
       readControls: () => ({
-        hud: placeholderControl,
+        hud,
         _contextControls: contextControls,
         _cctvControls: placeholderControl,
         _radioControls: placeholderControl,
@@ -569,8 +608,27 @@ export async function createGlobeRuntime(
     let orbitTarget: unknown = null;
     let orbitOptions: { radius?: number; pitch?: number } = {};
 
-    // 9f) CockpitCoordinator —— 构造参数太多（applicationShell.js:358-434），
-    //     G2 先不创建，留给 G5（详见报告）。
+    // 9f) CockpitCoordinator —— 照 `applicationShell.js:358-423` 组装。它由
+    //     `actions.attachCockpit()` 延迟创建：`CockpitViewController` 的构造函数
+    //     会按 id 抓取 DOM 元素（`ui/cockpitController.js:99-141`），必须等 React
+    //     骨架（`cockpit-dom-contract.tsx`）渲染完成之后才创建。
+    const cockpitStore = getCockpitStore(pinia);
+    const cockpitPublish = {
+      presence: (view: unknown) => cockpitStore.publishPresence(view),
+      brief: (view: unknown) => cockpitStore.publishBrief(view),
+      context: (view: unknown) => cockpitStore.publishContext(view),
+      instruments: (view: unknown) => cockpitStore.publishInstruments(view),
+      route: (view: unknown) => cockpitStore.publishRoute(view),
+      vision: (view: unknown) => cockpitStore.publishVision(view),
+      signals: (rows: unknown) => cockpitStore.publishSignals(rows),
+      utilityLayout: (layout: unknown) =>
+        cockpitStore.publishUtilityLayout(layout),
+    };
+    let cockpitCoordinator: CockpitCoordinatorLike | null = null;
+    lifecycle.defer(() => {
+      cockpitCoordinator?.destroy();
+      cockpitCoordinator = null;
+    });
 
     // 10) 初始相机：整个地球（GEV 默认飞 Austin，这里不照搬）。
     flyToGlobeView(viewer);
@@ -787,11 +845,19 @@ export async function createGlobeRuntime(
       setStyle(name) {
         // 外壳的调用方式：`setStyle(style, { userInitiated: true })`
         // （`ui/displayBindings.js:57`）。其余选项走 `setStyle` 的默认值。
+        // VisualSettings 在切换后会通过 `readHud()` 拿到 HUD 并调用
+        // `hud.onStyleChange(style)`（`ui/visualSettings.js:1545`），颜色与
+        // 自动显隐（军事风格自动显示）因此与外壳完全一致。
         visualSettings.setStyle?.(name, { userInitiated: true });
       },
       getStyle() {
         // `ui/visualSettings.js:223` 的 `this.activeStyle`。
         return visualSettings.activeStyle ?? "normal";
+      },
+      toggleHud() {
+        // `ui/displayBindings.js:61`：`this.hud.toggle()` —— 用户显式开关，
+        // 内部会关闭 `_autoMode`，之后不再随风格自动显隐。
+        hud.toggle();
       },
       cycleDetection() {
         // 外壳在 `cycleDetectionMode()` 前调用 `claimDetection()`（`applicationShell.js:571`），
@@ -816,7 +882,100 @@ export async function createGlobeRuntime(
         if (!orbitTarget) return false;
         return Boolean(orbitController.toggle(orbitTarget, orbitOptions));
       },
+      attachCockpit() {
+        // 重建前先销毁旧实例：React StrictMode 会「挂载 → 清理 → 再挂载」。
+        cockpitCoordinator?.destroy();
+        cockpitCoordinator = null;
+
+        const coordinator = new CockpitCoordinator({
+          viewer,
+          services: {
+            flightsLayer: layers.flightsLayer,
+            militaryFlightsLayer: layers.militaryFlightsLayer,
+            isTr3b,
+            toggleTr3b,
+            militaryAwarenessLayer: layers.militaryAwarenessLayer,
+            cachedGroundFloor: controlServices.cachedGroundFloor,
+            cachedMeshFloor: controlServices.cachedMeshFloor,
+            GROUND_FLOOR_LIFT_M: controlServices.GROUND_FLOOR_LIFT_M,
+            meshFloorPreferred: controlServices.meshFloorPreferred,
+            warmGroundFloor: controlServices.warmGroundFloor,
+            sampleMeshFloorCells: controlServices.sampleMeshFloorCells,
+            holdContinuousRender,
+            releaseContinuousRender,
+            fetchRegionalBrief,
+            regionalDistanceM,
+            weatherCodeLabel,
+          },
+          // 外壳面板的显示切换控件我们没有，传 null（`_initCockpitDisplayPortal`
+          // 不会在无外壳时被调用）。
+          elements: {
+            _ppToggles: null,
+            _cockpitDisplayPanel: null,
+            _hudBtn: null,
+            _detectionBtn: null,
+            _sliderPanel: null,
+            _models3dBtn: null,
+          },
+          operations: {
+            publishCockpit: cockpitPublish,
+            publishCockpitPortal: noop,
+            _layoutRightPanels: noop,
+            _setCockpitVision: (
+              mode: string,
+              active: boolean,
+              options?: { revealParameters?: boolean },
+            ) => visualSettings._setCockpitVision?.(mode, active, options),
+            _stampNavigation: () => 0,
+            getAircraftTrackingTarget: () =>
+              aircraftTrackingTarget(
+                cockpitCoordinator?.cockpitView?.readAircraftInfo?.(),
+              ),
+            _scheduleRightPanelLayout: noop,
+          },
+          readDataManager: () => dataManager,
+          readContext: () =>
+            contextControls?.getContextModeState?.() ?? {
+              mode: null,
+              changing: false,
+            },
+          readActiveStyle: () => visualSettings.activeStyle ?? "normal",
+          readUtilityDisclosureOpen: () => false,
+          enterPanels: noop,
+          exitPanels: noop,
+        }) as CockpitCoordinatorLike;
+
+        // 放宽驾驶舱入场门槛。GEV 的 `cockpitEntryAllowed`（`contextModePolicy.js`）
+        // 要求 Contacts 模式且航班 + 军机图层同时开启——那来自 GEV 的 CONTACTS
+        // 面板语义，我们的 UI 没有这套面板。这里改为「航班或军机图层已开启」，
+        // 真正能否进入仍由 `enter()` 对 `viewer.trackedEntity` / 飞机信息的检查把关
+        // （`ui/cockpitTrackingController.js:141-144`）。
+        const cockpitView = coordinator.cockpitView as
+          | (CockpitViewLike & { isEntryAllowed?: () => boolean })
+          | undefined;
+        if (cockpitView) {
+          cockpitView.isEntryAllowed = () =>
+            dataManager.isEnabled("flights") ||
+            dataManager.isEnabled("military");
+        }
+
+        cockpitCoordinator = coordinator;
+        return () => {
+          if (cockpitCoordinator === coordinator) {
+            coordinator.destroy();
+            cockpitCoordinator = null;
+          }
+        };
+      },
     };
+
+    // G4 预留给 G5：`H` 键在 `globe-stage.tsx` 的快捷键绑定里派发
+    // `globe:toggle-hud`，这里转调 `actions.toggleHud`（等价外壳 `H` → `hud.toggle()`）。
+    const onToggleHud = () => actions.toggleHud();
+    window.addEventListener("globe:toggle-hud", onToggleHud);
+    lifecycle.defer(() =>
+      window.removeEventListener("globe:toggle-hud", onToggleHud),
+    );
 
     const runtime: GlobeRuntime = {
       viewer,
@@ -828,7 +987,7 @@ export async function createGlobeRuntime(
         layerBindings,
         context: contextControls,
         locationNavigation,
-        cockpit: null,
+        cockpit: cockpitCoordinator,
       },
       pinia,
       actions,

@@ -12171,6 +12171,22 @@
       }
     },
     "title": "全球 3D",
+    "hud": {
+      "aria": "情报 HUD"
+    },
+    "cockpit": {
+      "aria": "驾驶舱",
+      "entry": "进入驾驶舱",
+      "exit": "退出驾驶舱",
+      "mapView": "地图视角",
+      "groundSpeed": "地速 · 节",
+      "altitude": "高度 · 英尺",
+      "heading": "航向",
+      "prev": "上一个",
+      "current": "当前",
+      "next": "下一个",
+      "visionAria": "视觉模式"
+    },
     "status": {
       "starting": "正在启动 3D 地球…"
     },

@@ -99,6 +99,12 @@ export interface VisualSettingsLike {
   /** 是否已由用户显式切换过检测框（`ui/visualSettings.js:227`）。 */
   _detectionUserOverridden?: boolean;
   setStyle?(name: string, options?: unknown): void;
+  /** 驾驶舱视觉模式覆盖：`ui/visualSettings.js:351` `_setCockpitVision`。 */
+  _setCockpitVision?(
+    mode: string,
+    active: boolean,
+    options?: { revealParameters?: boolean },
+  ): void;
   stop(): void;
   destroy(): void;
 }
@@ -123,8 +129,26 @@ export interface LayerBindingsLike {
   disconnect(): void;
 }
 
-/** ContextControls 的窄接口。构造见 `ui/applicationShell.js:936`；
- * `connect` / `stop` / `restoreForDisposal` / `disconnect` 见 `ui/contextControls.js:70` / `:88` / `:94` / `:77`。
+/**
+ * IntelHUD 的窄接口。构造见 `vendor/gods-eye-view/src/hud.js:171-200`；
+ * `show` / `hide` / `toggle` / `setMode` / `onStyleChange` / `getVariant` /
+ * `attachDataManager` / `destroy` 见 `hud.js:998` / `:1008` / `:1014` / `:1029` /
+ * `:972` / `:1056` / `:1074` / `:1094`。
+ */
+export interface IntelHUDLike {
+  show(): void;
+  hide(): void;
+  toggle(): void;
+  setMode(mode: "auto" | "on" | "off"): void;
+  onStyleChange(styleName: string): void;
+  getVariant(): string;
+  setVariant(name: string): void;
+  readonly visible: boolean;
+  attachDataManager(dataManager: LayerLifecycleLike): void;
+  destroy(): void;
+}
+
+/** ContextControls 的窄接口。构造见 `ui/applicationShell.js:936`； * `connect` / `stop` / `restoreForDisposal` / `disconnect` 见 `ui/contextControls.js:70` / `:88` / `:94` / `:77`。
  * `setContextMode` 见 `ui/contextActions.js:57`；`clearSelectedLayers` 见 `ui/contextActions.js:184`。 */
 export interface ContextControlsLike {
   connect(dataManager: LayerLifecycleLike): unknown;
@@ -136,6 +160,29 @@ export interface ContextControlsLike {
     options?: Record<string, unknown>,
   ): Promise<unknown>;
   clearSelectedLayers?(options?: Record<string, unknown>): Promise<unknown>;
+  /** 当前 Context 模式状态：`ui/contextActions.js:51` `getContextModeState`。 */
+  getContextModeState?(): {
+    mode?: string | null;
+    active?: boolean;
+    changing?: boolean;
+  };
+}
+
+/** CockpitViewController 的窄接口（`ui/cockpitController.js:66`）。 */
+export interface CockpitViewLike {
+  readAircraftInfo?(): unknown;
+  active?: boolean;
+  isEntryAllowed?(): boolean;
+}
+
+/**
+ * CockpitCoordinator 的窄接口。构造见 `ui/applicationShell.js:358-423`；
+ * `cockpitView` / `stop` / `destroy` 见 `ui/cockpitCoordinator.js:56` / `:406` / `:410`。
+ */
+export interface CockpitCoordinatorLike {
+  readonly cockpitView?: CockpitViewLike;
+  stop?(): void;
+  destroy(): void;
 }
 
 /** LocationNavigation 的窄接口。构造见 `ui/applicationShell.js:298`；`destroy` 见 `ui/locationNavigation.js:433`。 */
@@ -144,14 +191,14 @@ export interface LocationNavigationLike {
   orbitController?: { stop?: () => void } | null;
 }
 
-/** 引擎/负责人集合。CockpitCoordinator 在 G2 不创建（见报告）。 */
+/** 引擎/负责人集合。CockpitCoordinator 由 `attachCockpit()` 延迟创建。 */
 export interface GlobeOwners {
   visualSettings: VisualSettingsLike | null;
   navigation: NavigationControllerLike | null;
   layerBindings: LayerBindingsLike | null;
   context: ContextControlsLike | null;
   locationNavigation: LocationNavigationLike | null;
-  cockpit: unknown;
+  cockpit: CockpitCoordinatorLike | null;
 }
 
 

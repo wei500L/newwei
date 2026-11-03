@@ -12172,6 +12172,22 @@
       }
     },
     "title": "3D Globe",
+    "hud": {
+      "aria": "Intel HUD"
+    },
+    "cockpit": {
+      "aria": "Cockpit",
+      "entry": "Enter cockpit",
+      "exit": "Exit cockpit",
+      "mapView": "Map view",
+      "groundSpeed": "Ground speed · kts",
+      "altitude": "Altitude · ft",
+      "heading": "Heading",
+      "prev": "Prev",
+      "current": "Current",
+      "next": "Next",
+      "visionAria": "Vision mode"
+    },
     "status": {
       "starting": "Starting the 3D globe…"
     },
