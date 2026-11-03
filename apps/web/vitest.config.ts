@@ -228,6 +228,10 @@ export default defineConfig({
         "lib/globe/layer-panel-model.ts",
         "lib/globe/target-format.ts",
         "app/(app)/globe/components/target-card.tsx",
+        // 3D 地球 G4：命令坞纯逻辑、快捷键绑定、外部状态仓库
+        "lib/globe/command-model.ts",
+        "lib/globe/shortcuts.ts",
+        "lib/globe/external-store.ts",
       ],
       // runtime.ts 与 globe-stage.tsx 依赖 Cesium（在 jsdom 里无法运行），
       // 因此不做单元测试；引擎行为由浏览器冒烟 + build 验证。

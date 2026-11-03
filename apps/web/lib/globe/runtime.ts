@@ -7,7 +7,9 @@ import {
   interruptCameraMotion,
   interruptGlobeRotation,
 } from "@gev/cameraVerbs.js";
+import { CITY_POIS } from "@gev/cityPois.js";
 import {
+  cycleMode as cycleDetectionMode,
   initDetection,
   destroyDetection,
   setDetectionStyle,
@@ -25,7 +27,8 @@ import {
   destroyTrackedReadout,
 } from "@gev/data/trackedReadout.js";
 import { setLocale as setGevLocale } from "@gev/i18n/index.js";
-import { flyToGlobeView } from "@gev/locations.js";
+import { flyToGlobeView, flyToLandmark } from "@gev/locations.js";
+import { MAP_STACKS } from "@gev/maps/catalog.js";
 import { OrbitController } from "@gev/orbit.js";
 import {
   initWorldOverlay,
@@ -38,6 +41,7 @@ import {
 } from "@gev/renderGovernor.js";
 import { createApplicationRequestServices } from "@gev/services/requests.js";
 import { createStandaloneCatalog } from "@gev/standalone/catalog.js";
+import { createStandalonePlaceSearch } from "@gev/standalone/placeSearch.js";
 import { ContextControls } from "@gev/ui/context.js";
 import { LayerBindings } from "@gev/ui/layerBindings.js";
 import { LocationNavigation } from "@gev/ui/locationNavigation.js";
@@ -49,6 +53,8 @@ import { applicationPinia } from "@gev/ui/vueRuntime.js";
 import * as Cesium from "cesium";
 import { setActivePinia } from "pinia";
 
+import { placeKindFromTypes } from "./command-model";
+import { detectionModeStore } from "./detection-mode-store";
 import type {
   ContextControlsLike,
   GlobeOwners,
@@ -70,6 +76,24 @@ export interface GlobeRuntimeOptions {
   onStatus?: (text: string) => void;
 }
 
+/** 地点搜索结果（`searchPlaces` 的返回项，命令坞建议列表用）。 */
+export interface GlobePlaceResult {
+  id: string;
+  label: string;
+  sublabel?: string;
+  lat: number;
+  lon: number;
+  /** 结果类型 kicker：coordinate / city / region / landmark / place。 */
+  kind: string;
+}
+
+/** 可用的底图栈（已按 `requiresIon` / Google 密钥过滤）。 */
+export interface GlobeMapStackInfo {
+  id: string;
+  label: string;
+  shortLabel: string;
+}
+
 /** 图层面板上 React 侧可调用的动作。每个方法上都注明对应的 GEV 源码位置。 */
 export interface GlobeRuntimeActions {
   /** `data/lifecycle.js:602`（`toggle`）。 */
@@ -88,6 +112,33 @@ export interface GlobeRuntimeActions {
   ): Promise<unknown>;
   /** 全部关闭：`ui/contextActions.js:184` `clearSelectedLayers`（外壳在 `applicationShell.js:1571-1583` 接线）。 */
   clearLayers(): Promise<unknown>;
+
+  // ── G4 命令坞 ────────────────────────────────────────────────
+  /** 地点搜索：`standalone/placeSearch.js` `createStandalonePlaceSearch`
+   *  （= `search/defaults.js` `createDefaultPlaceSearch`）的多来源回退。 */
+  searchPlaces(query: string, signal?: AbortSignal): Promise<GlobePlaceResult[]>;
+  /** 选中搜索结果后飞过去：`locations.js:94` `flyToLandmark`（G2 的
+   *  `LocationNavigation` 是无 DOM 的构造，没有可复用的「飞到任意结果」方法，
+   *  故按提示词允许的退回到 `flyToLandmark`；先释放跟踪，等价 G3 的 `untrack`）。 */
+  flyToPlace(result: GlobePlaceResult): boolean;
+  /** 切换底图栈：`maps/controller.js:190` `setStack`。 */
+  setMapStack(id: string): Promise<unknown>;
+  /** 当前底图栈 id：`maps/controller.js:112` `getActiveId`。 */
+  getMapStack(): string;
+  /** 可取用的底图栈：过滤 `requiresIon`，无 Google 密钥时再去掉 `photoreal`。 */
+  availableMapStacks(): GlobeMapStackInfo[];
+  /** 视觉滤镜：`ui/visualSettings.js:1473` `setStyle`（外壳以 `{ userInitiated: true }` 调用）。 */
+  setStyle(name: string): void;
+  /** 当前风格：`ui/visualSettings.js` 的 `activeStyle`。 */
+  getStyle(): string;
+  /** 切换检测框：`data/detection.js:410` `cycleMode`（Off ↔ 上一次非 Off 模式）。 */
+  cycleDetection(): void;
+  /** 当前检测框模式标签：`data/detection.js:446` `getMode`。 */
+  getDetectionMode(): string;
+  /** 回到整个地球：先释放跟踪（同 G3 `untrack`），再 `locations.js:38` `flyToGlobeView`。 */
+  resetGlobe(): void;
+  /** 自动旋转：`orbit.js` `OrbitController.toggle`（外壳在 `_initOrbit` 里创建）。 */
+  toggleOrbit(): boolean;
 }
 
 export interface GlobeRuntime {
@@ -236,6 +287,15 @@ export async function createGlobeRuntime(
     const mapStackController =
       scene.mapStackController as MapStackControllerLike;
 
+    // G4 地点搜索：`standalone/placeSearch.js` → `search/defaults.js`。约定
+    // 「在 G2 运行时里创建一次」；内置 CITY_POIS 让城市/地标不发网络请求，
+    // 坐标由 coordinateGeocoder 直接回答，其余按 Google → Photon → Nominatim 回退。
+    const placeSearch = createStandalonePlaceSearch({
+      presets: CITY_POIS,
+      resolveApiKey: () => options.googleApiKey,
+      signal: lifecycle.signal,
+    });
+
     // 6) 图层目录。不传 nepalBoundaryResolver：放弃 Bhote Koshi 洪水场景的
     //    边界绘制（该图层仍会注册，只是没有边界 resolver）。
     const catalog = createStandaloneCatalog({
@@ -282,6 +342,9 @@ export async function createGlobeRuntime(
     ).filter(Boolean);
     initDetection(viewer, detectionLayers, (modeLabel: string) => {
       visualSettingsRef?._updateDetectionButton?.(modeLabel);
+      // G4：第三个参数是「模式标签回调」，G2 里只喂 VisualSettings；这里同时
+      // 写进外部仓库，React 命令坞订阅它显示当前检测框模式。
+      detectionModeStore.set(String(modeLabel));
     });
     lifecycle.defer(() => destroyDetection());
 
@@ -289,6 +352,8 @@ export async function createGlobeRuntime(
     lifecycle.defer(() => destroyTrackedReadout());
 
     setDetectionStyle("normal");
+    // 初始模式（`getMode()` 此时为 OFF）；之后每次变化由上面的回调更新。
+    detectionModeStore.set(getDetectionMode());
 
     // 9) 负责人模块。
     const controlServices = (scene.operations.surface as {
@@ -488,6 +553,22 @@ export async function createGlobeRuntime(
     }) as LocationNavigationLike;
     lifecycle.defer(() => locationNavigation.destroy());
 
+    // G4 自动旋转：`OrbitController` 在外壳里是 `composition.js` 注入的 service
+    // （在黑名单里），这里照外壳 `_initOrbit` 的写法直接 import `@gev/orbit.js`
+    // 并创建（已核实不会碰到 `.vue`）。
+    const orbitController = new OrbitController(viewer) as {
+      active: boolean;
+      toggle(
+        target: unknown,
+        options?: { radius?: number; pitch?: number },
+      ): boolean;
+      stop(): void;
+    };
+    lifecycle.defer(() => orbitController.stop());
+    // 最近一次 `flyToPlace` 的目标，供 `O` 键绕其旋转。
+    let orbitTarget: unknown = null;
+    let orbitOptions: { radius?: number; pitch?: number } = {};
+
     // 9f) CockpitCoordinator —— 构造参数太多（applicationShell.js:358-434），
     //     G2 先不创建，留给 G5（详见报告）。
 
@@ -616,6 +697,124 @@ export async function createGlobeRuntime(
       },
       clearLayers() {
         return contextControls?.clearSelectedLayers?.() ?? Promise.resolve(null);
+      },
+
+      // ── G4 命令坞 ────────────────────────────────────────────
+      async searchPlaces(query, signal) {
+        const text = String(query ?? "").trim();
+        if (!text) return [];
+        // `createPlaceSearch` 负责多来源回退与取消：坐标 / 内置地名 / Google /
+        // Photon / Nominatim（`search/defaults.js`）。GEV 一次只返回最佳匹配。
+        const outcome = await placeSearch.geocode(text, { signal });
+        const place = outcome?.place;
+        if (!place) return [];
+        const lat = Number(place.lat);
+        const lon = Number(place.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+        const label = String(place.label || place.name || text);
+        const name = String(place.name || "");
+        return [
+          {
+            id: `${lat.toFixed(5)},${lon.toFixed(5)}|${label}`,
+            label,
+            sublabel: name && name !== label ? name : undefined,
+            lat,
+            lon,
+            kind: placeKindFromTypes(place.types),
+          },
+        ];
+      },
+      flyToPlace(result) {
+        if (
+          !result ||
+          !Number.isFinite(result.lat) ||
+          !Number.isFinite(result.lon)
+        ) {
+          return false;
+        }
+        // 先释放跟踪，等价 G3 的 `untrack`（LocationNavigation 的导航交接在
+        // 无 DOM 的 G2 里没有可复用入口，按提示词退回到 flyToLandmark）。
+        actions.untrack();
+        // 不同尺度的结果给不同的取景距离：城市看全景，地标贴近，坐标适中。
+        const rangeByKind: Record<string, number> = {
+          coordinate: 1200,
+          city: 15000,
+          region: 200000,
+          landmark: 900,
+          place: 4000,
+        };
+        const range = rangeByKind[result.kind] ?? 4000;
+        const flight = flyToLandmark(viewer, result.lat, result.lon, {
+          range,
+          pitch: -35,
+          heading: 0,
+          duration: 2.6,
+        });
+        // 记下目标，供 `O` 键自动旋转。
+        orbitTarget = flight?.targetPosition ?? null;
+        orbitOptions = { radius: range, pitch: -35 };
+        return Boolean(flight);
+      },
+      setMapStack(id) {
+        // `maps/controller.js:190` `setStack`。
+        return mapStackController.setStack(id);
+      },
+      getMapStack() {
+        // `maps/controller.js:112` `getActiveId`。
+        return mapStackController.getActiveId();
+      },
+      availableMapStacks() {
+        // `maps/catalog.js` `MAP_STACKS`：过滤 `requiresIon`；`photoreal`
+        // （Google 3D）在没有 Google 密钥时去掉。
+        const hasGoogle = Boolean(String(options.googleApiKey ?? "").trim());
+        return (MAP_STACKS as {
+          id: string;
+          label: string;
+          shortLabel?: string;
+          requiresIon?: boolean;
+        }[])
+          .filter(
+            (stack) =>
+              !stack.requiresIon &&
+              (hasGoogle || stack.id !== "photoreal"),
+          )
+          .map((stack) => ({
+            id: stack.id,
+            label: stack.label,
+            shortLabel: stack.shortLabel ?? stack.label,
+          }));
+      },
+      setStyle(name) {
+        // 外壳的调用方式：`setStyle(style, { userInitiated: true })`
+        // （`ui/displayBindings.js:57`）。其余选项走 `setStyle` 的默认值。
+        visualSettings.setStyle?.(name, { userInitiated: true });
+      },
+      getStyle() {
+        // `ui/visualSettings.js:223` 的 `this.activeStyle`。
+        return visualSettings.activeStyle ?? "normal";
+      },
+      cycleDetection() {
+        // 外壳在 `cycleDetectionMode()` 前调用 `claimDetection()`（`applicationShell.js:571`），
+        // 把这次切换记为显式的用户选择，之后的风格预设不会覆盖它。
+        visualSettings._detectionUserOverridden = true;
+        // `data/detection.js:410` `cycleMode`。
+        cycleDetectionMode();
+      },
+      getDetectionMode() {
+        // `data/detection.js:446` `getMode`。
+        return getDetectionMode();
+      },
+      resetGlobe() {
+        // 先释放跟踪（与 G3 的 `untrack` 相同），再飞回整个地球。
+        actions.untrack();
+        orbitController.stop();
+        orbitTarget = null;
+        flyToGlobeView(viewer);
+      },
+      toggleOrbit() {
+        // `orbit.js` `OrbitController.toggle`（外壳 `_initOrbit` / `_toggleOrbit`）。
+        if (!orbitTarget) return false;
+        return Boolean(orbitController.toggle(orbitTarget, orbitOptions));
       },
     };
 

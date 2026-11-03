@@ -2,6 +2,7 @@
 
 import { ConfigProvider, theme } from "antd";
 import dynamic from "next/dynamic";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -24,10 +25,21 @@ export function GlobeContent() {
   const { t } = useTranslation();
   usePageTitle(t("globe.title"));
 
+  // G4 快捷键控制的两个 React 侧状态：
+  // - layersOpen：F 切换图层面板显隐（传给 G3 的面板）；
+  // - cleanView：V 隐藏所有 React 面板，只保留地球和数据署名。
+  const [layersOpen, setLayersOpen] = useState(true);
+  const [cleanView, setCleanView] = useState(false);
+
   return (
     <div className="dark" data-theme="dark">
       <ConfigProvider theme={{ algorithm: theme.darkAlgorithm }}>
-        <GlobeStage />
+        <GlobeStage
+          layersOpen={layersOpen}
+          cleanView={cleanView}
+          onToggleLayers={() => setLayersOpen((open) => !open)}
+          onToggleCleanView={() => setCleanView((clean) => !clean)}
+        />
       </ConfigProvider>
     </div>
   );

@@ -12124,6 +12124,52 @@
     }
   },
   "globe": {
+    "styles": {
+      "normal": "正常",
+      "retro": "CRT",
+      "surveillance": "夜视",
+      "thermal": "热成像",
+      "anime": "动漫",
+      "noir": "黑白"
+    },
+    "mapStacks": {
+      "photoreal": "Google 3D",
+      "esri-imagery": "Esri 卫星图",
+      "osm": "OSM"
+    },
+    "dock": {
+      "aria": "命令坞",
+      "searchPlaceholder": "搜索地点或输入坐标",
+      "searchAria": "搜索地点",
+      "flyToCoordinate": "飞到 {{coords}}",
+      "styleAria": "视觉滤镜",
+      "mapStackAria": "底图",
+      "detectionAria": "检测框：{{mode}}",
+      "resetGlobe": "回到地球",
+      "shortcuts": "快捷键",
+      "kind": {
+        "coordinate": "坐标",
+        "city": "城市",
+        "region": "地区",
+        "landmark": "地标",
+        "place": "地点"
+      },
+      "detectionModes": {
+        "OFF": "关闭",
+        "SPARSE": "稀疏",
+        "BALANCED": "均衡",
+        "DENSE": "密集"
+      },
+      "help": {
+        "escape": "关闭搜索",
+        "hud": "切换 HUD",
+        "orbit": "自动旋转",
+        "cleanView": "纯净视图",
+        "layers": "图层面板",
+        "detection": "切换检测框",
+        "cctv": "开关摄像头图层"
+      }
+    },
     "title": "全球 3D",
     "status": {
       "starting": "正在启动 3D 地球…"

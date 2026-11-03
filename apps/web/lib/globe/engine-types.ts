@@ -94,6 +94,10 @@ export interface VisualSettingsLike {
   _initBloomSharpen(): void;
   _setDetectionDensity?(pct?: number): void;
   _updateDetectionButton?(label: string): void;
+  /** 当前风格（`ui/visualSettings.js:223` 的 `this.activeStyle`）。 */
+  activeStyle?: string;
+  /** 是否已由用户显式切换过检测框（`ui/visualSettings.js:227`）。 */
+  _detectionUserOverridden?: boolean;
   setStyle?(name: string, options?: unknown): void;
   stop(): void;
   destroy(): void;

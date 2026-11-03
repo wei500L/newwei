@@ -12125,6 +12125,52 @@
     }
   },
   "globe": {
+    "styles": {
+      "normal": "Normal",
+      "retro": "CRT",
+      "surveillance": "NVG",
+      "thermal": "FLIR",
+      "anime": "Anime",
+      "noir": "Noir"
+    },
+    "mapStacks": {
+      "photoreal": "Google 3D",
+      "esri-imagery": "Esri Satellite",
+      "osm": "OSM"
+    },
+    "dock": {
+      "aria": "Command dock",
+      "searchPlaceholder": "Search a place or enter coordinates",
+      "searchAria": "Search places",
+      "flyToCoordinate": "Fly to {{coords}}",
+      "styleAria": "Visual filter",
+      "mapStackAria": "Map source",
+      "detectionAria": "Detection overlay: {{mode}}",
+      "resetGlobe": "Back to the globe",
+      "shortcuts": "Keyboard shortcuts",
+      "kind": {
+        "coordinate": "Coordinate",
+        "city": "City",
+        "region": "Region",
+        "landmark": "Landmark",
+        "place": "Place"
+      },
+      "detectionModes": {
+        "OFF": "Off",
+        "SPARSE": "Sparse",
+        "BALANCED": "Balanced",
+        "DENSE": "Dense"
+      },
+      "help": {
+        "escape": "Close search",
+        "hud": "Toggle HUD",
+        "orbit": "Auto-orbit",
+        "cleanView": "Clean view",
+        "layers": "Layer panel",
+        "detection": "Cycle detection",
+        "cctv": "Toggle camera layer"
+      }
+    },
     "title": "3D Globe",
     "status": {
       "starting": "Starting the 3D globe…"

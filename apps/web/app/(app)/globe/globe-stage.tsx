@@ -12,9 +12,23 @@ import {
   type GlobeRuntime,
 } from "@/lib/globe/runtime";
 import { GlobeRuntimeProvider } from "@/lib/globe/runtime-context";
+import {
+  bindGlobeShortcuts,
+  type GlobeShortcutActions,
+} from "@/lib/globe/shortcuts";
 
+import { CommandDock } from "./components/command-dock";
 import { GlobeContextPanel } from "./components/globe-context-panel";
 import { LayerPanel } from "./components/layer-panel";
+
+export interface GlobeStageProps {
+  /** G4：F 键控制的图层面板显隐（由 globe-content 持有）。 */
+  layersOpen: boolean;
+  /** G4：V 键控制的纯净视图（隐藏所有 React 面板）。 */
+  cleanView: boolean;
+  onToggleLayers: () => void;
+  onToggleCleanView: () => void;
+}
 
 /** 把 i18next 语言标签收敛到 GEV 只识别的两种 locale。 */
 function mapLocale(language: string | undefined): "zh-CN" | "en" {
@@ -39,7 +53,12 @@ const CESIUM_CREDITS_CSS = `
 #cesium-credits .cesium-credit-lightbox-overlay { z-index: 61; }
 `;
 
-export default function GlobeStage() {
+export default function GlobeStage({
+  layersOpen,
+  cleanView,
+  onToggleLayers,
+  onToggleCleanView,
+}: GlobeStageProps) {
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const initialLocaleRef = useRef<"zh-CN" | "en">(mapLocale(i18n.language));
@@ -97,6 +116,36 @@ export default function GlobeStage() {
     runtime?.setLocale(locale);
   }, [runtime, locale]);
 
+  // G4 快捷键：整页绑定（dock 被纯净视图隐藏时仍可操作）。
+  useEffect(() => {
+    if (!runtime) return undefined;
+    const actions: GlobeShortcutActions = {
+      setStyle: (style) => runtime.actions.setStyle(style),
+      // Esc 关闭搜索：命令坞监听这个事件。
+      dismissSearch: () =>
+        window.dispatchEvent(new CustomEvent("globe:dismiss-search")),
+      // H 交给 G5，本批先派发自定义事件。
+      toggleHud: () => window.dispatchEvent(new CustomEvent("globe:toggle-hud")),
+      toggleOrbit: () => {
+        runtime.actions.toggleOrbit();
+      },
+      toggleCleanView: onToggleCleanView,
+      toggleLayers: onToggleLayers,
+      cycleDetection: () => runtime.actions.cycleDetection(),
+      // C 开关摄像头图层（注意：不是驾驶舱）。
+      toggleCctv: () => {
+        void runtime.actions.toggleLayer("cctv").catch(() => undefined);
+      },
+    };
+    return bindGlobeShortcuts(document, actions, {
+      isSearchFocused: () => {
+        const active = document.activeElement;
+        if (!active) return false;
+        return ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName);
+      },
+    });
+  }, [runtime, onToggleCleanView, onToggleLayers]);
+
   const loading = !runtime && !error;
 
   return (
@@ -123,8 +172,10 @@ export default function GlobeStage() {
 
       {runtime && (
         <GlobeRuntimeProvider runtime={runtime}>
-          <LayerPanel />
-          <GlobeContextPanel />
+          {/* V 纯净视图隐藏所有 React 面板，只保留地球与数据署名。 */}
+          {!cleanView && layersOpen ? <LayerPanel /> : null}
+          {!cleanView ? <GlobeContextPanel /> : null}
+          {!cleanView ? <CommandDock /> : null}
         </GlobeRuntimeProvider>
       )}
 
