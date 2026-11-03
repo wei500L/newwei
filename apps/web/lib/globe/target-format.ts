@@ -20,9 +20,17 @@ export interface TargetField {
   labelKey: string;
   value: string;
   mono?: boolean;
+  /** G6：状态类字段的 antd Tag 颜色（error / warning）；低严重度不传。 */
+  tagColor?: "error" | "warning" | "default";
 }
 
 export interface TargetLink {
+  labelKey: string;
+  href: string;
+}
+
+/** G6：详情卡的主按钮（跳回控制台的事件 / 新闻详情）。 */
+export interface TargetConsoleAction {
   labelKey: string;
   href: string;
 }
@@ -36,6 +44,8 @@ export interface TargetView {
   position?: { lat: number; lon: number; altM?: number };
   /** 图层 id（卡片头部用它把英文图层名翻成当前语言）。 */
   layerId: string;
+  /** G6：主按钮；默认格式化器不设置。 */
+  console?: TargetConsoleAction;
 }
 
 export type TargetRecord = Record<string, unknown>;
@@ -56,6 +66,8 @@ const KIND_KEYS: Record<string, string> = {
   "military-installations": "globe.target.kinds.installation",
   "alpr-cameras": "globe.target.kinds.alpr",
   "newwei-intel": "globe.target.kinds.intel",
+  "newwei-events": "globe.target.kinds.event",
+  "newwei-news": "globe.target.kinds.news",
 };
 
 const GENERIC_EXCLUDE = new Set(["entity", "id", "layerId"]);
@@ -400,6 +412,82 @@ function formatGeneric(record: TargetRecord): TargetView {
   };
 }
 
+/** G6：情报点（事件 / 新闻）的详情格式化器。数据来自记录的 `properties`。 */
+function formatNewweiIntel(
+  record: TargetRecord,
+  layerId: string,
+  locale: SupportedLocale,
+): TargetView {
+  const p = props(record);
+  const isNews = layerId === "newwei-news";
+  const zh = String(locale).toLowerCase().startsWith("zh");
+  const fields: TargetField[] = [];
+
+  fields.push({
+    labelKey: "globe.target.field.type",
+    value: isNews ? (zh ? "新闻" : "News") : zh ? "事件" : "Event",
+  });
+
+  const severity = text(p.severity).toLowerCase();
+  if (severity) {
+    const tone =
+      severity === "high"
+        ? "error"
+        : severity === "medium"
+          ? "warning"
+          : undefined;
+    const label =
+      severity === "high"
+        ? zh
+          ? "高"
+          : "High"
+        : severity === "medium"
+          ? zh
+            ? "中"
+            : "Medium"
+          : severity === "low"
+            ? zh
+              ? "低"
+              : "Low"
+            : severity;
+    fields.push({
+      labelKey: "globe.target.field.severity",
+      value: label,
+      ...(tone ? { tagColor: tone } : {}),
+    });
+  }
+
+  const timeValue = p.time ?? p.latestAt ?? p.publishedAt ?? p.ingestedAt;
+  if (timeValue !== undefined && timeValue !== null && text(timeValue) !== "") {
+    const numeric = numberOf(timeValue);
+    const value =
+      numeric !== null ? formatTimestamp(numeric, locale) : text(timeValue);
+    if (value) fields.push({ labelKey: "globe.target.field.time", value });
+  }
+
+  pushField(fields, "globe.target.field.summary", p.summary);
+
+  const consoleHref =
+    text(p.consoleUrl) ||
+    (isNews
+      ? `/items/${encodeURIComponent(text(p.newweiId) || text(record.id))}`
+      : `/events/${encodeURIComponent(text(p.newweiId) || text(record.id))}`);
+
+  return {
+    kindKey: isNews ? "globe.target.kinds.news" : "globe.target.kinds.event",
+    title: text(p.name) || baseTitle(record),
+    subtitle: isNews ? (zh ? "新闻" : "News") : zh ? "事件" : "Event",
+    fields,
+    links: [],
+    position: positionOf(record),
+    layerId,
+    console: {
+      labelKey: isNews ? "globe.intel.openNews" : "globe.intel.openEvent",
+      href: consoleHref,
+    },
+  };
+}
+
 /** 主入口：按图层选择专用格式化器，其它图层走通用格式化器。 */
 export function formatTarget(
   record: TargetRecord,
@@ -422,6 +510,9 @@ export function formatTarget(
       return formatFirm(record);
     case "cctv":
       return formatCctv(record, locale);
+    case "newwei-events":
+    case "newwei-news":
+      return formatNewweiIntel(record, layerId, locale);
     default:
       return formatGeneric(record);
   }

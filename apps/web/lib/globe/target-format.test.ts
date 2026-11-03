@@ -229,3 +229,87 @@ describe("通用格式化器", () => {
     ]);
   });
 });
+
+describe("formatTarget 情报点（G6）", () => {
+  it("事件：类型、严重程度 Tag 颜色、时间、摘要与打开事件详情", () => {
+    const view = formatTarget(
+      {
+        id: "newwei-events:evt:evt-1",
+        layerId: "newwei-events",
+        layerName: "情报事件",
+        label: "Border incident",
+        latitude: 10,
+        longitude: 20,
+        properties: {
+          name: "Border incident",
+          kind: "event",
+          severity: "high",
+          time: "2026-01-05T00:00:00.000Z",
+          summary: "A summary",
+          consoleUrl: "/events/evt-1",
+          newweiId: "evt-1",
+        },
+      },
+      { locale: "zh-CN" },
+    );
+    expect(view.kindKey).toBe("globe.target.kinds.event");
+    expect(view.title).toBe("Border incident");
+    expect(view.position).toEqual({ lat: 10, lon: 20 });
+    const byKey = Object.fromEntries(
+      view.fields.map((field) => [field.labelKey, field]),
+    );
+    expect(byKey["globe.target.field.type"]!.value).toBe("事件");
+    expect(byKey["globe.target.field.severity"]!.value).toBe("高");
+    expect(byKey["globe.target.field.severity"]!.tagColor).toBe("error");
+    expect(byKey["globe.target.field.time"]!.value).toBeTruthy();
+    expect(byKey["globe.target.field.summary"]!.value).toBe("A summary");
+    expect(view.console).toEqual({
+      labelKey: "globe.intel.openEvent",
+      href: "/events/evt-1",
+    });
+  });
+
+  it("新闻：kind=news、medium 用 warning、主按钮打开新闻", () => {
+    const view = formatTarget(
+      {
+        id: "newwei-news:news:news-9",
+        layerId: "newwei-news",
+        label: "Port reopens",
+        latitude: 30,
+        longitude: 32,
+        properties: {
+          name: "Port reopens",
+          kind: "news",
+          severity: "medium",
+          time: "2026-02-01T00:00:00.000Z",
+          summary: "Suez",
+          consoleUrl: "/items/news-9",
+          newweiId: "news-9",
+        },
+      },
+      { locale: "en-US" },
+    );
+    expect(view.kindKey).toBe("globe.target.kinds.news");
+    const byKey = Object.fromEntries(
+      view.fields.map((field) => [field.labelKey, field]),
+    );
+    expect(byKey["globe.target.field.type"]!.value).toBe("News");
+    expect(byKey["globe.target.field.severity"]!.tagColor).toBe("warning");
+    expect(view.console).toEqual({
+      labelKey: "globe.intel.openNews",
+      href: "/items/news-9",
+    });
+  });
+
+  it("低严重度不加颜色", () => {
+    const view = formatTarget({
+      id: "newwei-events:evt:low",
+      layerId: "newwei-events",
+      properties: { name: "Low", severity: "low", consoleUrl: "/events/low" },
+    });
+    const severity = view.fields.find(
+      (field) => field.labelKey === "globe.target.field.severity",
+    );
+    expect(severity?.tagColor).toBeUndefined();
+  });
+});

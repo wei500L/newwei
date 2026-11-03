@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Tooltip } from "antd";
+import { Button, Tag, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import type { TargetView } from "@/lib/globe/target-format";
@@ -21,6 +21,8 @@ export interface TargetCardProps {
   cockpitEntryAvailable?: boolean;
   /** G5：点击「进入驾驶舱」（通常触发骨架里的 `#cockpit-entry`）。 */
   onEnterCockpit?: () => void;
+  /** G6：点击主按钮（打开事件 / 新闻详情），参数是要跳转的 href。 */
+  onOpenConsole?: (href: string) => void;
 }
 
 /**
@@ -38,6 +40,7 @@ export function TargetCard({
   onClose,
   cockpitEntryAvailable = false,
   onEnterCockpit,
+  onOpenConsole,
 }: TargetCardProps) {
   const { t } = useTranslation();
   const searchHref = `/search?q=${encodeURIComponent(view.title)}`;
@@ -82,7 +85,11 @@ export function TargetCard({
                     field.mono ? "font-mono" : ""
                   }`}
                 >
-                  {field.value}
+                  {field.tagColor ? (
+                    <Tag color={field.tagColor}>{field.value}</Tag>
+                  ) : (
+                    field.value
+                  )}
                 </dd>
               </div>
             ))}
@@ -92,6 +99,17 @@ export function TargetCard({
         )}
 
         <div className="mt-3 flex flex-wrap gap-2">
+          {view.console && onOpenConsole ? (
+            <Button
+              size="small"
+              type="primary"
+              onClick={() => onOpenConsole(view.console!.href)}
+            >
+              {t(view.console.labelKey, {
+                defaultValue: view.console.labelKey,
+              })}
+            </Button>
+          ) : null}
           {tracking ? (
             <Button
               size="small"

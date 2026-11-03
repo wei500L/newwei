@@ -2,6 +2,7 @@
 import "./cesium-base";
 // ^ 第一条 import：在 Cesium / GEV 模块求值前设置 window.CESIUM_BASE_URL。
 
+import { localGeoJsonServices } from "@gev/app/localGeojsonServices.js";
 import { createApplicationScene } from "@gev/app/scene.js";
 import {
   interruptCameraMotion,
@@ -9,6 +10,10 @@ import {
 } from "@gev/cameraVerbs.js";
 import { CITY_POIS } from "@gev/cityPois.js";
 import { aircraftTrackingTarget } from "@gev/cockpitTracking.js";
+import {
+  getContextStore as getGevContextStore,
+  selectEntityContext,
+} from "@gev/data/contextStore.js";
 import {
   cycleMode as cycleDetectionMode,
   initDetection,
@@ -23,6 +28,7 @@ import {
   resumeDetection,
 } from "@gev/data/detection.js";
 import { LayerLifecycle } from "@gev/data/lifecycle.js";
+import { createLocalGeoJsonLayer } from "@gev/data/localGeojsonCore.js";
 import {
   fetchRegionalBrief,
   regionalDistanceM,
@@ -88,6 +94,14 @@ export interface GlobeRuntimeOptions {
   locale: "zh-CN" | "en";
   /** 加载状态文字（GEV 每条 loaderStatus 更新时回调）。 */
   onStatus?: (text: string) => void;
+  /** G6 情报图层在面板里的显示名（由 React 侧用 `t()` 传入）。 */
+  intelLayerNames?: { events: string; news: string };
+}
+
+/** G6 `actions.setIntelData` 的输入；每类可选，只更新传入的图层。 */
+export interface IntelDataPayload {
+  eventsGeojsonl?: string;
+  newsGeojsonl?: string;
 }
 
 /** 地点搜索结果（`searchPlaces` 的返回项，命令坞建议列表用）。 */
@@ -99,6 +113,8 @@ export interface GlobePlaceResult {
   lon: number;
   /** 结果类型 kicker：coordinate / city / region / landmark / place。 */
   kind: string;
+  /** G6：覆盖取景距离（米），`/globe` 深链用 300 km 观察情报点。 */
+  rangeM?: number;
 }
 
 /** 可用的底图栈（已按 `requiresIon` / Google 密钥过滤）。 */
@@ -157,6 +173,12 @@ export interface GlobeRuntimeActions {
   toggleOrbit(): boolean;
   /** 创建 / 重建驾驶舱协调器（React 骨架挂载后调用）。返回销毁函数。 */
   attachCockpit(): () => void;
+
+  // ── G6 情报图层 ────────────────────────────────────────────
+  /** 把事件 / 新闻 GeoJSONL 写入对应本地图层。每类可选，只刷新传入的图层。 */
+  setIntelData(data: IntelDataPayload): Promise<void>;
+  /** 按 `${layerId}:${newweiId}` 选中一个情报要素（GET 参数 focus 用）。 */
+  selectIntelFeature(layerId: string, newweiId: string): boolean;
 }
 
 export interface GlobeRuntime {
@@ -331,6 +353,54 @@ export async function createGlobeRuntime(
     for (const layer of catalog.layers) {
       dataManager.register(layer);
     }
+
+    // G6：我们的情报图层。事件和新闻各自一种颜色，所以是两张本地 GeoJSON 图层。
+    // 必须在 finalizeRegistrations 之前注册；初始 URL 是空 Blob（零要素），
+    // 由 `actions.setIntelData` 在数据到达后换成本地 Blob URL。
+    interface IntelLayerLike {
+      reload(viewer: unknown, nextUrl?: string): Promise<void>;
+    }
+    const intelNames = options.intelLayerNames ?? {
+      events: "Intel Events",
+      news: "Intel News",
+    };
+    const createEmptyGeojsonUrl = () =>
+      URL.createObjectURL(new Blob([""], { type: "application/geo+json" }));
+    const intelUrls = {
+      events: createEmptyGeojsonUrl(),
+      news: createEmptyGeojsonUrl(),
+    };
+    const intelLayers = {
+      events: createLocalGeoJsonLayer(
+        {
+          id: "newwei-events",
+          url: intelUrls.events,
+          name: intelNames.events,
+          color: "#f59e0b",
+          icon: "◆",
+          source: "Newwei",
+        },
+        localGeoJsonServices,
+      ) as IntelLayerLike,
+      news: createLocalGeoJsonLayer(
+        {
+          id: "newwei-news",
+          url: intelUrls.news,
+          name: intelNames.news,
+          color: "#38bdf8",
+          icon: "●",
+          source: "Newwei",
+        },
+        localGeoJsonServices,
+      ) as IntelLayerLike,
+    };
+    lifecycle.defer(() => {
+      URL.revokeObjectURL(intelUrls.events);
+      URL.revokeObjectURL(intelUrls.news);
+    });
+    dataManager.register(intelLayers.events);
+    dataManager.register(intelLayers.news);
+
     for (const layer of catalog.layers) {
       (layer as { attachDataManager?: (manager: unknown) => void })
         .attachDataManager?.(dataManager);
@@ -340,7 +410,11 @@ export async function createGlobeRuntime(
         layer as { attachMapStackController?: (controller: unknown) => void }
       ).attachMapStackController?.(mapStackController);
     }
-    dataManager.finalizeRegistrations(catalog.metadata);
+    dataManager.finalizeRegistrations([
+      ...catalog.metadata,
+      { id: "newwei-events", disposition: "local-only" },
+      { id: "newwei-news", disposition: "local-only" },
+    ]);
     // 跳过：LayerPresentation.mount('#data-toggles') 与 createCyberSonarScene。
 
     // 图层实例（按源码 id 取；缺失的过滤掉）。
@@ -801,7 +875,9 @@ export async function createGlobeRuntime(
           landmark: 900,
           place: 4000,
         };
-        const range = rangeByKind[result.kind] ?? 4000;
+        const range = Number.isFinite(result.rangeM)
+          ? Number(result.rangeM)
+          : (rangeByKind[result.kind] ?? 4000);
         const flight = flyToLandmark(viewer, result.lat, result.lon, {
           range,
           pitch: -35,
@@ -967,6 +1043,84 @@ export async function createGlobeRuntime(
           }
         };
       },
+
+      // ── G6 情报图层 ────────────────────────────────────────────
+      async setIntelData(data) {
+        const jobs: Promise<unknown>[] = [];
+        if (typeof data.eventsGeojsonl === "string") {
+          const next = URL.createObjectURL(
+            new Blob([data.eventsGeojsonl], {
+              type: "application/geo+json",
+            }),
+          );
+          const previous = intelUrls.events;
+          intelUrls.events = next;
+          jobs.push(
+            Promise.resolve(intelLayers.events.reload(viewer, next)).catch(
+              () => undefined,
+            ),
+          );
+          URL.revokeObjectURL(previous);
+        }
+        if (typeof data.newsGeojsonl === "string") {
+          const next = URL.createObjectURL(
+            new Blob([data.newsGeojsonl], {
+              type: "application/geo+json",
+            }),
+          );
+          const previous = intelUrls.news;
+          intelUrls.news = next;
+          jobs.push(
+            Promise.resolve(intelLayers.news.reload(viewer, next)).catch(
+              () => undefined,
+            ),
+          );
+          URL.revokeObjectURL(previous);
+        }
+        await Promise.all(jobs);
+      },
+      selectIntelFeature(layerId, newweiId) {
+        if (!layerId || !newweiId) return false;
+        const store = getGevContextStore();
+        const target = String(newweiId);
+        const candidates = [
+          `${layerId}:${target}`,
+          `${layerId}:evt:${target}`,
+          `${layerId}:news:${target}`,
+        ];
+        let record: { entity?: unknown } | undefined;
+        for (const id of candidates) {
+          const found = store.entities.get(id) as
+            | { entity?: unknown }
+            | undefined;
+          if (found) {
+            record = found;
+            break;
+          }
+        }
+        if (!record) {
+          for (const candidate of store.entities.values() as Iterable<
+            {
+              layerId?: string;
+              entity?: unknown;
+              properties?: Record<string, unknown>;
+            }
+          >) {
+            if (candidate?.layerId !== layerId) continue;
+            const properties = candidate.properties ?? {};
+            if (
+              String(properties.newweiId ?? "") === target ||
+              String(properties.id ?? "") === target
+            ) {
+              record = candidate;
+              break;
+            }
+          }
+        }
+        if (!record?.entity) return false;
+        selectEntityContext(record.entity);
+        return true;
+      },
     };
 
     // G4 预留给 G5：`H` 键在 `globe-stage.tsx` 的快捷键绑定里派发
@@ -1007,6 +1161,13 @@ export async function createGlobeRuntime(
           delete window.__newweiGlobe;
         }
       });
+    }
+
+    // G6：进入页面时默认启用事件图层（新闻图层由用户在面板打开）。
+    if (!dataManager.isEnabled("newwei-events")) {
+      void dataManager
+        .toggle("newwei-events", { origin: "user" })
+        .catch(() => undefined);
     }
 
     return runtime;

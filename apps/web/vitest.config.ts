@@ -246,6 +246,11 @@ export default defineConfig({
         // 3D 地球 G5：HUD 四角读数层、驾驶舱仪表（纯展示，传模拟视图对象）
         "app/(app)/globe/components/intel-hud.tsx",
         "app/(app)/globe/components/cockpit-instruments.tsx",
+        // 3D 地球 G6：情报 GeoJSONL 转换、深链、事件详情入口
+        "lib/globe/intel-geojson.ts",
+        "lib/globe/globe-link.ts",
+        "app/(app)/events/[id]/event-coordinates.ts",
+        "app/(app)/events/[id]/event-globe-button.tsx",
       ],
       // runtime.ts 与 globe-stage.tsx 依赖 Cesium（在 jsdom 里无法运行），
       // 因此不做单元测试；引擎行为由浏览器冒烟 + build 验证。

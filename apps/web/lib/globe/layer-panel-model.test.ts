@@ -182,7 +182,12 @@ describe("groupLayers", () => {
   });
 
   it("分组常量与 GEV layerPanel.js:41-99 一致（顺序与 id）", () => {
+    // G6：情报组固定排在最前面。
     expect(GLOBE_LAYER_GROUPS[0]!.ids).toEqual([
+      "newwei-events",
+      "newwei-news",
+    ]);
+    expect(GLOBE_LAYER_GROUPS[1]!.ids).toEqual([
       "satellites",
       "flights",
       "military",

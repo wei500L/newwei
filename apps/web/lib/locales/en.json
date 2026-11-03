@@ -12172,6 +12172,13 @@
       }
     },
     "title": "3D Globe",
+    "intel": {
+      "events": "Intel events",
+      "news": "Intel news",
+      "viewOnGlobe": "View on 3D globe",
+      "openEvent": "Open event detail",
+      "openNews": "Open news"
+    },
     "hud": {
       "aria": "Intel HUD"
     },
@@ -12223,7 +12230,8 @@
         "events": "Events",
         "weather": "Weather",
         "audio": "Audio",
-        "other": "Other"
+        "other": "Other",
+        "intel": "Intel"
       }
     },
     "target": {
@@ -12242,6 +12250,8 @@
         "installation": "Installation",
         "alpr": "ALPR",
         "intel": "Intel",
+        "event": "Event",
+        "news": "News",
         "unknown": "Target"
       },
       "field": {
@@ -12271,7 +12281,10 @@
         "cameraName": "Camera",
         "agency": "Source agency",
         "lastFrame": "Last frame",
-        "position": "Position"
+        "position": "Position",
+        "type": "Type",
+        "severity": "Severity",
+        "summary": "Summary"
       },
       "links": {
         "external": "External link",

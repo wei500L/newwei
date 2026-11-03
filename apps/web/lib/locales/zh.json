@@ -12171,6 +12171,13 @@
       }
     },
     "title": "全球 3D",
+    "intel": {
+      "events": "情报事件",
+      "news": "情报新闻",
+      "viewOnGlobe": "在 3D 地球查看",
+      "openEvent": "打开事件详情",
+      "openNews": "打开新闻"
+    },
     "hud": {
       "aria": "情报 HUD"
     },
@@ -12222,7 +12229,8 @@
         "events": "事件",
         "weather": "天气",
         "audio": "音频",
-        "other": "其它"
+        "other": "其它",
+        "intel": "情报"
       }
     },
     "target": {
@@ -12241,6 +12249,8 @@
         "installation": "设施",
         "alpr": "车牌识别",
         "intel": "情报",
+        "event": "事件",
+        "news": "新闻",
         "unknown": "目标"
       },
       "field": {
@@ -12270,7 +12280,10 @@
         "cameraName": "摄像头名称",
         "agency": "来源机构",
         "lastFrame": "最后一帧时间",
-        "position": "位置"
+        "position": "位置",
+        "type": "类型",
+        "severity": "严重程度",
+        "summary": "摘要"
       },
       "links": {
         "external": "外部链接",

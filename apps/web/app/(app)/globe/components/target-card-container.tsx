@@ -6,6 +6,7 @@ import {
 } from "@gev/data/contextStore.js";
 import { shownLayerName } from "@gev/ui/layerNames.js";
 import { useCockpitStore as getCockpitStore } from "@gev/ui/stores/cockpit.js";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -61,6 +62,7 @@ export function TargetCardContainer({
   selection: GevSelection | null;
 }) {
   const runtime = useGlobeRuntime();
+  const pathRouter = useRouter();
   const { i18n } = useTranslation();
   const record = useLiveRecord(selection);
   const locale = normalizeLocale(i18n.language);
@@ -110,6 +112,7 @@ export function TargetCardContainer({
       }}
       onClose={close}
       cockpitEntryAvailable={cockpitEntryAvailable}
+      onOpenConsole={(href) => pathRouter.push(href)}
       onEnterCockpit={() => {
         // G3 的按钮不能再占用 `id="cockpit-entry"`（id 唯一）；骨架里的
         // `#cockpit-entry` 才是 GEV 绑定的入口，直接触发它的点击事件。

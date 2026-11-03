@@ -3,11 +3,14 @@
 // Cesium 的控件样式必须在客户端组件里引入（本组件通过 next/dynamic ssr:false 加载）。
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ChartEmptyState } from "@/components/chart-empty-state";
 import { useGevWindowEvent } from "@/lib/globe/gev-events";
+import { parseGlobeParams } from "@/lib/globe/globe-link";
+import { useIntelFeed } from "@/lib/globe/intel-feed";
 import {
   createGlobeRuntime,
   type GlobeRuntime,
@@ -23,6 +26,12 @@ import { CommandDock } from "./components/command-dock";
 import { GlobeContextPanel } from "./components/globe-context-panel";
 import { IntelHudLayer } from "./components/intel-hud";
 import { LayerPanel } from "./components/layer-panel";
+
+/** G6：只负责订阅情报数据并写入运行时（不渲染任何东西）。 */
+function IntelFeedBridge({ runtime }: { runtime: GlobeRuntime }) {
+  useIntelFeed(runtime);
+  return null;
+}
 
 export interface GlobeStageProps {
   /** G4：F 键控制的图层面板显隐（由 globe-content 持有）。 */
@@ -65,6 +74,16 @@ export default function GlobeStage({
   const { t, i18n } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const initialLocaleRef = useRef<"zh-CN" | "en">(mapLocale(i18n.language));
+  const intelNamesRef = useRef({
+    events: t("globe.intel.events"),
+    news: t("globe.intel.news"),
+  });
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const handledGlobeParamsRef = useRef(false);
+  // 深链只读首帧的查询参数：浏览器导航后 searchParams 会变化，但这一轮
+  // 处理不应被新的空参数打断。
+  const initialSearchParamsRef = useRef(searchParams);
 
   const [runtime, setRuntime] = useState<GlobeRuntime | null>(null);
   const [status, setStatus] = useState<string>(() =>
@@ -94,6 +113,7 @@ export default function GlobeStage({
     void createGlobeRuntime(element, {
       googleApiKey,
       locale: initialLocaleRef.current,
+      intelLayerNames: intelNamesRef.current,
       onStatus: (text) => {
         if (!cancelled) setStatus(text);
       },
@@ -126,6 +146,48 @@ export default function GlobeStage({
   useEffect(() => {
     runtime?.setLocale(locale);
   }, [runtime, locale]);
+
+  // G6：`/globe?lat=..&lon=..&label=..&focus=..` 深链。运行时就绪后飞到目标
+  // （300 km 观察高度），确保对应情报图层开启，数据到达后选中该要素，最后
+  // 清掉查询参数，避免刷新页面时重复飞行。
+  useEffect(() => {
+    if (!runtime || handledGlobeParamsRef.current) return;
+    const params = parseGlobeParams(initialSearchParamsRef.current);
+    if (params.lat === undefined || params.lon === undefined) return;
+    handledGlobeParamsRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      runtime.actions.flyToPlace({
+        id: `globe-link:${params.lat},${params.lon}`,
+        label: params.label ?? "",
+        lat: params.lat as number,
+        lon: params.lon as number,
+        kind: "coordinate",
+        rangeM: 300000,
+      });
+      const focus = params.focus;
+      if (focus) {
+        if (!runtime.dataManager.isEnabled(focus.layerId)) {
+          await runtime.actions
+            .toggleLayer(focus.layerId)
+            .catch(() => undefined);
+        }
+        const deadline = Date.now() + 10_000;
+        while (!cancelled && Date.now() < deadline) {
+          if (
+            runtime.actions.selectIntelFeature(focus.layerId, focus.newweiId)
+          ) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+      if (!cancelled) router.replace("/globe");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runtime, router]);
 
   // G4 快捷键：整页绑定（dock 被纯净视图隐藏时仍可操作）。
   useEffect(() => {
@@ -183,6 +245,8 @@ export default function GlobeStage({
 
       {runtime && (
         <GlobeRuntimeProvider runtime={runtime}>
+          {/* G6：订阅情报数据并写入 newwei-events / newwei-news 图层。 */}
+          <IntelFeedBridge runtime={runtime} />
           {/* G5 HUD：地球之上、面板之下；纯净视图（V）时也不渲染。 */}
           <IntelHudLayer cleanView={cleanView} />
 

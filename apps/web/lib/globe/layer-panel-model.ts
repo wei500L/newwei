@@ -47,6 +47,11 @@ export interface GlobeLayerGroup {
 
 export const GLOBE_LAYER_GROUPS: readonly GlobeLayerGroup[] = Object.freeze([
   {
+    // G6：我们自己的情报图层，固定排在最前面。
+    key: "globe.layers.groups.intel",
+    ids: ["newwei-events", "newwei-news"],
+  },
+  {
     key: "globe.layers.groups.movement",
     ids: [
       "satellites",
