@@ -26,6 +26,7 @@ commit 的**源码快照**，由 `pnpm globe:vendor <commit-sha>`（脚本
 | 文件 | 目的 | 摘要 | 批次 |
 | --- | --- | --- | --- |
 | `src/hud.js` | 让 HUD 可以脱离 Vue 视图单独使用 | `localizeLayerName` 改为从定义处 `./ui/layerNames.js` 引入，行为不变 | G5 |
+| `src/data/localGeojsonCore.js` | 让本地 GeoJSON 图层支持数据热更新 | 新增 `reload(nextUrl?)`：清空 `_cachedFeatures`；启用时复用 `releaseDataSource` / `_overlayPublisher.hide` / `clearSelectedEntityContextForLayer` 拆除旧数据后重跑 `enable()`，未启用只清缓存；`_datasetUrl` 可被 `nextUrl` 替换 | G6 |
 
 ## 许可说明
 

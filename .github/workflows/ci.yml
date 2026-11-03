@@ -194,6 +194,12 @@ jobs:
         working-directory: vendor/gods-eye-view
         run: npm run format:check
 
+      # G6：localGeoJson 图层 reload() 的回归（需要 cesium 等依赖，npm ci 之后运行）。
+      - name: Run local GeoJSON reload unit test
+        if: steps.filter.outputs.vendor == 'true'
+        working-directory: vendor/gods-eye-view
+        run: node --test src/data/localGeojsonReload.test.mjs
+
   # vector-go 远端集成：真实 Qdrant 上的 Go 单端契约检查。覆盖 GET /healthz、
   # POST /v1/upsert、POST /v1/search、x-internal-token 鉴权、orgId 过滤和错误
   # 返回；预期来自已保存契约（httpapi 对齐 Nest 的行为）的独立断言，不与同一次

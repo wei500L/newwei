@@ -342,6 +342,9 @@ export function createLocalGeoJsonLayer(
   let _destroyed = false;
   let _loadPromise = null;
   let _loadController = null;
+  // newwei patch (globe G6): dataset URL is mutable so reload(nextUrl) can swap
+  // the source (a Blob URL) without rebuilding the layer instance.
+  let _datasetUrl = url;
   /**
    * The parsed bundled dataset, kept across disable/enable so a re-enable
    * rebuilds entities without refetching. The Cesium entities themselves are
@@ -477,7 +480,7 @@ export function createLocalGeoJsonLayer(
     }
   };
 
-  return {
+  const layer = {
     id,
     name,
     icon,
@@ -586,7 +589,7 @@ export function createLocalGeoJsonLayer(
             try {
               let features = _cachedFeatures;
               if (!features) {
-                const response = await fetch(url, {
+                const response = await fetch(_datasetUrl, {
                   signal: _loadController.signal,
                 });
                 if (_destroyed) return;
@@ -1088,6 +1091,39 @@ export function createLocalGeoJsonLayer(
       _error = null;
     },
   };
+
+  // newwei patch (globe G6): reload the bundled dataset. Clears the parsed
+  // cache; when the layer is enabled, tears the old source / overlay entries /
+  // context records down through the existing internal release + disable
+  // helpers and re-runs the enable() load path so the freshest data (e.g. a new
+  // Blob URL) takes effect. When disabled it only drops the cache and the next
+  // enable() refetches. Resolves when the load settles (success or failure),
+  // never rejects.
+  layer.reload = async (viewer, nextUrl) => {
+    if (typeof nextUrl === 'string' && nextUrl) _datasetUrl = nextUrl;
+    // A load started before this reload (e.g. the initial empty-Blob enable)
+    // would otherwise be awaited by the next enable() and win the race with the
+    // freshest URL. Abort it and let enable() start a clean fetch instead.
+    if (_loadPromise) {
+      const pending = _loadPromise;
+      _loadController?.abort();
+      try {
+        await pending;
+      } catch {
+        /* the aborted load reports through getStats().error; enable() clears it */
+      }
+    }
+    _cachedFeatures = null;
+    if (_destroyed || !_enabled) return;
+    releaseDataSource(viewer);
+    _overlayPublisher.hide();
+    clearSelectedEntityContextForLayer(id);
+    if (viewer?.selectedEntity?.__localLayerId === id) {
+      viewer.selectedEntity = undefined;
+    }
+    await layer.enable(viewer);
+  };
+  return layer;
 }
 
 function compareLocalOverlayRecords(a, b) {
