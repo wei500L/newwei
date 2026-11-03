@@ -95,6 +95,7 @@ React 侧统一用 `useSyncExternalStore` 订阅，**不要**在 React 里引入
 | G4 | [G4-command-dock.md](G4-command-dock.md) | 底部命令坞：搜索飞行、底图切换、视觉滤镜、回到地球、快捷键 | G2 |
 | G5 | [G5-hud-cockpit.md](G5-hud-cockpit.md) | HUD 读数层 + 驾驶舱 | G3 |
 | G6 | [G6-intel-overlay.md](G6-intel-overlay.md) | 我们的情报上图 + 「在 3D 地球查看」入口 | G3 |
+| G6B | [G6B-intel-link-fixes.md](G6B-intel-link-fixes.md) | 审查补丁：地区态势链接、新闻打开原文、深链 focus 白名单 | G6 |
 
 ```
 G0 → G1 → G2 → ┬ G3 → ┬ G5
