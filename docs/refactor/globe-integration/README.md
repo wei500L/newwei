@@ -42,7 +42,7 @@ GEV 分三层：
 | `app/scene.js`（`createApplicationScene`） | `app/application.js`（→ `ui/views/*.vue`） |
 | `standalone/catalog.js`（`createStandaloneCatalog`） | `app/data.js`（→ `ui/layers.js` → `WeatherReadout.vue`） |
 | `services/requests.js`（`createApplicationRequestServices`） | `app/controls.js`、`ui/composition.js`（StyleManager） |
-| `data/lifecycle.js`（`LayerLifecycle`） | `hud.js`（`IntelHUD`）：G5 补丁之前禁止。原因是它从 `ui/layerPanel.js` 引入了 `localizeLayerName`；补丁改为从 `ui/layerNames.js` 引入 |
+| `data/lifecycle.js`（`LayerLifecycle`） | |
 | `data/contextStore.js` | `ui/applicationShell.js` 及 `src/ui/views/**`、`ui/layerPanel.js`（→ `LayerRows.vue`） |
 | `ui/visualEffects.js`、`ui/visualPresets.js`（滤镜） | 任何 `src/ui/stores/*` 之外的 `src/ui/*.vue` 及引用它们的模块 |
 | `ui/navigationController.js` | `src/main.js`、`src/standalone/application.js` |
@@ -55,7 +55,7 @@ GEV 分三层：
 | 全部 `ui/stores/*.js`（Pinia 仓库）、`ui/vueRuntime.js` 中的 `applicationPinia` | |
 | `data/feedState.js`（`layerFeedState`）、`ui/layerNames.js`、`ui/keyGuidance.js`、`ui/statusText.js` | |
 | `i18n/index.js` | |
-| `hud.js`：**打完 G5 的一行补丁后**才能引用 | |
+| `hud.js`（`IntelHUD`）：**打完 G5 的一行补丁后**可以引用，整条依赖链不碰 `.vue` | |
 
 **每个批次新增 GEV 引用后，都必须用 G0 提供的脚本 `pnpm --filter @modular/web globe:check-imports` 检查**（该脚本从我们引用的 GEV 入口出发追踪 import 图，一旦碰到 `.vue` 就失败）。CI 也会运行它。
 

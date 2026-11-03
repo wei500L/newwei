@@ -25,7 +25,6 @@ export const BLACKLIST = new Set([
   "app/data.js",
   "app/controls.js",
   "ui/composition.js",
-  "hud.js",
   "ui/applicationShell.js",
   "main.js",
   "standalone/application.js",

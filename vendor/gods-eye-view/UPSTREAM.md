@@ -25,7 +25,7 @@ commit 的**源码快照**，由 `pnpm globe:vendor <commit-sha>`（脚本
 
 | 文件 | 目的 | 摘要 | 批次 |
 | --- | --- | --- | --- |
-| _（本批为空）_ | | | |
+| `src/hud.js` | 让 HUD 可以脱离 Vue 视图单独使用 | `localizeLayerName` 改为从定义处 `./ui/layerNames.js` 引入，行为不变 | G5 |
 
 ## 许可说明
 

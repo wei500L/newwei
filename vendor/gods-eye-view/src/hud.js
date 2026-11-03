@@ -38,7 +38,7 @@ import {
   normalizeHudLayout,
 } from './hudLayouts.js';
 import { formatNumber, msg, onLocaleChange, t } from './i18n/index.js';
-import { localizeLayerName } from './ui/layerPanel.js';
+import { localizeLayerName } from './ui/layerNames.js';
 import { isEmbeddedInline } from './app/embed.js';
 import { subscribeSelectedVessel } from './hudReadouts.js';
 
