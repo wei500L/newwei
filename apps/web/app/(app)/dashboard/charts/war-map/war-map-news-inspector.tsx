@@ -1,7 +1,9 @@
 "use client";
 
+import { GlobalOutlined } from "@ant-design/icons";
 import { Button, Space, Tag, Typography } from "antd";
 
+import { buildGlobeHref } from "@/lib/globe/globe-link";
 import { formatDateTime } from "@/lib/i18n";
 
 import type { WarMapInspectorContentContext } from "./war-map-inspector-types";
@@ -55,11 +57,26 @@ export function NewsInspectorContent({
           })}
         </Typography.Text>
       ) : null}
-      <NewsOpenOriginalButton
-        url={item.url}
-        onOpenNewsLink={onOpenNewsLink}
-        t={t}
-      />
+      <Space size={[8, 8]} wrap>
+        <NewsOpenOriginalButton
+          url={item.url}
+          onOpenNewsLink={onOpenNewsLink}
+          t={t}
+        />
+        <Button
+          type="link"
+          size="small"
+          icon={<GlobalOutlined />}
+          href={buildGlobeHref({
+            lat: item.lat,
+            lon: item.lng,
+            label: item.label,
+            focus: { layerId: "newwei-news", newweiId: item.id },
+          })}
+        >
+          {t("globe.intel.viewOnGlobe")}
+        </Button>
+      </Space>
     </div>
   );
 }

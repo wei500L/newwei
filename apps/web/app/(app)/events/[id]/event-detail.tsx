@@ -54,6 +54,9 @@ import {
 } from "../events-list-helpers";
 import { pickRepresentativeProcessedItemId } from "../utils";
 
+import { resolveEventCoordinates } from "./event-coordinates";
+import { EventGlobeButton } from "./event-globe-button";
+
 interface EventItem {
   id: string;
   eventId: string;
@@ -119,6 +122,7 @@ interface NewsEvent {
   sourceType: "all" | "authoritative" | "mixed" | "blog" | "unknown";
   sourceEvidence?: NewsEventSourceEvidence | null;
   representativeProcessedItemId?: string | null;
+  metadata?: unknown;
   categoryDistribution?: unknown;
   topicDriftWarning?: boolean | null;
   topicDriftSummary?: string | null;
@@ -151,6 +155,7 @@ const NEWS_EVENT_QUERY = gql`
         corroborated
       }
       representativeProcessedItemId
+      metadata
       categoryDistribution
       topicDriftWarning
       topicDriftSummary
@@ -667,6 +672,7 @@ export function EventDetail({ eventId }: { eventId: string }) {
   const title = event.title?.trim()
     ? event.title.trim()
     : entity || topic || event.id;
+  const eventCoordinates = resolveEventCoordinates(event);
   const language = event.language?.trim() ?? "";
   const statusLabel = t(`pages.events.status.${event.status}`, {
     defaultValue: event.status,
@@ -863,6 +869,16 @@ export function EventDetail({ eventId }: { eventId: string }) {
             <Tooltip title={`${timeZone} (${timeZoneLabel || timeZone})`}>
               <Tag className="m-0">{timeZoneLabel || timeZone}</Tag>
             </Tooltip>
+          }
+          actions={
+            eventCoordinates ? (
+              <EventGlobeButton
+                lat={eventCoordinates.lat}
+                lon={eventCoordinates.lon}
+                label={title}
+                eventId={event.id}
+              />
+            ) : null
           }
         />
 

@@ -1,7 +1,9 @@
 "use client";
 
-import { List, Space, Tag, Typography } from "antd";
+import { GlobalOutlined } from "@ant-design/icons";
+import { Button, List, Space, Tag, Typography } from "antd";
 
+import { buildGlobeHref } from "@/lib/globe/globe-link";
 import { formatDateTime } from "@/lib/i18n";
 
 import type { WarMapInspectorContentContext } from "./war-map-inspector-types";
@@ -114,6 +116,21 @@ export function EventInspectorContent({
           })}
         </Typography.Text>
       ) : null}
+      <Space size={[8, 8]} wrap>
+        <Button
+          type="link"
+          size="small"
+          icon={<GlobalOutlined />}
+          href={buildGlobeHref({
+            lat: item.lat,
+            lon: item.lng,
+            label: item.label,
+            focus: { layerId: "newwei-events", newweiId: item.id },
+          })}
+        >
+          {t("globe.intel.viewOnGlobe")}
+        </Button>
+      </Space>
     </div>
   );
 }
