@@ -13,7 +13,8 @@ import {
 } from "@/lib/globe/runtime";
 import { GlobeRuntimeProvider } from "@/lib/globe/runtime-context";
 
-import { GlobeDebugBar } from "./globe-debug-bar";
+import { GlobeContextPanel } from "./components/globe-context-panel";
+import { LayerPanel } from "./components/layer-panel";
 
 /** 把 i18next 语言标签收敛到 GEV 只识别的两种 locale。 */
 function mapLocale(language: string | undefined): "zh-CN" | "en" {
@@ -122,7 +123,8 @@ export default function GlobeStage() {
 
       {runtime && (
         <GlobeRuntimeProvider runtime={runtime}>
-          <GlobeDebugBar />
+          <LayerPanel />
+          <GlobeContextPanel />
         </GlobeRuntimeProvider>
       )}
 

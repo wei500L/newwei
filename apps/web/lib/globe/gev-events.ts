@@ -9,6 +9,8 @@
  *   （`layers/flights/tracking.js:70`、`:678`）。
  * - `gev:entity-selection-cleared`：`detail` 形如 `{ layerId, reason }`
  *   （`data/contextStore.js:165-176`）。
+ * - `gev:awareness-subject-cleared`：跟踪型图层取消跟踪时的清除通道
+ *   （`layers/flights/tracking.js:678`、`layers/satellites/tracking.js:124`）。
  * - `gev:map-stack-changed`：`detail` 是地图栈状态（`app/scene.js:118-122`）。
  * - `gev:style-change` / `gev:vision-change`：`detail` 形如 `{ style }` /
  *   `{ style, cockpit }`（`ui/visualSettings.js:1552` / `:412`）。
@@ -90,6 +92,8 @@ export function useGevSelection(): GevSelection | null {
       onTrackedSelected,
     );
     window.addEventListener("gev:entity-selection-cleared", onCleared);
+    // 跟踪型图层取消跟踪时只发 awareness-subject-cleared（`flights/tracking.js:678`）。
+    window.addEventListener("gev:awareness-subject-cleared", onCleared);
     return () => {
       window.removeEventListener("gev:entity-selected", onEntitySelected);
       window.removeEventListener(
@@ -97,6 +101,7 @@ export function useGevSelection(): GevSelection | null {
         onTrackedSelected,
       );
       window.removeEventListener("gev:entity-selection-cleared", onCleared);
+      window.removeEventListener("gev:awareness-subject-cleared", onCleared);
     };
   }, []);
 
