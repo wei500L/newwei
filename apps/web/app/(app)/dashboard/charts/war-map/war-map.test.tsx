@@ -197,6 +197,12 @@ vi.mock("@/lib/client-telemetry", async () => {
   };
 });
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock("../../use-dashboard-stream", async () => {
   const { testDashboardStream } = await import("@/test/component-mock-state");
   return {

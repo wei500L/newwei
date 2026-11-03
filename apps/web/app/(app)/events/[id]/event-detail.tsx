@@ -876,7 +876,6 @@ export function EventDetail({ eventId }: { eventId: string }) {
                 lat={eventCoordinates.lat}
                 lon={eventCoordinates.lon}
                 label={title}
-                eventId={event.id}
               />
             ) : null
           }

@@ -15,6 +15,7 @@
  * - 通用 GeoJSON（地震等）：`data/localGeojsonCore.js:692-706`
  */
 import { formatTimestamp, type SupportedLocale } from "@/lib/i18n";
+import { safeHttpUrl } from "@/lib/url";
 
 export interface TargetField {
   labelKey: string;
@@ -29,10 +30,12 @@ export interface TargetLink {
   href: string;
 }
 
-/** G6：详情卡的主按钮（跳回控制台的事件 / 新闻详情）。 */
+/** G6：详情卡的主按钮（跳回控制台的事件 / 新闻详情，或打开原文）。 */
 export interface TargetConsoleAction {
   labelKey: string;
   href: string;
+  /** G6：为 true 时是外部原文，用新标签页打开，不走站内路由。 */
+  external?: boolean;
 }
 
 export interface TargetView {
@@ -66,7 +69,7 @@ const KIND_KEYS: Record<string, string> = {
   "military-installations": "globe.target.kinds.installation",
   "alpr-cameras": "globe.target.kinds.alpr",
   "newwei-intel": "globe.target.kinds.intel",
-  "newwei-events": "globe.target.kinds.event",
+  "newwei-events": "globe.target.kinds.region",
   "newwei-news": "globe.target.kinds.news",
 };
 
@@ -412,7 +415,44 @@ function formatGeneric(record: TargetRecord): TargetView {
   };
 }
 
-/** G6：情报点（事件 / 新闻）的详情格式化器。数据来自记录的 `properties`。 */
+/** 严重程度 → Tag 颜色（高 error / 中 warning / 低不加色）。 */
+function severityTone(severity: string): "error" | "warning" | undefined {
+  if (severity === "high") return "error";
+  if (severity === "medium") return "warning";
+  return undefined;
+}
+
+function severityLabel(severity: string, zh: boolean): string {
+  switch (severity) {
+    case "high":
+      return zh ? "高" : "High";
+    case "medium":
+      return zh ? "中" : "Medium";
+    case "low":
+      return zh ? "低" : "Low";
+    default:
+      return severity;
+  }
+}
+
+/** 把时间值格式化为「发生时间」字段；空值不显示。 */
+function pushTimeField(
+  fields: TargetField[],
+  value: unknown,
+  locale: SupportedLocale,
+): void {
+  if (value === undefined || value === null || text(value) === "") return;
+  const numeric = numberOf(value);
+  const rendered =
+    numeric !== null ? formatTimestamp(numeric, locale) : text(value);
+  if (rendered) fields.push({ labelKey: "globe.target.field.time", value: rendered });
+}
+
+/**
+ * G6：情报点（地区聚合 / 新闻）的详情格式化器。数据来自记录的 `properties`。
+ * - 地区：显示地区名、严重程度、新闻数、告警数、热度、最近时间；摘要为空不显示。
+ * - 新闻：主按钮「打开原文」，用外部链接（新标签页）；没有合法 url 时不给主按钮。
+ */
 function formatNewweiIntel(
   record: TargetRecord,
   layerId: string,
@@ -423,68 +463,91 @@ function formatNewweiIntel(
   const zh = String(locale).toLowerCase().startsWith("zh");
   const fields: TargetField[] = [];
 
-  fields.push({
-    labelKey: "globe.target.field.type",
-    value: isNews ? (zh ? "新闻" : "News") : zh ? "事件" : "Event",
-  });
+  if (isNews) {
+    fields.push({
+      labelKey: "globe.target.field.type",
+      value: zh ? "新闻" : "News",
+    });
+    pushField(fields, "globe.target.field.place", p.location);
+
+    const severity = text(p.severity).toLowerCase();
+    const tone = severityTone(severity);
+    if (severity) {
+      fields.push({
+        labelKey: "globe.target.field.severity",
+        value: severityLabel(severity, zh),
+        ...(tone ? { tagColor: tone } : {}),
+      });
+    }
+
+    pushTimeField(fields, p.time ?? p.publishedAt ?? p.ingestedAt, locale);
+    pushField(fields, "globe.target.field.summary", p.summary);
+
+    const url = safeHttpUrl(p.url);
+    return {
+      kindKey: "globe.target.kinds.news",
+      title: text(p.name) || baseTitle(record),
+      subtitle: "",
+      fields,
+      links: [],
+      position: positionOf(record),
+      layerId,
+      ...(url
+        ? {
+            console: {
+              labelKey: "globe.intel.openSource",
+              href: url,
+              external: true,
+            },
+          }
+        : {}),
+    };
+  }
+
+  // 地区态势：事件图层的每个点是一个国家/地区聚合，不是单个事件。
+  pushField(fields, "globe.target.field.region", p.name);
 
   const severity = text(p.severity).toLowerCase();
+  const tone = severityTone(severity);
   if (severity) {
-    const tone =
-      severity === "high"
-        ? "error"
-        : severity === "medium"
-          ? "warning"
-          : undefined;
-    const label =
-      severity === "high"
-        ? zh
-          ? "高"
-          : "High"
-        : severity === "medium"
-          ? zh
-            ? "中"
-            : "Medium"
-          : severity === "low"
-            ? zh
-              ? "低"
-              : "Low"
-            : severity;
     fields.push({
       labelKey: "globe.target.field.severity",
-      value: label,
+      value: severityLabel(severity, zh),
       ...(tone ? { tagColor: tone } : {}),
     });
   }
 
-  const timeValue = p.time ?? p.latestAt ?? p.publishedAt ?? p.ingestedAt;
-  if (timeValue !== undefined && timeValue !== null && text(timeValue) !== "") {
-    const numeric = numberOf(timeValue);
-    const value =
-      numeric !== null ? formatTimestamp(numeric, locale) : text(timeValue);
-    if (value) fields.push({ labelKey: "globe.target.field.time", value });
-  }
-
+  pushField(fields, "globe.target.field.newsCount", p.newsCount, { mono: true });
+  pushField(fields, "globe.target.field.alertCount", p.alertCount, {
+    mono: true,
+  });
+  pushField(fields, "globe.target.field.score", p.score, { mono: true });
+  pushTimeField(fields, p.time ?? p.latestAt, locale);
   pushField(fields, "globe.target.field.summary", p.summary);
 
+  const regionName = text(p.name);
+  // 兜底链接与 intel-geojson 同规则：没有可用的地区事件筛选，退回站内搜索，
+  // 绝不再拼 `/events/<国家代码>`。
   const consoleHref =
     text(p.consoleUrl) ||
-    (isNews
-      ? `/items/${encodeURIComponent(text(p.newweiId) || text(record.id))}`
-      : `/events/${encodeURIComponent(text(p.newweiId) || text(record.id))}`);
+    (regionName ? `/search?q=${encodeURIComponent(regionName)}` : "");
 
   return {
-    kindKey: isNews ? "globe.target.kinds.news" : "globe.target.kinds.event",
-    title: text(p.name) || baseTitle(record),
-    subtitle: isNews ? (zh ? "新闻" : "News") : zh ? "事件" : "Event",
+    kindKey: "globe.target.kinds.region",
+    title: regionName || baseTitle(record),
+    subtitle: "",
     fields,
     links: [],
     position: positionOf(record),
     layerId,
-    console: {
-      labelKey: isNews ? "globe.intel.openNews" : "globe.intel.openEvent",
-      href: consoleHref,
-    },
+    ...(consoleHref
+      ? {
+          console: {
+            labelKey: "globe.intel.openEvent",
+            href: consoleHref,
+          },
+        }
+      : {}),
   };
 }
 

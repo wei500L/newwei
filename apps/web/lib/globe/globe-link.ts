@@ -5,6 +5,16 @@
  */
 export const GLOBE_LABEL_MAX = 80;
 
+/**
+ * 深链 `focus` 允许限定/预选的图层白名单。其它 `layerId`（例如 `cctv`）一律
+ * 丢弃，避免 `?focus=cctv:x` 在进页面时意外开启需要外呼的图层。
+ */
+export const GLOBE_FOCUS_LAYERS = ["newwei-events", "newwei-news"] as const;
+
+export function isGlobeFocusLayer(layerId: string): boolean {
+  return (GLOBE_FOCUS_LAYERS as readonly string[]).includes(layerId);
+}
+
 export interface GlobeFocus {
   layerId: string;
   newweiId: string;
@@ -66,7 +76,7 @@ export function buildGlobeHref(input: GlobeHrefInput = {}): string {
   if (label) params.set("label", label);
 
   const focus = input.focus;
-  if (focus && focus.layerId && focus.newweiId) {
+  if (focus && focus.layerId && focus.newweiId && isGlobeFocusLayer(focus.layerId)) {
     params.set("focus", `${focus.layerId}:${focus.newweiId}`);
   }
 
@@ -107,7 +117,9 @@ export function parseGlobeParams(
     if (separator > 0) {
       const layerId = rawFocus.slice(0, separator);
       const newweiId = rawFocus.slice(separator + 1);
-      if (layerId && newweiId) result.focus = { layerId, newweiId };
+      if (layerId && newweiId && isGlobeFocusLayer(layerId)) {
+        result.focus = { layerId, newweiId };
+      }
     }
   }
 

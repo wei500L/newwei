@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildGlobeHref,
+  GLOBE_FOCUS_LAYERS,
   GLOBE_LABEL_MAX,
   isValidLatLon,
   parseGlobeParams,
@@ -70,5 +71,28 @@ describe("globe-link", () => {
       layerId: "newwei-events",
       newweiId: "evt:abc",
     });
+  });
+
+  it("buildGlobeHref 对非白名单的 focus 不写入，坐标照常", () => {
+    const href = buildGlobeHref({
+      lat: 35,
+      lon: 139,
+      focus: { layerId: "cctv", newweiId: "x" },
+    });
+    expect(href).toBe("/globe?lat=35&lon=139");
+    expect(href).not.toContain("focus=");
+  });
+
+  it("parseGlobeParams 丢弃非白名单 focus，但保留 lat/lon", () => {
+    const params = parseGlobeParams(
+      new URLSearchParams("lat=35&lon=139&focus=cctv:x"),
+    );
+    expect(params.lat).toBe(35);
+    expect(params.lon).toBe(139);
+    expect(params.focus).toBeUndefined();
+  });
+
+  it("白名单常量只含情报图层", () => {
+    expect([...GLOBE_FOCUS_LAYERS]).toEqual(["newwei-events", "newwei-news"]);
   });
 });

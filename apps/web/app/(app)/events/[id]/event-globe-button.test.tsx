@@ -1,22 +1,32 @@
-import { screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/render";
 
 import { EventGlobeButton } from "./event-globe-button";
 
+const mocks = vi.hoisted(() => ({ push: vi.fn() }));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mocks.push, replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
 describe("EventGlobeButton", () => {
-  it("有坐标时渲染「在 3D 地球查看」按钮并带上坐标链接", () => {
+  beforeEach(() => {
+    mocks.push.mockClear();
+  });
+
+  it("有坐标时点击调用 router.push，链接只带坐标与标题、不含 focus", () => {
     renderWithProviders(
-      <EventGlobeButton lat={35.5} lon={105.2} label="Strait incident" eventId="evt-1" />,
+      <EventGlobeButton lat={35.5} lon={105.2} label="Strait incident" />,
     );
-    const link = screen.getByRole("link", {
-      name: /在 3D 地球查看|View on 3D globe/,
-    });
-    expect(link).toHaveAttribute(
-      "href",
-      "/globe?lat=35.5&lon=105.2&label=Strait+incident&focus=newwei-events%3Aevt-1",
+    fireEvent.click(
+      screen.getByRole("button", { name: /在 3D 地球查看|View on 3D globe/ }),
     );
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+    const href = mocks.push.mock.calls[0]![0] as string;
+    expect(href).toBe("/globe?lat=35.5&lon=105.2&label=Strait+incident");
+    expect(href).not.toContain("focus=");
   });
 
   it("没有坐标时不渲染", () => {

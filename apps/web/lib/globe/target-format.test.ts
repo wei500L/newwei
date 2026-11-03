@@ -231,45 +231,78 @@ describe("通用格式化器", () => {
 });
 
 describe("formatTarget 情报点（G6）", () => {
-  it("事件：类型、严重程度 Tag 颜色、时间、摘要与打开事件详情", () => {
+  it("地区：字段与 kindKey（地区/严重程度/新闻数/告警数/热度/时间/摘要）", () => {
     const view = formatTarget(
       {
-        id: "newwei-events:evt:evt-1",
+        id: "newwei-events:evt:ua",
         layerId: "newwei-events",
-        layerName: "情报事件",
-        label: "Border incident",
-        latitude: 10,
-        longitude: 20,
+        layerName: "地区态势",
+        label: "Ukraine",
+        latitude: 49,
+        longitude: 32,
         properties: {
-          name: "Border incident",
-          kind: "event",
+          name: "Ukraine",
+          kind: "region",
           severity: "high",
           time: "2026-01-05T00:00:00.000Z",
           summary: "A summary",
-          consoleUrl: "/events/evt-1",
-          newweiId: "evt-1",
+          consoleUrl: "/search?q=Ukraine",
+          newweiId: "ua",
+          countryCode: "ua",
+          newsCount: 12,
+          alertCount: 4,
+          score: 7.5,
         },
       },
       { locale: "zh-CN" },
     );
-    expect(view.kindKey).toBe("globe.target.kinds.event");
-    expect(view.title).toBe("Border incident");
-    expect(view.position).toEqual({ lat: 10, lon: 20 });
+    expect(view.kindKey).toBe("globe.target.kinds.region");
+    expect(view.title).toBe("Ukraine");
+    expect(view.position).toEqual({ lat: 49, lon: 32 });
     const byKey = Object.fromEntries(
       view.fields.map((field) => [field.labelKey, field]),
     );
-    expect(byKey["globe.target.field.type"]!.value).toBe("事件");
+    expect(byKey["globe.target.field.region"]!.value).toBe("Ukraine");
     expect(byKey["globe.target.field.severity"]!.value).toBe("高");
     expect(byKey["globe.target.field.severity"]!.tagColor).toBe("error");
+    expect(byKey["globe.target.field.newsCount"]!.value).toBe("12");
+    expect(byKey["globe.target.field.alertCount"]!.value).toBe("4");
+    expect(byKey["globe.target.field.score"]!.value).toBe("7.5");
     expect(byKey["globe.target.field.time"]!.value).toBeTruthy();
     expect(byKey["globe.target.field.summary"]!.value).toBe("A summary");
     expect(view.console).toEqual({
       labelKey: "globe.intel.openEvent",
-      href: "/events/evt-1",
+      href: "/search?q=Ukraine",
     });
   });
 
-  it("新闻：kind=news、medium 用 warning、主按钮打开新闻", () => {
+  it("地区：consoleUrl 缺失时兜底为站内搜索，不再拼 /events/<id>", () => {
+    const view = formatTarget(
+      {
+        id: "newwei-events:evt:ua",
+        layerId: "newwei-events",
+        properties: { name: "Ukraine", kind: "region", newweiId: "ua" },
+      },
+      { locale: "en-US" },
+    );
+    expect(view.console).toEqual({
+      labelKey: "globe.intel.openEvent",
+      href: "/search?q=Ukraine",
+    });
+  });
+
+  it("地区：摘要为空时不显示摘要字段", () => {
+    const view = formatTarget({
+      id: "newwei-events:evt:ua",
+      layerId: "newwei-events",
+      properties: { name: "Ukraine", kind: "region" },
+    });
+    expect(
+      view.fields.some((field) => field.labelKey === "globe.target.field.summary"),
+    ).toBe(false);
+  });
+
+  it("新闻：主按钮「打开原文」为外部链接，medium 用 warning", () => {
     const view = formatTarget(
       {
         id: "newwei-news:news:news-9",
@@ -283,7 +316,8 @@ describe("formatTarget 情报点（G6）", () => {
           severity: "medium",
           time: "2026-02-01T00:00:00.000Z",
           summary: "Suez",
-          consoleUrl: "/items/news-9",
+          location: "Suez",
+          url: "https://example.com/port",
           newweiId: "news-9",
         },
       },
@@ -294,18 +328,29 @@ describe("formatTarget 情报点（G6）", () => {
       view.fields.map((field) => [field.labelKey, field]),
     );
     expect(byKey["globe.target.field.type"]!.value).toBe("News");
+    expect(byKey["globe.target.field.place"]!.value).toBe("Suez");
     expect(byKey["globe.target.field.severity"]!.tagColor).toBe("warning");
     expect(view.console).toEqual({
-      labelKey: "globe.intel.openNews",
-      href: "/items/news-9",
+      labelKey: "globe.intel.openSource",
+      href: "https://example.com/port",
+      external: true,
     });
+  });
+
+  it("新闻：没有 url 时没有主按钮", () => {
+    const view = formatTarget({
+      id: "newwei-news:news:news-9",
+      layerId: "newwei-news",
+      properties: { name: "Port reopens", kind: "news", newweiId: "news-9" },
+    });
+    expect(view.console).toBeUndefined();
   });
 
   it("低严重度不加颜色", () => {
     const view = formatTarget({
       id: "newwei-events:evt:low",
       layerId: "newwei-events",
-      properties: { name: "Low", severity: "low", consoleUrl: "/events/low" },
+      properties: { name: "Low", kind: "region", severity: "low" },
     });
     const severity = view.fields.find(
       (field) => field.labelKey === "globe.target.field.severity",

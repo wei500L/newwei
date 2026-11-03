@@ -2,6 +2,7 @@
 
 import { GlobalOutlined } from "@ant-design/icons";
 import { Button, Space, Tag, Typography } from "antd";
+import { useRouter } from "next/navigation";
 
 import { buildGlobeHref } from "@/lib/globe/globe-link";
 import { formatDateTime } from "@/lib/i18n";
@@ -25,6 +26,7 @@ export function NewsInspectorContent({
   context: WarMapInspectorContentContext;
 }) {
   const { locale, t, onOpenNewsLink } = context;
+  const router = useRouter();
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
       <Space size={[6, 6]} wrap>
@@ -67,12 +69,16 @@ export function NewsInspectorContent({
           type="link"
           size="small"
           icon={<GlobalOutlined />}
-          href={buildGlobeHref({
-            lat: item.lat,
-            lon: item.lng,
-            label: item.label,
-            focus: { layerId: "newwei-news", newweiId: item.id },
-          })}
+          onClick={() =>
+            router.push(
+              buildGlobeHref({
+                lat: item.lat,
+                lon: item.lng,
+                label: item.label,
+                focus: { layerId: "newwei-news", newweiId: item.id },
+              }),
+            )
+          }
         >
           {t("globe.intel.viewOnGlobe")}
         </Button>

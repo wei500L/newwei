@@ -12173,11 +12173,12 @@
     },
     "title": "3D Globe",
     "intel": {
-      "events": "Intel events",
+      "events": "Regional activity",
       "news": "Intel news",
       "viewOnGlobe": "View on 3D globe",
-      "openEvent": "Open event detail",
-      "openNews": "Open news"
+      "openEvent": "Events in this region",
+      "openNews": "Open news",
+      "openSource": "Open source"
     },
     "hud": {
       "aria": "Intel HUD"
@@ -12251,6 +12252,7 @@
         "alpr": "ALPR",
         "intel": "Intel",
         "event": "Event",
+        "region": "Regional activity",
         "news": "News",
         "unknown": "Target"
       },
@@ -12284,7 +12286,11 @@
         "position": "Position",
         "type": "Type",
         "severity": "Severity",
-        "summary": "Summary"
+        "summary": "Summary",
+        "region": "Region",
+        "newsCount": "News",
+        "alertCount": "Alerts",
+        "score": "Heat"
       },
       "links": {
         "external": "External link",

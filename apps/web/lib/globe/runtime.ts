@@ -1141,7 +1141,10 @@ export async function createGlobeRuntime(
         layerBindings,
         context: contextControls,
         locationNavigation,
-        cockpit: cockpitCoordinator,
+        // F5：coordinator 由 `attachCockpit()` 稍后创建，必须在读取时取值。
+        get cockpit() {
+          return cockpitCoordinator;
+        },
       },
       pinia,
       actions,

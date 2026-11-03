@@ -4,6 +4,7 @@ import { Button, Tag, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import type { TargetView } from "@/lib/globe/target-format";
+import { safeHttpUrl } from "@/lib/url";
 
 export interface TargetCardProps {
   view: TargetView;
@@ -44,6 +45,11 @@ export function TargetCard({
 }: TargetCardProps) {
   const { t } = useTranslation();
   const searchHref = `/search?q=${encodeURIComponent(view.title)}`;
+  const consoleAction = view.console;
+  // 外部原文不信任 GeoJSON 里的字符串，渲染前再校验一次。
+  const externalHref = consoleAction?.external
+    ? safeHttpUrl(consoleAction.href)
+    : null;
 
   return (
     <section
@@ -99,14 +105,28 @@ export function TargetCard({
         )}
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {view.console && onOpenConsole ? (
+          {consoleAction?.external ? (
+            externalHref ? (
+              <Button
+                size="small"
+                type="primary"
+                href={externalHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t(consoleAction.labelKey, {
+                  defaultValue: consoleAction.labelKey,
+                })}
+              </Button>
+            ) : null
+          ) : consoleAction && onOpenConsole ? (
             <Button
               size="small"
               type="primary"
-              onClick={() => onOpenConsole(view.console!.href)}
+              onClick={() => onOpenConsole(consoleAction.href)}
             >
-              {t(view.console.labelKey, {
-                defaultValue: view.console.labelKey,
+              {t(consoleAction.labelKey, {
+                defaultValue: consoleAction.labelKey,
               })}
             </Button>
           ) : null}

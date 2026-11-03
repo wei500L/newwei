@@ -7,6 +7,8 @@
  */
 import type { WarMapEvent, WarMapNewsMarker } from "@modular/utils";
 
+import { safeHttpUrl } from "@/lib/url";
+
 export type IntelGeojsonLocale = "zh-CN" | "en" | "en-US";
 
 export interface IntelGeojsonOptions {
@@ -25,12 +27,24 @@ export const INTEL_MAX_SUMMARY = 200;
 
 interface IntelFeatureProperties {
   name: string;
-  kind: "event" | "news";
+  /** 事件图层其实按国家/地区聚合，故用 `region`；新闻用 `news`。 */
+  kind: "region" | "news";
   severity?: string;
   time: string;
   summary: string;
-  consoleUrl: string;
+  /** 地区：指向该地区事件列表（或无可靠筛选时的站内搜索）。新闻没有此项。 */
+  consoleUrl?: string;
+  /** 新闻：原文地址（仅合法的 http(s)）。 */
+  url?: string;
+  /** 新闻：地点（按 locale 选择中文优先）。 */
+  location?: string;
   newweiId: string;
+  /** 地区：国家代码（即事件 id）。 */
+  countryCode?: string;
+  newsCount?: number;
+  alertCount?: number;
+  /** 地区：热度（derivedScore）。 */
+  score?: number;
 }
 
 interface IntelFeature {
@@ -105,6 +119,27 @@ function newsTitle(marker: WarMapNewsMarker, zh: boolean): string {
   return asText(marker.title);
 }
 
+/** 地点：中文时优先 `locationZh`，否则用 `location`。 */
+function newsLocation(marker: WarMapNewsMarker, zh: boolean): string {
+  if (zh) {
+    const zhLocation = (marker as { locationZh?: unknown }).locationZh;
+    const text = asText(zhLocation);
+    if (text.trim()) return text;
+  }
+  return asText(marker.location);
+}
+
+/**
+ * 「该地区事件」链接。`/events?entity=` 的 `entity` 由 api-go 的 newsEvents
+ * 解析为对 `primaryEntity` 的**精确匹配**（`graphqlread/newsevents/store.go`
+ * 的 `AND primaryEntity = ?`），而这里的事件 name 是国家/地区的地理英文名，
+ * 并不等于事件的主实体，无法可靠筛出该地区的事件。因此退回站内搜索。
+ */
+function regionEventsUrl(base: string, name: string): string {
+  const term = asText(name).trim();
+  return `${base}/search?q=${encodeURIComponent(term)}`;
+}
+
 function newsTime(marker: WarMapNewsMarker): string {
   return asText(marker.publishedAt) || asText(marker.ingestedAt);
 }
@@ -149,6 +184,7 @@ export function eventsToGeojsonl(
     const id = asText(event.id);
     if (!id) continue;
     const summarySource = (event as { summary?: unknown }).summary;
+    const countryCode = id;
     lines.push(
       toFeature({
         type: "Feature",
@@ -159,12 +195,16 @@ export function eventsToGeojsonl(
         },
         properties: {
           name: clampIntelText(eventTitle(event, zh), INTEL_MAX_NAME),
-          kind: "event",
+          kind: "region",
           severity: asText(event.severity),
           time: asText(event.latestAt),
           summary: clampIntelText(summarySource, INTEL_MAX_SUMMARY),
-          consoleUrl: `${base}/events/${encodeURIComponent(id)}`,
+          consoleUrl: regionEventsUrl(base, asText(event.name)),
           newweiId: id,
+          countryCode,
+          newsCount: isFiniteNumber(event.newsCount) ? event.newsCount : 0,
+          alertCount: isFiniteNumber(event.alertCount) ? event.alertCount : 0,
+          score: isFiniteNumber(event.derivedScore) ? event.derivedScore : 0,
         },
       }),
     );
@@ -174,14 +214,14 @@ export function eventsToGeojsonl(
 
 /**
  * 新闻标记 → GeoJSONL。丢弃无效坐标的点；按时间倒序排序后最多截断到
- * `INTEL_MAX_POINTS` 个。`consoleUrl` 指向新闻详情 `/items/<id>`。
+ * `INTEL_MAX_POINTS` 个。没有可用的站内详情页，故只带原文 `url`（合法
+ * http(s) 才保留）与地点，不再生成 `consoleUrl`。
  */
 export function newsMarkersToGeojsonl(
   markers: WarMapNewsMarker[],
   opts: IntelGeojsonOptions = {},
 ): string {
   const zh = isZhLocale(opts.locale);
-  const base = clampUrlBase(opts.consoleBase);
 
   const sorted = [...markers]
     .map((marker, index) => ({ marker, index, time: newsTimeMs(marker) }))
@@ -199,6 +239,7 @@ export function newsMarkersToGeojsonl(
     if (!id) continue;
     const summarySource =
       (marker as { summary?: unknown }).summary ?? marker.location;
+    const url = safeHttpUrl(marker.url);
     lines.push(
       toFeature({
         type: "Feature",
@@ -212,7 +253,8 @@ export function newsMarkersToGeojsonl(
           kind: "news",
           time: newsTime(marker),
           summary: clampIntelText(summarySource, INTEL_MAX_SUMMARY),
-          consoleUrl: `${base}/items/${encodeURIComponent(id)}`,
+          location: clampIntelText(newsLocation(marker, zh), INTEL_MAX_SUMMARY),
+          ...(url ? { url } : {}),
           newweiId: id,
         },
       }),

@@ -12172,11 +12172,12 @@
     },
     "title": "全球 3D",
     "intel": {
-      "events": "情报事件",
+      "events": "地区态势",
       "news": "情报新闻",
       "viewOnGlobe": "在 3D 地球查看",
-      "openEvent": "打开事件详情",
-      "openNews": "打开新闻"
+      "openEvent": "查看该地区事件",
+      "openNews": "打开新闻",
+      "openSource": "打开原文"
     },
     "hud": {
       "aria": "情报 HUD"
@@ -12250,6 +12251,7 @@
         "alpr": "车牌识别",
         "intel": "情报",
         "event": "事件",
+        "region": "地区态势",
         "news": "新闻",
         "unknown": "目标"
       },
@@ -12283,7 +12285,11 @@
         "position": "位置",
         "type": "类型",
         "severity": "严重程度",
-        "summary": "摘要"
+        "summary": "摘要",
+        "region": "地区",
+        "newsCount": "新闻数",
+        "alertCount": "告警数",
+        "score": "热度"
       },
       "links": {
         "external": "外部链接",

@@ -158,6 +158,7 @@ pnpm --filter @modular/web build   # 确认 Cesium 和 GEV 能被 webpack 打包
 | AI 助手问区域 | 在地球上框选区域，把区域边界、可见图层统计、区域内的新闻事件交给我们现有的助手（`/assistant` 的后端），回答显示在右侧面板 |
 | 地图上建告警 | 框选区域后生成告警规则草稿（区域 + 图层类型 + 阈值），跳到告警规则编辑器确认 |
 | 事件时间轴 | 底部时间轴控制情报图层的时间窗口，可以播放；GEV 天气图层自带的时间轴可以参考 |
+| 战争地图新闻标记返回 itemMetaId | 战争地图新闻标记返回 itemMetaId，地球上可直达新闻详情 |
 | 地球观测数据进后端 | Go 端采集 USGS 地震、NASA FIRMS 山火、CelesTrak 卫星、NOAA 风暴、公开摄像头目录，供告警、事件关联、态势面板使用（之前的规划草稿见 `/Users/oo/.claude/plans/luminous-imagining-widget.md`，执行前重新审查） |
 
 ## 9. 合规（保持）

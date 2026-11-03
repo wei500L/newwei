@@ -6,6 +6,10 @@ import { WarMapInspectorPanel } from "./war-map-inspector-panel";
 import type { WarMapInspectorPanelProps } from "./war-map-inspector-types";
 import type { SelectedInspector } from "./war-map-overlay-model";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
 const t = ((key: string, options?: Record<string, unknown>) => {
   if (key === "dashboard.charts.warMap.panel.signalsSummary") {
     return `signals summary (${options?.count})`;

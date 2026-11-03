@@ -86,4 +86,58 @@ describe("TargetCard", () => {
       screen.getByRole("button", { name: /停止跟踪|Stop tracking/ }),
     ).toBeInTheDocument();
   });
+
+  it("external 主按钮在新标签页打开并带 noopener noreferrer", () => {
+    const externalView: TargetView = {
+      ...view,
+      console: {
+        labelKey: "globe.intel.openSource",
+        href: "https://example.com/article",
+        external: true,
+      },
+    };
+    renderWithProviders(
+      <TargetCard
+        view={externalView}
+        layerName="News"
+        tracking={false}
+        isTracked={false}
+        onTrack={vi.fn()}
+        onUntrack={vi.fn()}
+        onFlyTo={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /打开原文|Open source/ });
+    expect(link).toHaveAttribute("href", "https://example.com/article");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toMatch(/noopener/);
+    expect(link.getAttribute("rel")).toMatch(/noreferrer/);
+  });
+
+  it("external href 不是合法 http(s) 时不渲染主按钮", () => {
+    const badView: TargetView = {
+      ...view,
+      console: {
+        labelKey: "globe.intel.openSource",
+        href: "javascript:alert(1)",
+        external: true,
+      },
+    };
+    renderWithProviders(
+      <TargetCard
+        view={badView}
+        layerName="News"
+        tracking={false}
+        isTracked={false}
+        onTrack={vi.fn()}
+        onUntrack={vi.fn()}
+        onFlyTo={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("link", { name: /打开原文|Open source/ }),
+    ).toBeNull();
+  });
 });

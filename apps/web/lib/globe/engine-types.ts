@@ -191,14 +191,14 @@ export interface LocationNavigationLike {
   orbitController?: { stop?: () => void } | null;
 }
 
-/** 引擎/负责人集合。CockpitCoordinator 由 `attachCockpit()` 延迟创建。 */
+/** 引擎/负责人集合。CockpitCoordinator 由 `attachCockpit()` 延迟创建，故为只读取值器。 */
 export interface GlobeOwners {
   visualSettings: VisualSettingsLike | null;
   navigation: NavigationControllerLike | null;
   layerBindings: LayerBindingsLike | null;
   context: ContextControlsLike | null;
   locationNavigation: LocationNavigationLike | null;
-  cockpit: CockpitCoordinatorLike | null;
+  readonly cockpit: CockpitCoordinatorLike | null;
 }
 
 

@@ -41,8 +41,12 @@ function parseLines(geojsonl: string): Record<string, unknown>[] {
 }
 
 describe("intel-geojson", () => {
-  it("转换正常事件：一行一个合法 Feature", () => {
-    const lines = parseLines(eventsToGeojsonl([event()], { locale: "en-US" }));
+  it("转换正常事件（地区聚合）：一行一个合法 Feature，带 kind/计数/地区搜索链接", () => {
+    const lines = parseLines(
+      eventsToGeojsonl([event({ newsCount: 3, alertCount: 2 })], {
+        locale: "en-US",
+      }),
+    );
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       type: "Feature",
@@ -50,18 +54,27 @@ describe("intel-geojson", () => {
       geometry: { type: "Point", coordinates: [20, 10] },
       properties: {
         name: "Border incident",
-        kind: "event",
+        kind: "region",
         severity: "high",
-        consoleUrl: "/events/evt-1",
+        consoleUrl: "/search?q=Border%20incident",
         newweiId: "evt-1",
+        countryCode: "evt-1",
+        newsCount: 3,
+        alertCount: 2,
+        score: 9,
       },
     });
   });
 
-  it("新闻转换指向 /items/<id> 且 kind=news", () => {
+  it("新闻转换不带 consoleUrl，只保留合法的 http(s) 原文 url", () => {
     const lines = parseLines(
       newsMarkersToGeojsonl(
-        [marker({ publishedAt: "2026-01-02T00:00:00.000Z" })],
+        [
+          marker({
+            publishedAt: "2026-01-02T00:00:00.000Z",
+            url: "https://example.com/article",
+          }),
+        ],
         { locale: "en-US" },
       ),
     );
@@ -70,11 +83,25 @@ describe("intel-geojson", () => {
       id: "news:news-1",
       properties: {
         kind: "news",
-        consoleUrl: "/items/news-1",
         newweiId: "news-1",
         time: "2026-01-02T00:00:00.000Z",
+        location: "Suez",
+        url: "https://example.com/article",
       },
     });
+    expect(
+      (lines[0]!.properties as Record<string, unknown>).consoleUrl,
+    ).toBeUndefined();
+  });
+
+  it("新闻的 javascript: url 被丢弃", () => {
+    const [line] = parseLines(
+      newsMarkersToGeojsonl(
+        [marker({ url: "javascript:alert(1)" })],
+        { locale: "en-US" },
+      ),
+    );
+    expect((line!.properties as Record<string, unknown>).url).toBeUndefined();
   });
 
   it("丢弃无效坐标（NaN / 越界）", () => {
