@@ -48,9 +48,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspacewrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
@@ -62,7 +62,7 @@ import (
 // Mutation root. It also registers the GraphQL stats handler. The returned
 // handler is closed during teardown.
 func wireGraphQL(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -180,7 +180,7 @@ func wireGraphQL(
 	if err != nil {
 		return nil, err
 	}
-	gateway.RegisterGoHandler(graphqlread.StatsPath, handler.ServeStats)
+	gateway.Handle(graphqlread.StatsPath, handler.ServeStats)
 
 	log.Printf("api-go: GraphQL executor under go (reads: news events, indicators, kg impact, knowledge graph, workspace, items, crawl metadata, settings/crawl; writes: org access, workspace, items/crawl, alert rules, settings, source policy, knowledge review, assistant, crawl task, economic, rss translation, analysis runs)")
 	log.Printf("api-go: GraphQL org-access writes registered (%s)", strings.Join(orgaccesswrite.RegisteredMutations, ", "))

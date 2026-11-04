@@ -15,7 +15,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireCrawlFrontierWrites registers the three crawl frontier write handlers only
@@ -26,7 +26,7 @@ import (
 // the read handler owns GET /runs/:id and the write handler returns the same run
 // detail. The producer is built here because createRun and the two retry routes
 // enqueue crawl jobs, exactly like the NestJS service they replace.
-func wireCrawlFrontierWrites(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireCrawlFrontierWrites(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl frontier writes go takeover requires mysql, jwt, and redis")
 	}
@@ -47,7 +47,7 @@ func wireCrawlFrontierWrites(gateway *legacyproxy.Gateway, cfg config.Config, db
 	})
 	handler := crawlfrontierruns.NewWriteHandler(authenticator, crawlfrontierruns.NewWriteService(db, frontier))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.CrawlFrontierWritesKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.CrawlFrontierWritesKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

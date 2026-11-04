@@ -7,7 +7,7 @@ import (
 )
 
 // RefreshHandler serves POST /api/situation-monitor/refresh. It owns exactly one
-// route, registered under legacyproxy.SituationRefreshKey, so the independent
+// route, registered under httproute.SituationRefreshKey, so the independent
 // refresh switch never shares a handler with the seven signal routes.
 type RefreshHandler struct {
 	auth    *Authenticator

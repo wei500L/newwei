@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireAuthLogin registers the eleven POST /api/auth login, session, email-code
@@ -26,7 +26,7 @@ import (
 // mail synchronously). It deliberately opens no Mongo connection, starts no
 // worker or scheduler and performs no startup network probe: the SMTP connection
 // is established per message, inside the request that needs it.
-func wireAuthLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireAuthLogin(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: auth login go takeover requires mysql, redis, and jwt")
 	}
@@ -73,7 +73,7 @@ func wireAuthLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 	handler := authlogin.NewHandler(authenticator, service)
 
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.AuthLoginKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.AuthLoginKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

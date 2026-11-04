@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/searchreindex"
 )
@@ -28,7 +28,7 @@ import (
 // implementation. The returned service owns the background rebuild context and
 // must be closed on shutdown.
 func wireSearchReindex(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -45,7 +45,7 @@ func wireSearchReindex(
 	service := searchreindex.NewService(redisClient, mongoConn.Database(), machines)
 	handler := searchreindex.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.SearchReindexKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.SearchReindexKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

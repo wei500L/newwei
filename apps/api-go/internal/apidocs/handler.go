@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
+	"github.com/wei500L/newwei/apps/api-go/internal/notfound"
 )
 
 // assetPath is one /docs sub-path the handler answers. The named type keeps the
@@ -56,7 +56,7 @@ type Config struct {
 	Policy cors.Policy
 	// Recorder receives the NestJS-compatible exception event for every 404. It
 	// may be nil; the response is written either way.
-	Recorder nestnotfound.Recorder
+	Recorder notfound.Recorder
 }
 
 // Handler serves the embedded Swagger UI surface. It is immutable after
@@ -100,7 +100,7 @@ func NewHandler(cfg Config) *Handler {
 //  5. Anything else under /docs: the same unmatched-route 404.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil {
-		nestnotfound.Write(w, r, cors.Policy{}, nil)
+		notfound.Write(w, r, cors.Policy{}, nil)
 		return
 	}
 	if !h.cfg.Enabled {
@@ -136,11 +136,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.writeAsset(w, r, file)
 }
 
-// writeNotFound renders the NestJS unmatched-route 404. nestnotfound.Write also
+// writeNotFound renders the NestJS unmatched-route 404. notfound.Write also
 // consults the CORS policy itself; that second call is idempotent for a request
 // whose headers were already applied by ServeHTTP.
 func (h *Handler) writeNotFound(w http.ResponseWriter, r *http.Request) {
-	nestnotfound.Write(w, r, h.cfg.Policy, h.cfg.Recorder)
+	notfound.Write(w, r, h.cfg.Policy, h.cfg.Recorder)
 }
 
 // writeAsset serves one embedded body with its ETag and cache policy. The

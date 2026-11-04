@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 )
 
@@ -19,7 +19,7 @@ import (
 // only when API_GO_RUNTIME_SETTINGS_MODE=go. Every other value (including the
 // default legacy and the empty string) registers nothing, so the routes keep
 // flowing through the NestJS proxy and rollback is a single variable change.
-func wireRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireRuntimeSettings(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: runtime settings go takeover requires mysql, redis, and jwt")
 	}
@@ -39,7 +39,7 @@ func wireRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sq
 	})
 	handler := runtimesettings.NewHandler(runtimesettings.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.RuntimeSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.RuntimeSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -27,8 +27,8 @@
 //   - 非 GET 不进入本 handler（路由层 method 白名单 + 本包防御性检查）；
 //   - repository 查询 key 是编译期固定常量（usersettings 包封闭集合）。
 //
-// 回滚：API_GO_USER_SETTINGS_READ_MODE=shadow（配置变更，无数据迁移
-// 耦合）。
+// This handler serves the six user-settings read GETs behind the auth chain;
+// there is no mode switch and rollback is a normal version rollback.
 package usersettingsread
 
 import (

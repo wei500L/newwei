@@ -67,7 +67,7 @@ type telegramAuthAuthorizer interface {
 }
 
 // TelegramAuthHandler serves the start/complete routes. Every other path or
-// method is a 404 (the legacyproxy routing table never sends them here).
+// method is a 404 (the httproute routing table never sends them here).
 type TelegramAuthHandler struct {
 	auth       telegramAuthAuthorizer
 	settings   telegramAuthSettings

@@ -14,7 +14,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/emailsettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/geocoding"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayops"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
@@ -26,7 +26,7 @@ import (
 // API_GO_EMAIL_SETTINGS_MODE=go. The unit talks to the real SMTP transport, so it
 // needs the shared MySQL/Redis/JWT stack and the SMTP_* configuration; it starts
 // no worker and opens no second pool.
-func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireEmailSettings(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: email settings go takeover requires mysql, redis, and jwt")
 	}
@@ -54,7 +54,7 @@ func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.
 	})
 	handler := emailsettings.NewHandler(platformgovernance.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.EmailSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.EmailSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}
@@ -71,14 +71,14 @@ func wireEmailSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.
 // wireGeocoding registers the two geocoding routes only when
 // API_GO_GEOCODING_MODE=go. It shares the geo:geocode:v1 cache, the
 // rate:geocode:nominatim limiter and the geo_nominatim_identity row with NestJS.
-func wireGeocoding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireGeocoding(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: geocoding go takeover requires mysql, redis, and jwt")
 	}
 	client := newGeocodingClient(cfg, db, redisClient)
 	handler := geocoding.NewHandler(platformgovernance.NewAuthenticator(authenticator, db), client)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.GeocodingKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.GeocodingKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}
@@ -98,7 +98,7 @@ func wireGeocoding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 // assistant safety half reuses the platform governance / model access / LLM
 // gateway readers and performs three real LiteLLM probes.
 func wireRuntimeDiagnostics(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -128,7 +128,7 @@ func wireRuntimeDiagnostics(
 
 	handler := runtimediagnostics.NewHandler(platformgovernance.NewAuthenticator(authenticator, db), safety, realtime)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.RuntimeDiagnosticsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.RuntimeDiagnosticsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -2,7 +2,7 @@
 // to NestJS).
 //
 // The process owns every implemented HTTP/GraphQL/Socket.IO entrypoint and the
-// async execution: the route table is assembled by legacyproxy.AllRoutes() and
+// async execution: the route table is assembled by httproute.AllRoutes() and
 // matched requests run the registered Go handler; an unmatched method/path is
 // answered by the gateway with a Nest-compatible 404 (CORS/trace/exception
 // recording preserved). There is no reverse proxy, shadow comparison or canary
@@ -43,10 +43,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
@@ -157,8 +157,8 @@ func run() error {
 		closers.run(closeCtx)
 	}()
 
-	rules := legacyproxy.AllRoutes()
-	gateway := legacyproxy.New(rules)
+	rules := httproute.AllRoutes()
+	gateway := httproute.New(rules)
 	// The process-wide vector-service circuit state shared by the search client,
 	// the two upsert clients and the C-5 diagnostics route.
 	vectorServiceHealth := &vectorclient.Health{}
@@ -189,7 +189,7 @@ func run() error {
 	writeHandler := usersettingswrite.NewHandler(authenticator, userSettingsRepo)
 	corsPolicy := cors.New(cfg.CorsOrigin)
 	for _, path := range usersettingsread.Paths {
-		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(path, func(w http.ResponseWriter, r *http.Request) {
 			if corsPolicy.FinishOptions(w, r) {
 				return
 			}
@@ -214,10 +214,10 @@ func run() error {
 		TimeoutMs:     cfg.LiteLLMTimeoutMs,
 		MaxRetries:    cfg.LiteLLMMaxRetries,
 	}))
-	gateway.RegisterGoHandler("/api/public-portal/home", portal.ServeHome)
-	gateway.RegisterGoHandler("/api/public-portal/channels/", portal.ServeChannel)
-	gateway.RegisterGoHandler("/api/public-portal/stories/id/", portal.ServeStoryByID)
-	gateway.RegisterGoHandler("/api/public-portal/stories/slug/", portal.ServeStoryBySlug)
+	gateway.Handle("/api/public-portal/home", portal.ServeHome)
+	gateway.Handle("/api/public-portal/channels/", portal.ServeChannel)
+	gateway.Handle("/api/public-portal/stories/id/", portal.ServeStoryByID)
+	gateway.Handle("/api/public-portal/stories/slug/", portal.ServeStoryBySlug)
 	log.Printf("api-go: public portal home, channel and story detail under go takeover")
 
 	// Dashboard: stats, charts, war map, spacetime, stream and authenticated healthz.
@@ -428,7 +428,7 @@ func run() error {
 
 	// /__go/healthz: liveness probe + route-table introspection. Renders only
 	// stable process facts, never migration mode values.
-	gateway.SetGoHandler(func(w http.ResponseWriter, _ *http.Request) {
+	gateway.HandleProcessHealth(func(w http.ResponseWriter, _ *http.Request) {
 		streamActive, streamCycles := int64(0), int64(0)
 		if streamHandler != nil {
 			streamActive, streamCycles = streamHandler.Stats()
@@ -441,7 +441,7 @@ func run() error {
 			"database":     "configured",
 		})
 	})
-	gateway.RegisterGoHandler("/api/healthz/live", health.LiveHandler)
+	gateway.Handle("/api/healthz/live", health.LiveHandler)
 
 	// The items write service is shared by the HTTP POST, the five mutations,
 	// immediate outbox delivery and the scheduled replay owner.
@@ -488,7 +488,7 @@ func run() error {
 	})
 	itemsReadingHandler := itemsreading.NewHandler(authenticator, sharedDB, itemsReadingService)
 	itemsReadingCORS := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.ItemsReadingKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.ItemsReadingKey, func(w http.ResponseWriter, r *http.Request) {
 		if itemsReadingCORS.FinishOptions(w, r) {
 			return
 		}
@@ -539,7 +539,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	gateway.RegisterGoHandler(notificationssocket.Path, notificationsSocket.ServeHTTP)
+	gateway.Handle(notificationssocket.Path, notificationsSocket.ServeHTTP)
 	closers.push(func(ctx context.Context) error { return notificationsSocket.Close(ctx) })
 	log.Printf("api-go: notifications Socket.IO transport under go (%s, namespace %s)", notificationssocket.Path, notificationssocket.Namespace)
 
@@ -551,7 +551,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	gateway.RegisterGoHandler(realtimesocket.Path, realtimeSocket.runtime.ServeHTTP)
+	gateway.Handle(realtimesocket.Path, realtimeSocket.runtime.ServeHTTP)
 	closers.push(func(ctx context.Context) error { return realtimeSocket.Close(ctx) })
 	log.Printf("api-go: realtime Socket.IO transport under go (%s, namespaces /newsnow /ops /quality /queue /situation-monitor)", realtimesocket.Path)
 
@@ -568,7 +568,7 @@ func run() error {
 
 	if graphqlHandler != nil || graphqlSubscriptions != nil {
 		entrypoint := graphqlEntrypoint(graphqlSubscriptions, graphqlHandler)
-		gateway.RegisterGoHandler(graphqlread.Path, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(graphqlread.Path, func(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(economicdata.WithRequestIP(r.Context(), economicRequestIP(r)))
 			entrypoint(w, r)
 		})
@@ -707,6 +707,11 @@ func run() error {
 		return err
 	}
 	closers.push(func(ctx context.Context) error { return residualDuties.Close(ctx) })
+
+	// Every route and handler is registered above; bind each rule to its handler
+	// once and close registration before the listener starts. Registering a route
+	// after this point is a programming error and panics.
+	gateway.Freeze()
 
 	// Start everything. Background units whose switch can be off are nil-guarded.
 	if graphqlSubscriptions != nil {

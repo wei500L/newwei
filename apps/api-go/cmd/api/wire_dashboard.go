@@ -24,7 +24,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstream"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
 	"github.com/wei500L/newwei/apps/api-go/internal/health"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
@@ -33,7 +33,7 @@ import (
 // /api/healthz handler. It returns the stream handler (for the /__go/healthz
 // introspection counters) and the ready handler (closed during teardown).
 func wireDashboard(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -48,7 +48,7 @@ func wireDashboard(
 	// worker. The War Map and spacetime units reuse the same Mongo client.
 	statsHandler := dashboardstats.Connect(authenticator, db, redisClient, mongoClient)
 	statsCORS := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(dashboardstats.Path, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(dashboardstats.Path, func(w http.ResponseWriter, r *http.Request) {
 		if statsCORS.FinishOptions(w, r) {
 			return
 		}
@@ -66,7 +66,7 @@ func wireDashboard(
 	chartsHandler := dashboardcharts.NewHandler(authenticator, dashboardcharts.NewMySQLStore(db))
 	chartsCORS := cors.New(cfg.CorsOrigin)
 	for _, path := range dashboardcharts.Paths {
-		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(path, func(w http.ResponseWriter, r *http.Request) {
 			if chartsCORS.FinishOptions(w, r) {
 				return
 			}
@@ -113,7 +113,7 @@ func wireDashboard(
 	})
 	warCORS := cors.New(cfg.CorsOrigin)
 	registerWar := func(path string) {
-		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(path, func(w http.ResponseWriter, r *http.Request) {
 			if warCORS.FinishOptions(w, r) {
 				return
 			}
@@ -144,7 +144,7 @@ func wireDashboard(
 	})
 	spacetimeCORS := cors.New(cfg.CorsOrigin)
 	registerSpacetime := func(path string) {
-		gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(path, func(w http.ResponseWriter, r *http.Request) {
 			if spacetimeCORS.FinishOptions(w, r) {
 				return
 			}
@@ -166,7 +166,7 @@ func wireDashboard(
 	// SSE stream reuses the same three services.
 	streamCORS := cors.New(cfg.CorsOrigin)
 	streamHandler := dashboardstream.NewHandler(authenticator, warHandler, chartsHandler, spacetimeHandler, streamCORS)
-	gateway.RegisterGoHandler(dashboardstream.Path, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(dashboardstream.Path, func(w http.ResponseWriter, r *http.Request) {
 		if streamCORS.FinishOptions(w, r) {
 			return
 		}
@@ -191,7 +191,7 @@ func wireDashboard(
 		ProxyURL:     cfg.CrawlSSRFProxyURL,
 		RerankNeed:   cfg.ItemsSearchRerankEnabled,
 	})
-	gateway.RegisterGoHandler(health.ReadyPath, readyHandler.ServeHTTP)
+	gateway.Handle(health.ReadyPath, readyHandler.ServeHTTP)
 	log.Printf("api-go: GET /api/healthz under go takeover")
 
 	return streamHandler, readyHandler, nil

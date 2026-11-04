@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
 )
 
@@ -24,7 +24,7 @@ import (
 // The takeover needs MySQL (settings, governance and security rows), Redis (the
 // read cache) and the JWT authenticator. It does not need Mongo, an outbound
 // model HTTP client or any model upstream probe.
-func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireLLMGatewayProfiles(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm gateway profiles go takeover requires mysql, redis, and jwt")
 	}
@@ -34,7 +34,7 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 		service,
 	)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.LLMGatewayProfilesKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.LLMGatewayProfilesKey, func(w http.ResponseWriter, r *http.Request) {
 		// Unmigrated static paths are forwarded before authentication, body
 		// decoding and CORS handling, so PUT/DELETE /proxy-governance and
 		// /proxy-load-balancing can never be mistaken for a profile id. Their

@@ -15,7 +15,8 @@ const (
 	permWrite = "settings.manage"
 )
 
-// Handler 只服务开关为 go 时接管的 3 条新闻指标接口。身份只来自鉴权链。
+// Handler serves the three news-indicator routes. Identity comes only from the
+// auth chain.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service

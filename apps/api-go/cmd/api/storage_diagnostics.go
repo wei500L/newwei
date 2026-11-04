@@ -11,8 +11,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/infrastructuresettings"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
 // wireStorageDiagnostics registers POST /api/admin/settings/storage/test only
@@ -25,7 +25,7 @@ import (
 // authenticator with settings.manage and the shared storage configuration
 // reader. It deliberately builds no S3 client at startup and performs no probe:
 // the diagnostics run only inside a request.
-func wireStorageDiagnostics(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireStorageDiagnostics(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: storage diagnostics go takeover requires mysql, redis, and jwt")
 	}
@@ -35,7 +35,7 @@ func wireStorageDiagnostics(gateway *legacyproxy.Gateway, cfg config.Config, db 
 		service,
 	)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.StorageDiagnosticsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.StorageDiagnosticsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -20,9 +20,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
@@ -40,7 +40,7 @@ import (
 // document, so Mongo is required whenever either switch is go; the outbox row is
 // claimed transactionally, so sharing the items-ingest service is safe.
 func wireNewsSourceScheduler(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -116,7 +116,7 @@ func wireNewsSourceScheduler(
 		handler := newssourcescheduler.NewHandler(authenticator, service).
 			UseMachineAuthentication(newssources.NewServiceWithRedis(db, redisClient))
 		policy := cors.New(cfg.CorsOrigin)
-		gateway.RegisterGoHandler(legacyproxy.NewsSourceOpsKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.NewsSourceOpsKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}

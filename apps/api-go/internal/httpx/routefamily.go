@@ -7,7 +7,7 @@ import "strings"
 // root.
 //
 // This is the label value for both api_go_legacy_proxy_requests_total (computed
-// by legacyproxy) and the route label of http_request_duration_seconds, so one
+// by httproute) and the route label of http_request_duration_seconds, so one
 // route keeps a single series across its cutover from the NestJS proxy to a Go
 // handler. It never contains a path parameter, ID, token or query string.
 func RouteFamily(path string) string {

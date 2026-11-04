@@ -13,7 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
@@ -32,7 +32,7 @@ import (
 // the export is taken over and no other unit opened it already; the shared
 // shutdown path closes it.
 func wireAccountData(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -83,7 +83,7 @@ func wireAccountData(
 	handler := accountdata.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
 	register := func(key string) {
-		gateway.RegisterGoHandler(key, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(key, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}
@@ -95,10 +95,10 @@ func wireAccountData(
 		})
 	}
 	if avatarGo {
-		register(legacyproxy.AvatarUploadKey)
+		register(httproute.AvatarUploadKey)
 	}
 	if exportGo {
-		register(legacyproxy.UserDataExportKey)
+		register(httproute.UserDataExportKey)
 	}
 	log.Printf("api-go: account data takeover avatar=%s export=%s", "go", "go")
 	return nil

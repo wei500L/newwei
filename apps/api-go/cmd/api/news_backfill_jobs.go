@@ -15,7 +15,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/clusteringrecoveryqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbackfilljobs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
@@ -89,7 +89,7 @@ func (r *newsBackfillRuntime) Close(ctx context.Context) error {
 // wireNewsBackfillJobs constructs only the components whose switch is go. In
 // the legacy default it returns (nil, nil) and registers nothing.
 func wireNewsBackfillJobs(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -161,7 +161,7 @@ func wireNewsBackfillJobs(
 			}
 			handler := newsbackfilljobs.NewHandler(authenticator, clusteringService, service)
 			policy := cors.New(cfg.CorsOrigin)
-			gateway.RegisterGoHandler(legacyproxy.NewsClusteringLlmBackfillKey, func(w http.ResponseWriter, r *http.Request) {
+			gateway.Handle(httproute.NewsClusteringLlmBackfillKey, func(w http.ResponseWriter, r *http.Request) {
 				if policy.FinishOptions(w, r) {
 					return
 				}

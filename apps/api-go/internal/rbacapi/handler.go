@@ -32,7 +32,8 @@ const (
 	permSettingsManage = "settings.manage"
 )
 
-// Handler 只服务开关为 go 时接管的 RBAC 六条 HTTP。身份只来自鉴权链。
+// Handler serves the six RBAC HTTP routes. Identity comes only from the auth
+// chain.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service

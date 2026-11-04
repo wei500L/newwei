@@ -33,10 +33,7 @@ func LiveHandler(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// LiveResult 返回 live 探针的 Result 形状（shadow 差分执行用）。
-//
-// The header and body must be byte-identical to LiveHandler's output: Express
-// res.json sets "application/json; charset=utf-8" and does not append a newline.
+// LiveResult returns the liveness probe's response record.
 func LiveResult() *ExecResult {
 	return &ExecResult{
 		StatusCode: http.StatusOK,
@@ -45,7 +42,7 @@ func LiveResult() *ExecResult {
 	}
 }
 
-// ExecResult 是 health 模块的执行结果（实现 shadow.Executant 的 Result 契约）。
+// ExecResult is the health module's response record: status, headers and body.
 type ExecResult struct {
 	StatusCode int
 	Header     http.Header

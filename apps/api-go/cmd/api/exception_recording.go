@@ -36,7 +36,7 @@ const exceptionRecordTimeout = 5 * time.Second
 // Only Go-written responses are recorded here. Anything the gateway proxies to
 // NestJS keeps NestJS's own filter and its own event, so a legacy or shadow
 // response is never double-recorded. The Go-owned 404 paths keep their existing
-// nestnotfound recorder (same shape, same message); they never reach authhttp, so
+// notfound recorder (same shape, same message); they never reach authhttp, so
 // this recorder does not see them.
 //
 // # Laziness

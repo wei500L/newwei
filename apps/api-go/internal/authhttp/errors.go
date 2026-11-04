@@ -65,7 +65,7 @@ type errorBody struct {
 func writeError(w http.ResponseWriter, r *http.Request, body errorBody) {
 	// GlobalExceptionFilter computes `getCurrentTraceId() ?? ensureTraceId()`, so
 	// an error written outside TraceMiddleware still carries a generated id
-	// instead of an empty string. nestnotfound.Write has the same fallback.
+	// instead of an empty string. notfound.Write has the same fallback.
 	traceID := httpx.TraceIDFromContext(r.Context())
 	if traceID == "" {
 		traceID = httpx.EnsureTraceID(r.Header.Get("x-trace-id"))

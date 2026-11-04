@@ -57,7 +57,7 @@ const (
 )
 
 // Handler serves the nine migrated endpoints. It is registered on the gateway
-// under legacyproxy.NewsnowClusteringOpsKey and is reached only when the mode
+// under httproute.NewsnowClusteringOpsKey and is reached only when the mode
 // switch is go; the route table guarantees that unmatched methods and paths
 // never arrive here.
 type Handler struct {

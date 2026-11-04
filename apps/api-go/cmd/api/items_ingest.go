@@ -12,9 +12,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
@@ -61,13 +61,13 @@ func wireRawItemOutboxScheduler(
 // /api/items key. When the items reading switch is go, GET/OPTIONS continue to
 // the existing read handler; every other method stays on NestJS.
 func registerItemsIngestHandler(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	handler *itemsingest.Handler,
 	readHandler *itemsreading.Handler,
 ) {
 	corsPolicy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.ItemsIngestKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.ItemsIngestKey, func(w http.ResponseWriter, r *http.Request) {
 		if corsPolicy.FinishOptions(w, r) {
 			return
 		}

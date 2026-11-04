@@ -23,8 +23,9 @@ const (
 	permissionManage = "settings.manage"
 )
 
-// Handler 只服务开关为 go 时接管的质量面板 5 条 GET。身份只来自鉴权链，
-// orgId 一律取自身份（query 里的 orgId 不参与）。
+// Handler serves the five read-only quality-overview GET routes. Identity comes
+// only from the auth chain; orgId is always taken from the identity (a query
+// orgId is ignored).
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service
