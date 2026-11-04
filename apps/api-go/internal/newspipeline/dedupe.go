@@ -47,6 +47,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
 
@@ -469,7 +470,7 @@ func (d *Deduper) findLlmDuplicate(ctx context.Context, options dedupeLLMOptions
 	var waitGroup sync.WaitGroup
 	for worker := 0; worker < workers; worker++ {
 		waitGroup.Add(1)
-		go func() {
+		safego.Go("newspipeline.dedupe.findLLMDuplicate", func() {
 			defer waitGroup.Done()
 			for {
 				state.Lock()
@@ -508,7 +509,7 @@ func (d *Deduper) findLlmDuplicate(ctx context.Context, options dedupeLLMOptions
 					state.Unlock()
 				}
 			}
-		}()
+		})
 	}
 	waitGroup.Wait()
 

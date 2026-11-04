@@ -14,6 +14,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // crawlResultIngestConcurrency is CRAWL_RESULT_INGEST_CONCURRENCY.
@@ -60,13 +61,13 @@ func runConcurrent[T any, R any](ctx context.Context, items []T, limit int, fn f
 	}
 	done := make(chan struct{}, workers)
 	for worker := 0; worker < workers; worker++ {
-		go func() {
+		safego.Go("itemsingest.runConcurrent", func() {
 			for current := range jobs {
 				value, err := fn(ctx, items[current.index])
 				results[current.index] = settled[R]{Value: value, Err: err}
 			}
 			done <- struct{}{}
-		}()
+		})
 	}
 	for index := range items {
 		jobs <- job{index: index}

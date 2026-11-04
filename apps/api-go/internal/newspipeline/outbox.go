@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports the create side of news-pipeline-outbox.service.ts that the
@@ -136,7 +138,7 @@ func (s *Service) dispatchOutboxDelivery(outboxID string) {
 		return
 	}
 	s.asyncWG.Add(1)
-	go func() {
+	safego.Go("newspipeline.outbox.dispatchDelivery", func() {
 		defer s.asyncWG.Done()
 		if s.deliverySlots != nil {
 			s.deliverySlots <- struct{}{}
@@ -147,7 +149,7 @@ func (s *Service) dispatchOutboxDelivery(outboxID string) {
 		if delivered := s.outbox.DeliverNow(ctx, outboxID); !delivered {
 			s.logf("immediate processed_item outbox delivery failed; #116 scanner will retry: outboxId=%s", outboxID)
 		}
-	}()
+	})
 }
 
 // dispatchSnapshotRefresh mirrors createOutboxEntry's fire-and-forget
@@ -158,14 +160,14 @@ func (s *Service) dispatchSnapshotRefresh(orgID string, sourceID *string) {
 		return
 	}
 	s.asyncWG.Add(1)
-	go func() {
+	safego.Go("newspipeline.outbox.refreshSnapshot", func() {
 		defer s.asyncWG.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), pipelineDeliveryTimeout)
 		defer cancel()
 		if err := s.snapshots.RefreshNewsSourceSnapshot(ctx, orgID, *sourceID); err != nil {
 			s.logf("failed to refresh news source ops snapshot for sourceId %s: %v", *sourceID, err)
 		}
-	}()
+	})
 }
 
 // waitAsync blocks until every immediate-delivery and snapshot goroutine this

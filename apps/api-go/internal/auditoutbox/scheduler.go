@@ -12,6 +12,8 @@ import (
 	mathrand "math/rand"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -75,10 +77,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("auditoutbox.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -126,9 +128,12 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			if err := s.runTick(ctx); err != nil {
-				log.Printf("auditoutbox: tick failed: %v", err)
-			}
+			_ = safego.Call("auditoutbox.scheduler.tick", func() error {
+				if err := s.runTick(ctx); err != nil {
+					log.Printf("auditoutbox: tick failed: %v", err)
+				}
+				return nil
+			})
 			now := s.clock().UTC()
 			next = next.Add(time.Minute)
 			if !next.After(now) {
@@ -219,7 +224,7 @@ func (s *Scheduler) processCandidates(ctx context.Context, candidates []Candidat
 	var workers sync.WaitGroup
 	for index := 0; index < deliveryConcurrency; index++ {
 		workers.Add(1)
-		go func() {
+		safego.Go("auditoutbox.scheduler.processCandidates", func() {
 			defer workers.Done()
 			for candidate := range work {
 				if s.stopped() {
@@ -232,7 +237,7 @@ func (s *Scheduler) processCandidates(ctx context.Context, candidates []Candidat
 					)
 				}
 			}
-		}()
+		})
 	}
 
 	for _, candidate := range candidates {
@@ -399,7 +404,7 @@ func (s *Scheduler) startLockRenew(token string) (stop func(), release func()) {
 	stopCh := make(chan struct{})
 	var once sync.Once
 
-	go func() {
+	safego.Go("auditoutbox.scheduler.lockRenew", func() {
 		defer ticker.Stop()
 		for {
 			select {
@@ -407,11 +412,13 @@ func (s *Scheduler) startLockRenew(token string) (stop func(), release func()) {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = s.deps.Locks.RenewLock(renewCtx, lockKey, token, lockTTL)
+				_ = safego.Call("auditoutbox.scheduler.renewLock", func() error {
+					return s.deps.Locks.RenewLock(renewCtx, lockKey, token, lockTTL)
+				})
 				cancel()
 			}
 		}
-	}()
+	})
 
 	return func() { once.Do(func() { close(stopCh) }) }, func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

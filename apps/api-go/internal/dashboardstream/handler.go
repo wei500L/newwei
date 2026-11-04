@@ -27,6 +27,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardcharts"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardwarmap"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -265,9 +266,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
+	safego.Go("dashboardstream.serve.pump", func() {
 		defer wg.Done()
-		publish(true)
+		_ = safego.Call("dashboardstream.serve.publish", func() error { publish(true); return nil })
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -278,10 +279,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if ctx.Err() != nil {
 					return
 				}
-				publish(false)
+				_ = safego.Call("dashboardstream.serve.publish", func() error { publish(false); return nil })
 			}
 		}
-	}()
+	})
 
 	pingTicker := time.NewTicker(pingEvery)
 	defer pingTicker.Stop()
@@ -322,25 +323,25 @@ func (h *Handler) publish(ctx context.Context, sink *streamSink, orgID string, d
 	warCh := make(chan warResult, 1)
 	candleCh := make(chan byteResult, 1)
 	heatCh := make(chan byteResult, 1)
-	go func() {
+	safego.Go("dashboardstream.publish.warRead", func() {
 		read, err := h.warReads.do(ctx, warReadKey(orgID, warStart, warEnd, view), bucket, func(readCtx context.Context) (warRead, error) {
 			events, markers, layers, err := h.war.ReadForStream(readCtx, orgID, warStart, warEnd, view)
 			return warRead{events: events, markers: markers, layers: layers}, err
 		})
 		warCh <- warResult{read: read, err: err}
-	}()
-	go func() {
+	})
+	safego.Go("dashboardstream.publish.candleRead", func() {
 		body, err := h.candleReads.do(ctx, candleReadKey(dashStart, dashEnd), bucket, func(readCtx context.Context) ([]byte, error) {
 			return h.candles.ReadCandlestick(readCtx, dashStart, dashEnd)
 		})
 		candleCh <- byteResult{body: body, err: err}
-	}()
-	go func() {
+	})
+	safego.Go("dashboardstream.publish.heatRead", func() {
 		body, err := h.heatReads.do(ctx, heatReadKey(orgID, dashStart, dashEnd), bucket, func(readCtx context.Context) ([]byte, error) {
 			return h.heat.ReadHeatmap(readCtx, orgID, dashStart, dashEnd)
 		})
 		heatCh <- byteResult{body: body, err: err}
-	}()
+	})
 
 	warPart := <-warCh
 	candlePart := <-candleCh

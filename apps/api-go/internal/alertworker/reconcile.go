@@ -7,6 +7,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // The reconciliation constants. ALERT_RULE_TASK_CONCURRENCY is the NestJS
@@ -183,7 +185,7 @@ func (r *ruleScheduleReconciler) ensureRuleBatch(ctx context.Context, rules []ac
 	)
 	wg.Add(workers)
 	for worker := 0; worker < workers; worker++ {
-		go func() {
+		safego.Go("alertworker.reconcile.ensureRuleBatch", func() {
 			defer wg.Done()
 			for {
 				mu.Lock()
@@ -203,7 +205,7 @@ func (r *ruleScheduleReconciler) ensureRuleBatch(ctx context.Context, rules []ac
 					mu.Unlock()
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return failures

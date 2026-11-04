@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 type adminClient struct {
@@ -195,7 +197,7 @@ func (h *AdminHandler) serveUpgrade(w http.ResponseWriter, r *http.Request, iden
 		GatewayBaseURL: h.admin.baseURL,
 	}
 	h.svc.writeAuditLogBestEffort(r.Context(), identity.OrgID, identity.UserID, "akshare_gateway", "upgrade_requested", metadata, requestIP(r))
-	go h.watchUpgrade(identity.OrgID, identity.UserID, accepted.RequestID, beforeVersion)
+	safego.Go("economicdata.admin.watchUpgrade", func() { h.watchUpgrade(identity.OrgID, identity.UserID, accepted.RequestID, beforeVersion) })
 	writeJSON(w, http.StatusCreated, accepted)
 }
 

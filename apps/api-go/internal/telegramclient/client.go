@@ -16,6 +16,8 @@ import (
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/dcs"
 	"github.com/gotd/td/tg"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -209,10 +211,10 @@ func (c *Client) Start(ctx context.Context) error {
 		runCtx, cancel := context.WithCancel(context.Background())
 		c.cancel = cancel
 		c.startMu.Unlock()
-		go func() {
+		safego.Go("telegramclient.client.run", func() {
 			runErr := c.tg.Run(runCtx, c.runCallback())
 			c.finishRun(runErr)
-		}()
+		})
 	} else {
 		c.startMu.Unlock()
 	}

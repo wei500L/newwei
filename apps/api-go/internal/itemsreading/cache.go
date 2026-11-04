@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // releaseLockScript is the compare-and-delete used by CacheService.releaseLock.
@@ -116,7 +118,7 @@ func (c *redisCache) Wrap(
 			renewInterval = 1_000
 		}
 		stopRenew := make(chan struct{})
-		go func() {
+		safego.Go("itemsreading.cache.renewLock", func() {
 			ticker := time.NewTicker(time.Duration(renewInterval) * time.Millisecond)
 			defer ticker.Stop()
 			for {
@@ -124,10 +126,13 @@ func (c *redisCache) Wrap(
 				case <-stopRenew:
 					return
 				case <-ticker.C:
-					c.extendLock(context.WithoutCancel(ctx), lockKey, lockToken, CacheLockTTLMs)
+					_ = safego.Call("itemsreading.cache.renewLock.tick", func() error {
+						c.extendLock(context.WithoutCancel(ctx), lockKey, lockToken, CacheLockTTLMs)
+						return nil
+					})
 				}
 			}
-		}()
+		})
 		value, err := loader(ctx)
 		close(stopRenew)
 		if err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file holds the shared dispatch body (O6): one function drives both the
@@ -125,14 +126,14 @@ func (s *Service) dispatchSource(ctx context.Context, source *source, input disp
 			s.logWarn("failed to clear backpressure snapshot state", "sourceId", source.ID, "error", err)
 		}
 	} else {
-		go func() {
+		safego.Go("newssourcescheduler.dispatch.clearBackpressure", func() {
 			background, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := s.cache.Del(background, backpressureKey(source.ID)); err != nil {
 				return
 			}
 			_ = s.SetBackpressureState(background, source.ID, nil)
-		}()
+		})
 	}
 
 	activeCutoff := now.Add(-s.settings.InFlightLookback)

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // deepLxClient ports the RSS call path of SituationMonitorTranslationService:
@@ -123,7 +124,8 @@ func (c *deepLxClient) translateHashes(ctx context.Context, targets map[string]s
 	}
 	for _, hash := range missing {
 		wait.Add(1)
-		go func(hash string) {
+		hash := hash
+		safego.Go("rsstranslation.deeplx.translateHashes", func() {
 			defer wait.Done()
 			var taskErr error
 			permitErr := c.sem.withPermit(ctx, func() {
@@ -145,7 +147,7 @@ func (c *deepLxClient) translateHashes(ctx context.Context, targets map[string]s
 				taskErr = permitErr
 			}
 			recordErr(taskErr)
-		}(hash)
+		})
 	}
 	wait.Wait()
 	if firstErr != nil {

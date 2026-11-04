@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationinsights/analysis"
 )
 
@@ -241,7 +242,7 @@ func (s *insightsService) translateHashesToZh(ctx context.Context, targets map[s
 	for index, task := range missing {
 		index, task := index, task
 		wg.Add(1)
-		go func() {
+		safego.Go("situationsignals.insightsTranslate.translateHashesToZh", func() {
 			defer wg.Done()
 			select {
 			case semaphore <- struct{}{}:
@@ -267,7 +268,7 @@ func (s *insightsService) translateHashesToZh(ctx context.Context, targets map[s
 			if err := insightsCacheSetString(ctx, s.cache, insightsTranslationCacheKey(task.hash), zh, insightsTranslationCacheTTL); err != nil {
 				taskErrors[index] = err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	for _, err := range taskErrors {

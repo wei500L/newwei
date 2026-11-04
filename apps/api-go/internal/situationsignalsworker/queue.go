@@ -21,6 +21,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // The worker uses BullMQ's Worker defaults; the NestJS processor only overrides
@@ -569,14 +571,14 @@ func (w *QueueWorker) begin(process func(ctx context.Context, source PollSource)
 	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
 	w.fetchDone = make(chan struct{})
 	w.stalledDone = make(chan struct{})
-	go func() {
+	safego.Go("situationsignalsworker.queue.stalledLoop", func() {
 		defer close(w.stalledDone)
 		w.stalledLoop(w.fetchCtx)
-	}()
-	go func() {
+	})
+	safego.Go("situationsignalsworker.queue.fetchLoop", func() {
 		defer close(w.fetchDone)
 		w.fetchLoop(w.fetchCtx)
-	}()
+	})
 	return true
 }
 
@@ -654,7 +656,12 @@ func (w *QueueWorker) fetchLoop(ctx context.Context) {
 			return
 		}
 
-		next, err := w.moveToActive(ctx)
+		var next queueNextJob
+		err := safego.Call("situationsignalsworker.queue.moveToActive", func() error {
+			var claimErr error
+			next, claimErr = w.moveToActive(ctx)
+			return claimErr
+		})
 		if err != nil {
 			<-w.slots
 			if ctx.Err() != nil {
@@ -691,11 +698,12 @@ func (w *QueueWorker) fetchLoop(ctx context.Context) {
 		}
 		w.wg.Add(1)
 		w.mu.Unlock()
-		go func(job queuedJob) {
+		claimed := *job
+		safego.Go("situationsignalsworker.queue.job", func() {
 			defer w.wg.Done()
 			defer func() { <-w.slots }()
-			w.processJob(job)
-		}(*job)
+			w.processJob(claimed)
+		})
 	}
 }
 
@@ -849,14 +857,18 @@ func (w *QueueWorker) processJob(job queuedJob) {
 	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	go w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	safego.Go("situationsignalsworker.queue.renewLock", func() {
+		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	})
 
 	source, ok := queueJobSource(job)
 	var processErr error
 	if !ok {
 		log.Printf(logPrefix+"job %s (%s) carries no poll source; completing without work", job.ID, job.Name)
 	} else {
-		processErr = w.process(jobCtx, source)
+		processErr = safego.Call("situationsignalsworker.queue.process", func() error {
+			return w.process(jobCtx, source)
+		})
 	}
 	close(renewDone)
 	cancelJob(nil)
@@ -1190,7 +1202,10 @@ func (w *QueueWorker) stalledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			w.checkStalled(ctx)
+			_ = safego.Call("situationsignalsworker.queue.checkStalled", func() error {
+				w.checkStalled(ctx)
+				return nil
+			})
 			timer.Reset(stalledInterval)
 		}
 	}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports SituationMonitorRefreshService.refresh (POST
@@ -373,18 +375,18 @@ func (s *RefreshService) runPrelude(ctx context.Context, orgID string) (refreshP
 	var sourceErr error
 	var wait sync.WaitGroup
 	wait.Add(3)
-	go func() {
+	safego.Go("situationsignals.refresh.runPrelude", func() {
 		defer wait.Done()
 		prelude.insights = s.clearCachePrefix(ctx, insightsCachePrefix, refreshWarningInsightsCache, refreshSourceCore, refreshInsightsCacheWarningMessage)
-	}()
-	go func() {
+	})
+	safego.Go("situationsignals.refresh.runPrelude", func() {
 		defer wait.Done()
 		prelude.external = s.clearCachePrefix(ctx, externalCachePrefix, refreshWarningExternalCache, refreshSourceExternal, refreshExternalCacheWarningMessage)
-	}()
-	go func() {
+	})
+	safego.Go("situationsignals.refresh.runPrelude", func() {
 		defer wait.Done()
 		prelude.activeSourceIDs, sourceErr = s.loadActiveSourceIDs(ctx, orgID)
-	}()
+	})
 	wait.Wait()
 	if sourceErr != nil {
 		return refreshPrelude{}, sourceErr
@@ -625,8 +627,8 @@ type refreshSignalOutcome struct {
 func (s *RefreshService) runSignalRefresh(ctx context.Context) (refreshSignalOutcome, refreshSignalOutcome) {
 	telegram := make(chan refreshSignalOutcome, 1)
 	oref := make(chan refreshSignalOutcome, 1)
-	go func() { telegram <- s.refreshTelegramSignal(ctx) }()
-	go func() { oref <- s.refreshOrefSignal(ctx) }()
+	safego.Go("situationsignals.refresh.refreshTelegramSignal", func() { telegram <- s.refreshTelegramSignal(ctx) })
+	safego.Go("situationsignals.refresh.refreshOrefSignal", func() { oref <- s.refreshOrefSignal(ctx) })
 	return <-telegram, <-oref
 }
 

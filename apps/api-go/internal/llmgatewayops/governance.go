@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Audit action literals. They are the exact strings the NestJS service writes,
@@ -588,12 +590,12 @@ func (s *Service) checkTargetProfileHealth(ctx context.Context, target *governan
 	}
 	livelinessCh := make(chan result, 1)
 	readinessCh := make(chan result, 1)
-	go func() {
+	safego.Go("llmgatewayops.checkTargetProfileHealth.liveliness", func() {
 		livelinessCh <- result{check: checkGovernanceEndpoint(ctx, client, "/health/liveliness")}
-	}()
-	go func() {
+	})
+	safego.Go("llmgatewayops.checkTargetProfileHealth.readiness", func() {
 		readinessCh <- result{check: checkGovernanceEndpoint(ctx, client, "/health/readiness")}
-	}()
+	})
 	liveliness := <-livelinessCh
 	readiness := <-readinessCh
 	return governanceHealthResult{

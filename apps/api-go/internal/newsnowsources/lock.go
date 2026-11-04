@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Physical refresh lock. The key is `lock:news-aggregator:source:<id>:refresh`
@@ -63,7 +65,7 @@ func (l *refreshLock) startAutoRenew() func() {
 	}
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("newsnowsources.lock.renewLock", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -71,11 +73,14 @@ func (l *refreshLock) startAutoRenew() func() {
 			case <-stop:
 				return
 			case <-ticker.C:
-				_, _ = l.store.Eval(context.Background(), extendLockScript, []string{l.key},
-					l.token, strconv.FormatInt(int64(refreshLockTTL/time.Millisecond), 10))
+				_ = safego.Call("newsnowsources.lock.renewLock.tick", func() error {
+					_, _ = l.store.Eval(context.Background(), extendLockScript, []string{l.key},
+						l.token, strconv.FormatInt(int64(refreshLockTTL/time.Millisecond), 10))
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() {
 		once.Do(func() { close(stop) })
 	}

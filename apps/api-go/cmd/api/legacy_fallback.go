@@ -12,6 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
 	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // legacyRejectRecordTimeout bounds one best-effort exception event insert, so a
@@ -67,10 +68,10 @@ func newNestNotFoundRecorder(
 			Method:     r.Method,
 			ErrorName:  "NotFoundException",
 		}
-		go func() {
+		safego.Go("api.legacyFallback.recordNotFound", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), legacyRejectRecordTimeout)
 			defer cancel()
 			service.RecordInternal(ctx, event)
-		}()
+		})
 	}
 }

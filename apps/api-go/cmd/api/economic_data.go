@@ -20,6 +20,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // economicRuntime owns the Go consumer and its dedicated Redis client. The
@@ -48,10 +49,10 @@ func (r *economicRuntime) Start(ctx context.Context) error {
 	workerCtx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	r.finished = make(chan struct{})
-	go func() {
+	safego.Go("economicdata.runtime.run", func() {
 		defer close(r.finished)
 		r.worker.Run(workerCtx)
-	}()
+	})
 	return nil
 }
 

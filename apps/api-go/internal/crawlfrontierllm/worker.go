@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // worker.go is the BullMQ consumer for one LLM queue. Concurrency is 1 and the
@@ -143,14 +145,14 @@ func (w *Worker) Start(ctx context.Context) error {
 	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
 	w.fetchDone = make(chan struct{})
 	w.stalledDone = make(chan struct{})
-	go func() {
+	safego.Go("crawlfrontierllm.worker.stalledLoop", func() {
 		defer close(w.stalledDone)
 		w.stalledLoop(w.fetchCtx)
-	}()
-	go func() {
+	})
+	safego.Go("crawlfrontierllm.worker.fetchLoop", func() {
 		defer close(w.fetchDone)
 		w.fetchLoop(w.fetchCtx)
-	}()
+	})
 	return nil
 }
 
@@ -229,7 +231,13 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		job, limitDelay, nextDelayed, err := w.moveToActive(ctx)
+		var job *Job
+		var limitDelay, nextDelayed int64
+		err := safego.Call("crawlfrontierllm.worker.moveToActive", func() error {
+			var claimErr error
+			job, limitDelay, nextDelayed, claimErr = w.moveToActive(ctx)
+			return claimErr
+		})
 		if err != nil {
 			<-w.slot
 			if ctx.Err() != nil {
@@ -274,11 +282,12 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		}
 		w.wg.Add(1)
 		w.mu.Unlock()
-		go func(job Job) {
+		claimed := *job
+		safego.Go("crawlfrontierllm.worker.job", func() {
 			defer w.wg.Done()
 			defer func() { <-w.slot }()
-			w.process(ctx, job)
-		}(*job)
+			w.process(ctx, claimed)
+		})
 	}
 }
 
@@ -342,9 +351,16 @@ func (w *Worker) process(parent context.Context, job Job) {
 	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	go w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	safego.Go("crawlfrontierllm.worker.renewLock", func() {
+		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	})
 
-	value, err := w.processor(jobCtx, job.Data)
+	var value any
+	err := safego.Call("crawlfrontierllm.worker.process", func() error {
+		var processErr error
+		value, processErr = w.processor(jobCtx, job.Data)
+		return processErr
+	})
 	close(renewDone)
 	cancelJob(nil)
 
@@ -483,7 +499,10 @@ func (w *Worker) stalledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			w.checkStalled(ctx)
+			_ = safego.Call("crawlfrontierllm.worker.checkStalled", func() error {
+				w.checkStalled(ctx)
+				return nil
+			})
 			timer.Reset(w.opts.StalledInterval)
 		}
 	}

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const releaseLockScript = `
@@ -90,7 +92,9 @@ func (s *Service) cacheWrap(ctx context.Context, key string, ttl time.Duration, 
 
 func (s *Service) runLocked(ctx context.Context, key, lockKey, token string, ttl time.Duration, loader func(context.Context) error) error {
 	stop := make(chan struct{})
-	go s.renewWhile(stop, lockKey, token, catalogLockTTL)
+	safego.Go("contentcatalog.cache.renewLock", func() {
+		s.renewWhile(stop, lockKey, token, catalogLockTTL)
+	})
 	err := s.finishLoader(ctx, key, ttl, loader)
 	close(stop)
 	s.releaseLock(lockKey, token)
@@ -119,7 +123,10 @@ func (s *Service) renewWhile(stop <-chan struct{}, lockKey, token string, ttl ti
 		case <-stop:
 			return
 		case <-ticker.C:
-			s.renewLock(lockKey, token, ttl)
+			_ = safego.Call("contentcatalog.cache.renewLock.tick", func() error {
+				s.renewLock(lockKey, token, ttl)
+				return nil
+			})
 		}
 	}
 }

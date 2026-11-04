@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file adds the streaming half of the assistant model surface. It sends
@@ -32,10 +34,10 @@ func (c *assistantClient) Stream(ctx context.Context, req AssistantCompletionReq
 		return nil, errors.New("LiteLLM completion model is not configured in MySQL gateway profiles")
 	}
 	events := make(chan AssistantStreamEvent, 16)
-	go func() {
+	safego.Go("publicportal.assistantStream.stream", func() {
 		defer close(events)
 		c.streamModels(ctx, profile, models, req, events)
-	}()
+	})
 	return events, nil
 }
 

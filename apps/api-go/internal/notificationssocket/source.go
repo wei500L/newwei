@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // feedSource abstracts the Redis relay for unit tests.
@@ -55,7 +57,7 @@ func (f *redisFeed) Start(parent context.Context) error {
 	f.started = true
 	f.mu.Unlock()
 
-	go func() {
+	safego.Go("notificationssocket.source.readLoop", func() {
 		for message := range pubsub.Channel() {
 			kind, ok := relayChannels[message.Channel]
 			if !ok {
@@ -63,7 +65,7 @@ func (f *redisFeed) Start(parent context.Context) error {
 			}
 			f.handle(ctx, kind, message.Payload)
 		}
-	}()
+	})
 	return nil
 }
 

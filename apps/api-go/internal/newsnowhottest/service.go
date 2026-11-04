@@ -11,6 +11,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowsources"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Service owns the hottest-analysis cache/projection and the recommended feed.
@@ -663,12 +664,12 @@ func mapWithConcurrency[T any](values []T, concurrency int, worker func(index in
 	next := make(chan int)
 	wait.Add(workers)
 	for index := 0; index < workers; index++ {
-		go func() {
+		safego.Go("newsnowhottest.service.mapWithConcurrency", func() {
 			defer wait.Done()
 			for itemIndex := range next {
 				worker(itemIndex, values[itemIndex])
 			}
-		}()
+		})
 	}
 	for index := range values {
 		next <- index

@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports scheduleCron/scheduleDueSources: the 30-second tick, the
@@ -45,11 +47,11 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("newssourcescheduler.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.runLegacyRSSSeedCacheTTLMigration(ctx)
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -58,13 +60,13 @@ func (s *Scheduler) Start(parent context.Context) {
 func (s *Scheduler) runLegacyRSSSeedCacheTTLMigration(ctx context.Context) {
 	migrationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go func() {
+	safego.Go("newssourcescheduler.scheduler.migrationCancel", func() {
 		select {
 		case <-s.stop:
 			cancel()
 		case <-migrationCtx.Done():
 		}
-	}()
+	})
 	s.service.migrateLegacyRSSSeedCacheTTL(migrationCtx)
 }
 
@@ -104,7 +106,10 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			s.runTick(ctx)
+			_ = safego.Call("newssourcescheduler.scheduler.tick", func() error {
+				s.runTick(ctx)
+				return nil
+			})
 			now := s.service.now()
 			next = nextTickBoundary(now)
 			if !next.After(now) {
@@ -187,14 +192,14 @@ func (s *Service) scheduleDueSources(ctx context.Context, now time.Time) {
 		}
 		waitGroup.Add(1)
 		semaphore <- struct{}{}
-		go func(source *source) {
+		safego.Go("newssourcescheduler.service.scheduleDueSources", func() {
 			defer waitGroup.Done()
 			defer func() { <-semaphore }()
 			if budget != nil && budget.Exhausted() {
 				return
 			}
-			s.dispatchCronSource(ctx, source, now, runtimeSettings, budget)
-		}(candidate)
+			s.dispatchCronSource(ctx, candidate, now, runtimeSettings, budget)
+		})
 	}
 	waitGroup.Wait()
 }

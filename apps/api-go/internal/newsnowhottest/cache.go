@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Store is the narrow Redis surface this package uses: the compatible cache,
@@ -177,7 +179,7 @@ func (l *lockLease) startAutoRenew() func() {
 	}
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("newsnowhottest.cache.renewLock", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -185,11 +187,14 @@ func (l *lockLease) startAutoRenew() func() {
 			case <-stop:
 				return
 			case <-ticker.C:
-				_, _ = l.store.Eval(context.Background(), lockExtendScript, []string{l.key},
-					l.token, strconv.FormatInt(l.ttl.Milliseconds(), 10))
+				_ = safego.Call("newsnowhottest.cache.renewLock.tick", func() error {
+					_, _ = l.store.Eval(context.Background(), lockExtendScript, []string{l.key},
+						l.token, strconv.FormatInt(l.ttl.Milliseconds(), 10))
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() { once.Do(func() { close(stop) }) }
 }
 

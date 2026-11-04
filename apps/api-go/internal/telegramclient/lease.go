@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // leaseIOtimeout bounds every background lease round trip. A renewal must never
@@ -144,7 +146,7 @@ func (l *lease) tryAcquire(ctx context.Context) (ok bool, err error) {
 	stopCh, doneCh := l.stopCh, l.doneCh
 	l.mu.Unlock()
 
-	go l.renewLoop(stopCh, doneCh)
+	safego.Go("telegramclient.lease.renewLoop", func() { l.renewLoop(stopCh, doneCh) })
 	return true, nil
 }
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/personalnews"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Collaborative profile. This ports getCollaborativeProfile and its similarity
@@ -701,7 +702,7 @@ func (s *Service) startLockRenewal(key, token string, ttl time.Duration) func() 
 	}
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("newsbehavior.collaborative.renewLock", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -711,11 +712,14 @@ func (s *Service) startLockRenewal(key, token string, ttl time.Duration) func() 
 			case <-ticker.C:
 				// The lease belongs to this process; a transient renewal failure
 				// only risks another process recomputing the snapshot.
-				_, _ = s.rdb.Eval(context.Background(), renewLockScript, []string{key},
-					token, strconv.FormatInt(ttl.Milliseconds(), 10)).Result()
+				_ = safego.Call("newsbehavior.collaborative.renewLock.tick", func() error {
+					_, _ = s.rdb.Eval(context.Background(), renewLockScript, []string{key},
+						token, strconv.FormatInt(ttl.Milliseconds(), 10)).Result()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() { once.Do(func() { close(stop) }) }
 }
 

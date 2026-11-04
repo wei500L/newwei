@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // reindexLockTTL is SEARCH_REINDEX_LOCK_TTL_MS from search-reindex.service.ts.
@@ -97,7 +99,7 @@ func (l *reindexLock) startAutoRenew(ctx context.Context) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("searchreindex.lock.renewLock", func() {
 		defer ticker.Stop()
 		for {
 			select {
@@ -106,10 +108,12 @@ func (l *reindexLock) startAutoRenew(ctx context.Context) func() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = l.extend(ctx)
+				_ = safego.Call("searchreindex.lock.renewLock.tick", func() error {
+					return l.extend(ctx)
+				})
 			}
 		}
-	}()
+	})
 	return func() {
 		once.Do(func() { close(stop) })
 	}

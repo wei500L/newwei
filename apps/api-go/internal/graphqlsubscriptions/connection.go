@@ -16,6 +16,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/exec"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // graphql-transport-ws close codes from graphql-ws 5.13.1. The whole
@@ -107,7 +108,7 @@ func newConnection(runtime *Runtime, ws *websocket.Conn, ctx context.Context, ca
 func (c *connection) serve() {
 	defer c.cleanup()
 	c.ws.SetReadLimit(c.runtime.options.MaxMessageBytes)
-	go c.writeLoop()
+	safego.Go("graphqlsubscriptions.connection.writeLoop", func() { c.writeLoop() })
 	initTimer := time.AfterFunc(c.runtime.options.InitTimeout, func() {
 		c.mu.Lock()
 		initialized := c.initReceived
@@ -312,7 +313,7 @@ func (c *connection) startLocalOperation(id string, plan exec.SubscriptionPlan) 
 	op := &operation{id: id, generation: c.generation, cancel: cancel, plan: plan}
 	c.ops[id] = op
 	c.mu.Unlock()
-	go c.runLocalOperation(ctx, op)
+	safego.Go("graphqlsubscriptions.connection.runLocalOperation", func() { c.runLocalOperation(ctx, op) })
 }
 
 func (c *connection) runLocalOperation(ctx context.Context, op *operation) {

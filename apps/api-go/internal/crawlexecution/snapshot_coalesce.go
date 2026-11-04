@@ -22,6 +22,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // snapshotCoalesceWindow is the per-source coalescing window (1s).
@@ -112,7 +114,7 @@ func (c *snapshotCoalescer) request(orgID, sourceID string) {
 		}
 		state.Pending = false
 		c.mu.Unlock()
-		go c.refreshDetached(orgID, sourceID)
+		safego.Go("crawlexecution.snapshotCoalescer.refreshDetached", func() { c.refreshDetached(orgID, sourceID) })
 		return
 	}
 	state.Pending = true

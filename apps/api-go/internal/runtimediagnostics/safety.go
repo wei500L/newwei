@@ -12,6 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // ProfilePort is the narrow profile surface the assistant safety diagnostics
@@ -133,9 +134,9 @@ func (s *SafetyService) Run(ctx context.Context) (safetyDiagnostics, error) {
 	livelinessCh := make(chan livenessProbe, 1)
 	modelsCh := make(chan modelsProbe, 1)
 	guardrailsCh := make(chan guardrailsProbeResult, 1)
-	go func() { livelinessCh <- s.probeLiveliness(ctx, apiBase) }()
-	go func() { modelsCh <- s.probeModels(ctx, apiBase, apiKey) }()
-	go func() {
+	safego.Go("runtimediagnostics.safety.probeLiveliness", func() { livelinessCh <- s.probeLiveliness(ctx, apiBase) })
+	safego.Go("runtimediagnostics.safety.probeModels", func() { modelsCh <- s.probeModels(ctx, apiBase, apiKey) })
+	safego.Go("runtimediagnostics.safety.probeGuardrails", func() {
 		result := s.probeGuardrails(ctx, apiBase, apiKey)
 		guardrailsCh <- guardrailsProbeResult{
 			OK:       result.probe.OK,
@@ -146,7 +147,7 @@ func (s *SafetyService) Run(ctx context.Context) (safetyDiagnostics, error) {
 			Error:    result.probe.Error,
 			names:    result.names,
 		}
-	}()
+	})
 	liveliness := <-livelinessCh
 	models := <-modelsCh
 	guardrails := <-guardrailsCh

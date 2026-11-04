@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Background execution. Both schedulers use the same Redis contracts as the
@@ -122,10 +124,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.cancel = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("newsnowhottest.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -167,12 +169,15 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 			s.wg.Add(1)
-			go func() {
+			safego.Go("newsnowhottest.scheduler.tick", func() {
 				defer s.wg.Done()
-				if err := s.runTick(ctx); err != nil {
-					s.logf("newsnowhottest: scheduler tick failed err=%v", err)
-				}
-			}()
+				_ = safego.Call("newsnowhottest.scheduler.runTick", func() error {
+					if err := s.runTick(ctx); err != nil {
+						s.logf("newsnowhottest: scheduler tick failed err=%v", err)
+					}
+					return nil
+				})
+			})
 			now := s.now().UTC()
 			next = next.Add(s.interval)
 			if !next.After(now) {
@@ -414,10 +419,10 @@ func (s *WarmScheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.cancel = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("newsnowhottest.warmScheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -458,12 +463,15 @@ func (s *WarmScheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 			s.wg.Add(1)
-			go func() {
+			safego.Go("newsnowhottest.warmScheduler.tick", func() {
 				defer s.wg.Done()
-				if err := s.runTick(ctx); err != nil {
-					s.logf("newsnowhottest: source warm tick failed err=%v", err)
-				}
-			}()
+				_ = safego.Call("newsnowhottest.warmScheduler.runTick", func() error {
+					if err := s.runTick(ctx); err != nil {
+						s.logf("newsnowhottest: source warm tick failed err=%v", err)
+					}
+					return nil
+				})
+			})
 			now := s.now().UTC()
 			next = next.Add(s.interval)
 			if !next.After(now) {

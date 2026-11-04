@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // errCacheUnavailable is reported when the Redis client is missing. The
@@ -161,7 +163,7 @@ func (l redisLock) startRenewal(key, token string, ttl time.Duration) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("gdeltsnapshot.cache.renewLock", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -169,13 +171,16 @@ func (l redisLock) startRenewal(key, token string, ttl time.Duration) func() {
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewLockScript.Run(renewCtx, l.client,
-					[]string{key}, token, strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
-				cancel()
+				_ = safego.Call("gdeltsnapshot.cache.renewLock.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = renewLockScript.Run(renewCtx, l.client,
+						[]string{key}, token, strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {

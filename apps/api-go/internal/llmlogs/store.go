@@ -21,6 +21,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // 与 service 的常量一致。
@@ -664,7 +665,7 @@ func runConcurrently(ctx context.Context, queries []func() error) error {
 	results := make(chan error, len(queries))
 	for _, query := range queries {
 		run := query
-		go func() { results <- run() }()
+		safego.Go("llmlogs.store.runConcurrently", func() { results <- run() })
 	}
 	var firstErr error
 	for range queries {

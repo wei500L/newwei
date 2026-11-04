@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/socketio"
 )
 
@@ -462,6 +463,6 @@ func (r *Runtime) startRevalidation(state *socketState) bool {
 	}
 	r.revalidateWG.Add(1)
 	r.mu.Unlock()
-	go r.revalidateLoop(state)
+	safego.Go("realtimesocket.runtime.revalidateLoop", func() { r.revalidateLoop(state) })
 	return true
 }

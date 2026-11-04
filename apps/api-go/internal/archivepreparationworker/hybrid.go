@@ -15,6 +15,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsclassifier"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -791,7 +792,7 @@ func mapWithConcurrency[TInput any, TResult any](items []TInput, concurrency int
 	)
 	wg.Add(safe)
 	for worker := 0; worker < safe; worker++ {
-		go func() {
+		safego.Go("archivepreparationworker.mapWithConcurrency", func() {
 			defer wg.Done()
 			for {
 				mu.Lock()
@@ -813,7 +814,7 @@ func mapWithConcurrency[TInput any, TResult any](items []TInput, concurrency int
 				}
 				results[index] = result
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if firstErr != nil {

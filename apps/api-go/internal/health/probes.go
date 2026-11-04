@@ -21,6 +21,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -51,24 +53,24 @@ type crawlConfig struct {
 }
 
 type probeSet struct {
-	db       *sql.DB
-	redis    *redis.Client
+	db          *sql.DB
+	redis       *redis.Client
 	mongoURI    string
 	mongo       *mongo.Database
 	mongoClient *mongo.Client
 	mongoMu     sync.Mutex
-	crawl    crawlConfig
-	getenv   func(string) string
-	http     *http.Client
-	diskPath string
+	crawl       crawlConfig
+	getenv      func(string) string
+	http        *http.Client
+	diskPath    string
 
-	crawlMu       sync.Mutex
-	crawlCached   *cachedProbe
-	crawlFlight   chan struct{}
-	crawlWait     []chan cachedProbe
-	ssrfCached    *cachedProbe
-	ssrfFlight    chan struct{}
-	ssrfWait      []chan cachedProbe
+	crawlMu     sync.Mutex
+	crawlCached *cachedProbe
+	crawlFlight chan struct{}
+	crawlWait   []chan cachedProbe
+	ssrfCached  *cachedProbe
+	ssrfFlight  chan struct{}
+	ssrfWait    []chan cachedProbe
 }
 
 type cachedProbe struct {
@@ -84,10 +86,10 @@ func (p *probeSet) all(ctx context.Context) []outcome {
 	var wg sync.WaitGroup
 	for i, name := range names {
 		wg.Add(1)
-		go func(i int, name string) {
+		safego.Go("health.probes.all", func() {
 			defer wg.Done()
 			out[i] = p.one(ctx, name)
-		}(i, name)
+		})
 	}
 	wg.Wait()
 	return out
@@ -229,7 +231,7 @@ func (p *probeSet) probeCluster(ctx context.Context, slots []redis.ClusterSlot, 
 	errCh := make(chan error, len(order))
 	for index, id := range order {
 		slot := masters[id]
-		go func(index int, slot redis.ClusterSlot) {
+		safego.Go("health.probes.probeCluster", func() {
 			tag, err := hashTagInRange(slot.Start, slot.End)
 			if err != nil {
 				errCh <- err
@@ -237,7 +239,7 @@ func (p *probeSet) probeCluster(ctx context.Context, slots []redis.ClusterSlot, 
 			}
 			key := fmt.Sprintf("health:redis:write:{%s}:%s:%d", tag, probeID, index)
 			errCh <- p.writeRead(ctx, key, timeout, ttlMs, "Redis cluster write probe timeout", "Redis cluster read probe timeout", "Redis cluster write probe mismatch")
-		}(index, slot)
+		})
 	}
 	for range order {
 		if err := <-errCh; err != nil {
@@ -263,11 +265,11 @@ func (p *probeSet) writeRead(ctx context.Context, key string, timeout time.Durat
 	if got != "1" {
 		return fmt.Errorf("%s", mismatch)
 	}
-	go func() {
+	safego.Go("health.probes.writeRead.cleanup", func() {
 		delCtx, delCancel := context.WithTimeout(context.Background(), timeout)
 		defer delCancel()
 		_ = p.redis.Del(delCtx, key).Err()
-	}()
+	})
 	return nil
 }
 

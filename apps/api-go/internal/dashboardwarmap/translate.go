@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -120,7 +122,7 @@ func (t *liveTranslator) ToZH(ctx context.Context, texts []string) map[string]st
 	results := make(chan error, len(missing))
 	var mu sync.Mutex
 	for i := 0; i < limit; i++ {
-		go func() {
+		safego.Go("dashboardwarmap.translate.worker", func() {
 			for hash := range jobs {
 				text := targets[hash]
 				value, err := t.request(ctx, text, runtime)
@@ -139,7 +141,7 @@ func (t *liveTranslator) ToZH(ctx context.Context, texts []string) map[string]st
 				}
 				results <- nil
 			}
-		}()
+		})
 	}
 	for _, hash := range missing {
 		jobs <- hash

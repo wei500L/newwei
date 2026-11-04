@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Cache is the Redis value cache + lock the economic anomaly provider uses. Key
@@ -120,7 +122,7 @@ func Wrap[T any](ctx context.Context, cache *Cache, key string, ttlSeconds int, 
 		}
 		renewCtx, cancelRenew := context.WithCancel(ctx)
 		defer cancelRenew()
-		go func() {
+		safego.Go("alertworker.providers.cache.renewLock", func() {
 			ticker := time.NewTicker(time.Duration(renewInterval) * time.Millisecond)
 			defer ticker.Stop()
 			for {
@@ -131,7 +133,7 @@ func Wrap[T any](ctx context.Context, cache *Cache, key string, ttlSeconds int, 
 					_ = cache.extendLock(renewCtx, lockKey, token, lockTTL)
 				}
 			}
-		}()
+		})
 		value, err := loader(ctx)
 		cancelRenew()
 		if err != nil {
