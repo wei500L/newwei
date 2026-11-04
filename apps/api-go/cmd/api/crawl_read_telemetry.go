@@ -12,9 +12,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireCrawlReadTelemetry registers the seven crawl read / media / telemetry
@@ -32,21 +32,14 @@ func wireCrawlReadTelemetry(
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
 	storageConfig objectstorage.ConfigReader,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil || cfg.JWTSecret == "" {
 		return fmt.Errorf("api-go: crawl read telemetry go takeover requires mysql, jwt, and redis")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: crawl read telemetry go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
 	handler := crawlreadtelemetry.NewHandler(
 		authenticator,
-		crawlreadtelemetry.NewService(db, redisClient, (*mongoConn).Database(), cfg.JWTSecret, storageConfig),
+		crawlreadtelemetry.NewService(db, redisClient, mongoConn.Database(), cfg.JWTSecret, storageConfig),
 	)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.CrawlReadTelemetryKey, func(w http.ResponseWriter, r *http.Request) {

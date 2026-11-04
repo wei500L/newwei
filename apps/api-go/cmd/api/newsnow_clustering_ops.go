@@ -13,10 +13,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireNewsnowClusteringOps registers the nine NewsNow local-computation and
@@ -30,17 +30,10 @@ func wireNewsnowClusteringOps(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: newsnow clustering ops go takeover requires mysql, jwt, and redis")
-	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: newsnow clustering ops go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
 	}
 
 	// The personalized-ordering endpoint reuses the same behavior profile the
@@ -52,7 +45,7 @@ func wireNewsnowClusteringOps(
 		ModelServiceBaseURL: os.Getenv("MODEL_SERVICE_BASE_URL"),
 		ModelServiceToken:   os.Getenv("MODEL_SERVICE_INTERNAL_TOKEN"),
 		EncryptionKey:       os.Getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"),
-	}, db, (*mongoConn).Database(), redisClient, behavior)
+	}, db, mongoConn.Database(), redisClient, behavior)
 
 	handler := newsnowclusteringops.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)

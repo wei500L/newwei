@@ -108,7 +108,7 @@ func testNewNodeHarness(t *testing.T) *testNodeHarness {
 	if mongoURI == "" {
 		t.Skip("MONGO_URI is not set — integration test requires MongoDB")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -517,7 +517,7 @@ func (h *testNodeHarness) nullableFloat(query string, args ...any) (float64, boo
 }
 
 // nullableTime reads a nullable DATETIME(3) column. The connection opens with
-// parseTime=true (usersettings.OpenMySQLFromURL), so the driver hands back a
+// parseTime=true (platform/mysqldb.Open), so the driver hands back a
 // time.Time.
 func (h *testNodeHarness) nullableTime(query string, args ...any) (time.Time, bool) {
 	h.t.Helper()

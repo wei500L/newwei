@@ -11,8 +11,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/alertworker/providers"
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireAlertWorker builds the alerts-queue consumer when
@@ -27,26 +27,10 @@ func wireAlertWorker(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	graphqlMongo **dashboardstats.Connection,
-	dashboardMongo **dashboardstats.Connection,
+	mongo *mongodb.Client,
 ) (*alertworker.Service, error) {
-	if db == nil || redisClient == nil {
-		return nil, fmt.Errorf("api-go: API_GO_ALERT_WORKER_MODE=go requires mysql and redis")
-	}
-	if cfg.MongoURI == "" {
-		return nil, fmt.Errorf("api-go: API_GO_ALERT_WORKER_MODE=go requires a valid MONGO_URI")
-	}
-	mongoConnection := *graphqlMongo
-	if mongoConnection == nil {
-		mongoConnection = *dashboardMongo
-	}
-	if mongoConnection == nil {
-		opened, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: API_GO_ALERT_WORKER_MODE=go requires a valid MONGO_URI: %w", err)
-		}
-		*graphqlMongo = opened
-		mongoConnection = opened
+	if db == nil || redisClient == nil || mongo == nil {
+		return nil, fmt.Errorf("api-go: API_GO_ALERT_WORKER_MODE=go requires mysql, redis, and mongo")
 	}
 
 	mail := authlogin.NewMailSender(authlogin.SMTPConfig{
@@ -72,7 +56,7 @@ func wireAlertWorker(
 	service, err := alertworker.New(alertworker.Options{
 		DB:       db,
 		Redis:    redisClient,
-		Mongo:    mongoConnection.Database(),
+		Mongo:    mongo.Database(),
 		Mail:     mail,
 		Forecast: forecast,
 		Config: alertworker.Config{

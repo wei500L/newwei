@@ -18,10 +18,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/analysisqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/analysisruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	analysisrunsgraphql "github.com/wei500L/newwei/apps/api-go/internal/graphqlread/analysisruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 )
 
@@ -61,32 +61,22 @@ func registerAnalysisRunMutations(
 //
 // It needs MySQL (notifications and LLM log metadata policy), Redis (queue,
 // GraphQL event bus and notification relay) and Mongo (results, transport
-// reads and LLM request logs), but no JWT. If the caller did not already open a
-// Mongo connection, the returned connection is owned by this worker and must be
-// disconnected by main after Close.
+// reads and LLM request logs), but no JWT. The shared Mongo client is owned and
+// closed by main.
 func startAnalysisWorker(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	existingMongo *dashboardstats.Connection,
-) (*analysisqueue.Worker, *dashboardstats.Connection, error) {
+	mongo *mongodb.Client,
+) (*analysisqueue.Worker, error) {
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: analysis worker owner is go but BULLMQ_WORKERS_ENABLED=false; no consumer starts")
-		return nil, nil, nil
+		return nil, nil
 	}
-	if db == nil || redisClient == nil {
-		return nil, nil, fmt.Errorf("api-go: API_GO_ANALYSIS_WORKER_MODE=go requires mysql and redis")
+	if db == nil || redisClient == nil || mongo == nil {
+		return nil, fmt.Errorf("api-go: API_GO_ANALYSIS_WORKER_MODE=go requires mysql, redis, and mongo")
 	}
-	var mongoConnection *dashboardstats.Connection
-	if existingMongo == nil {
-		opened, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, nil, fmt.Errorf("api-go: API_GO_ANALYSIS_WORKER_MODE=go requires a valid MONGO_URI")
-		}
-		mongoConnection = opened
-		existingMongo = opened
-	}
-	mongoDatabase := existingMongo.Database()
+	mongoDatabase := mongo.Database()
 
 	streamer := publicportal.NewAnalysisStreamer(publicportal.NewMySQLStore(db), publicportal.GatewayEnv{
 		EncryptionKey:   cfg.SettingsEncryptionKey,
@@ -111,10 +101,7 @@ func startAnalysisWorker(
 		TimeoutMs:     cfg.AnalysisLLMTimeoutMs,
 	})
 	if err != nil {
-		if mongoConnection != nil {
-			_ = mongoConnection.Disconnect(context.Background())
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	blocking := redis.NewClient(&redis.Options{
 		Addr:     net.JoinHostPort(cfg.RedisHost, strconv.Itoa(cfg.RedisPort)),
@@ -131,20 +118,14 @@ func startAnalysisWorker(
 	})
 	if err != nil {
 		_ = blocking.Close()
-		if mongoConnection != nil {
-			_ = mongoConnection.Disconnect(context.Background())
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	if err := worker.Start(context.Background()); err != nil {
 		_ = worker.Close(context.Background())
-		if mongoConnection != nil {
-			_ = mongoConnection.Disconnect(context.Background())
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	log.Printf("api-go: analysis BullMQ worker started (queue=analysis, concurrency=%d, maxStalledCount=%d)", cfg.AnalysisQueueConcurrency, analysisqueue.MaxStalledCount)
-	return worker, mongoConnection, nil
+	return worker, nil
 }
 
 func newAnalysisPromptBuilder(overrides config.AnalysisPromptOverrides) *analysisruns.PromptBuilder {

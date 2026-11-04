@@ -7,7 +7,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 // Global MySQL session lock names. They are the exact literals
@@ -65,7 +65,7 @@ func (l *mysqlLock) WithSessionLock(ctx context.Context, name string, fn func(co
 	if l == nil || l.dsn == "" {
 		return errNoDatabase
 	}
-	session, err := usersettings.OpenMySQLFromURL(l.dsn)
+	session, err := mysqldb.Open(l.dsn, mysqldb.PoolConfig{})
 	if err != nil {
 		log.Printf("modelaccesssettings: settings lock session open failed: %v", err)
 		return errLockUnavailable

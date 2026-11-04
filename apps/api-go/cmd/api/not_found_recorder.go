@@ -9,9 +9,9 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
 	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -27,27 +27,14 @@ const legacyRejectRecordTimeout = 5 * time.Second
 // exceptioningest and never reach the response.
 func newNestNotFoundRecorder(
 	cfg config.Config,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	redisClient *redis.Client,
 ) nestnotfound.Recorder {
 	if mongoConn == nil {
 		log.Printf("api-go: nest-not-found event recording disabled: no Mongo connection handle")
 		return nil
 	}
-	if *mongoConn == nil {
-		if cfg.MongoURI == "" {
-			log.Printf("api-go: nest-not-found event recording disabled: MONGO_URI is not configured")
-			return nil
-		}
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			// Best effort: the 404s must keep working even when Mongo is down.
-			log.Printf("api-go: nest-not-found event recording disabled: %v", err)
-			return nil
-		}
-		*mongoConn = conn
-	}
-	service := exceptioningest.NewService((*mongoConn).Database(), redisClient, exceptioningest.Config{
+	service := exceptioningest.NewService(mongoConn.Database(), redisClient, exceptioningest.Config{
 		UserRateLimit:          cfg.ObservabilityClientExceptionUserRateLimit,
 		IPRateLimit:            cfg.ObservabilityClientExceptionIPRateLimit,
 		RateLimitWindowSeconds: cfg.ObservabilityClientExceptionWindowSeconds,

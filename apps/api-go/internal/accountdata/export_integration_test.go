@@ -24,7 +24,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func integrationDatabaseURL(t *testing.T) string {
@@ -92,7 +92,7 @@ func (f fakeAssistantRuns) ForEachAssistantRun(ctx context.Context, orgID, userI
 }
 
 func TestDataExportIntegration(t *testing.T) {
-	db, err := usersettings.OpenMySQLFromURL(integrationDatabaseURL(t))
+	db, err := mysqldb.Open(integrationDatabaseURL(t), mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

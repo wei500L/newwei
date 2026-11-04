@@ -13,9 +13,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireAccountData registers the two remaining identity entries only for the
@@ -36,7 +36,7 @@ func wireAccountData(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	auth *authhttp.Authenticator,
 ) error {
 	avatarGo := true
@@ -65,14 +65,7 @@ func wireAccountData(
 	var assistantRuns accountdata.AssistantRunSource
 	if exportGo {
 		behavior = newsbehavior.NewService(db, redisClient)
-		if mongoConn == nil || *mongoConn == nil {
-			conn, err := dashboardstats.Open(cfg.MongoURI)
-			if err != nil {
-				return fmt.Errorf("api-go: API_GO_USER_DATA_EXPORT_MODE=go requires a valid MONGO_URI")
-			}
-			*mongoConn = conn
-		}
-		assistantRuns = accountdata.NewMongoAssistantRuns((*mongoConn).Database())
+		assistantRuns = accountdata.NewMongoAssistantRuns(mongoConn.Database())
 	}
 
 	authenticator := accountsecurity.NewAuthenticator(auth)

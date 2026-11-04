@@ -11,11 +11,11 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayops"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireLLMGatewayOps registers the twelve governance/diagnostics routes only when
@@ -36,19 +36,12 @@ func wireLLMGatewayOps(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm gateway ops go takeover requires mysql, redis, and jwt")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: llm gateway ops go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	// Read-only profile port: no lock pool, no write path.
 	profiles := newLLMGatewayProfilesService(cfg, db, redisClient, nil)

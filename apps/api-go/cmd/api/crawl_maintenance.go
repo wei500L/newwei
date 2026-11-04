@@ -13,8 +13,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmaintenance"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 )
 
@@ -94,7 +94,7 @@ func wireCrawlMaintenance(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*crawlMaintenanceRuntime, error) {
 	maintenanceGo := true
 	auditGo := true
@@ -129,14 +129,7 @@ func wireCrawlMaintenance(
 	if mongoConn == nil {
 		return nil, fmt.Errorf("api-go: crawl maintenance requires a mongo connection holder")
 	}
-	if *mongoConn == nil {
-		connection, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: crawl maintenance requires a valid MONGO_URI: %w", err)
-		}
-		*mongoConn = connection
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	producer := crawlqueue.NewProducer(crawlqueue.Options{
 		Redis: redisClient,

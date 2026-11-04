@@ -14,9 +14,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelinerecovery"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/qualityqueue"
 )
 
@@ -55,7 +55,7 @@ func wireQualityOps(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*qualityOpsRuntime, error) {
 	reportsGo := true
 	workerGo := true
@@ -64,14 +64,7 @@ func wireQualityOps(
 		return nil, nil
 	}
 
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: quality ops takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	database := (*mongoConn).Database()
+	database := mongoConn.Database()
 
 	runtime := &qualityOpsRuntime{}
 	policy := cors.New(cfg.CorsOrigin)

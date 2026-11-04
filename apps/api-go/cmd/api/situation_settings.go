@@ -13,10 +13,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings/telegramsched"
@@ -36,7 +36,7 @@ func wireSituationSettings(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	authenticator *authhttp.Authenticator,
 	economic *economicdata.Service,
 ) error {
@@ -46,14 +46,7 @@ func wireSituationSettings(
 	if mongoConn == nil {
 		return fmt.Errorf("api-go: situation settings go takeover requires a mongo connection slot")
 	}
-	if *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: situation settings go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	env := situationsettings.NewEnvFromLookup(os.LookupEnv)
 	service := situationsettings.NewService(situationsettings.Options{

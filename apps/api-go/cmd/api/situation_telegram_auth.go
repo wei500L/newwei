@@ -14,9 +14,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings/telegramsched"
@@ -38,7 +38,7 @@ func wireSituationTelegramAuth(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
@@ -47,14 +47,7 @@ func wireSituationTelegramAuth(
 	if mongoConn == nil {
 		return fmt.Errorf("api-go: situation Telegram auth takeover requires a mongo connection slot")
 	}
-	if *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: situation Telegram auth takeover requires a valid MONGO_URI: %w", err)
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	// The login handler writes the same settings row as the settings unit, so it
 	// uses the identical environment-derived configuration (including the

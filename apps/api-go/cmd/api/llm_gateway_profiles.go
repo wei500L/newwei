@@ -13,7 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 // wireLLMGatewayProfiles registers the seven LLM gateway configuration-control
@@ -32,7 +32,7 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 	// The lock pool is separate from the shared pool and retains no idle
 	// connections, so releasing a lock connection always closes the physical
 	// MySQL session.
-	lockDB, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
+	lockDB, err := mysqldb.Open(cfg.DatabaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		return fmt.Errorf("api-go: llm gateway profiles lock pool: %w", err)
 	}

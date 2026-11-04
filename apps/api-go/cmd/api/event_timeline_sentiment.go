@@ -9,8 +9,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/newseventstimeline"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/sentimentsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
@@ -43,34 +43,17 @@ func wireEventTimelineSentiment(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	graphqlMongo **dashboardstats.Connection,
-	dashboardMongo **dashboardstats.Connection,
+	mongo *mongodb.Client,
 ) (*eventTimelineSentimentUnit, error) {
 	timelineOwnedByGo := true
 	sentimentOwnedByGo := true
 	if !timelineOwnedByGo && !sentimentOwnedByGo {
 		return nil, nil
 	}
-	if db == nil || redisClient == nil {
-		return nil, fmt.Errorf("api-go: the event-timeline and sentiment snapshot cron units require mysql and redis")
+	if db == nil || redisClient == nil || mongo == nil {
+		return nil, fmt.Errorf("api-go: the event-timeline and sentiment snapshot cron units require mysql, redis, and mongo")
 	}
-	if cfg.MongoURI == "" {
-		return nil, fmt.Errorf("api-go: the event-timeline and sentiment snapshot cron units require a valid MONGO_URI")
-	}
-
-	mongoConnection := *graphqlMongo
-	if mongoConnection == nil {
-		mongoConnection = *dashboardMongo
-	}
-	if mongoConnection == nil {
-		opened, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: the event-timeline and sentiment snapshot cron units require a valid MONGO_URI: %w", err)
-		}
-		*graphqlMongo = opened
-		mongoConnection = opened
-	}
-	mongoDatabase := mongoConnection.Database()
+	mongoDatabase := mongo.Database()
 
 	// The active-organization list is the same MySQL read both NestJS crons use:
 	// every active organization ordered by id ascending.

@@ -16,10 +16,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -86,7 +86,7 @@ func wireEconomicData(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongo **dashboardstats.Connection,
+	mongo *mongodb.Client,
 ) (*economicdata.Service, *economicRuntime, error) {
 	requestGo := true
 	workerGo := true
@@ -99,19 +99,8 @@ func wireEconomicData(
 	if requestGo && authenticator == nil {
 		return nil, nil, fmt.Errorf("api-go: API_GO_ECONOMIC_DATA_MODE=go requires jwt")
 	}
-	var mongoConn *dashboardstats.Connection
-	if mongo != nil {
-		mongoConn = *mongo
-	}
-	if workerGo && mongoConn == nil {
-		opened, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, nil, fmt.Errorf("api-go: API_GO_ECONOMIC_DATA_WORKER_MODE=go requires a valid MONGO_URI")
-		}
-		if mongo != nil {
-			*mongo = opened
-		}
-		mongoConn = opened
+	if mongo == nil {
+		return nil, nil, fmt.Errorf("api-go: economic-data takeover requires a mongo connection")
 	}
 	service := economicdata.NewService(economicdata.Options{
 		DB:    db,
@@ -129,9 +118,7 @@ func wireEconomicData(
 			RateLimitFailOpen:     cfg.RateLimitFailOpen,
 		},
 	})
-	if mongoConn != nil {
-		service.SetMongo(mongoConn.Database())
-	}
+	service.SetMongo(mongo.Database())
 	if requestGo {
 		handler := economicdata.NewAdminHandler(authenticator, service)
 		policy := cors.New(cfg.CorsOrigin)

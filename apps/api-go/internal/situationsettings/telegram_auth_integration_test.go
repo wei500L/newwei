@@ -32,9 +32,9 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 	"github.com/wei500L/newwei/apps/api-go/internal/telegramclient"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 const (
@@ -95,7 +95,7 @@ func sitAuthITDatabase(t *testing.T) *sql.DB {
 	if baseURL == "" {
 		t.Skip("DATABASE_URL not set - integration test requires MySQL")
 	}
-	base, err := usersettings.OpenMySQLFromURL(baseURL)
+	base, err := mysqldb.Open(baseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -113,7 +113,7 @@ func sitAuthITDatabase(t *testing.T) *sql.DB {
 		t.Fatalf("parse DATABASE_URL: %v", err)
 	}
 	parsed.Path = "/" + databaseName
-	db, err := usersettings.OpenMySQLFromURL(parsed.String())
+	db, err := mysqldb.Open(parsed.String(), mysqldb.PoolConfig{})
 	if err != nil {
 		_ = base.Close()
 		t.Fatalf("open integration mysql: %v", err)

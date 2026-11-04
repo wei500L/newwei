@@ -8,8 +8,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesignals"
 )
 
@@ -30,7 +30,7 @@ type realtimeSignalsUnit struct {
 // newRealtimeSignalsUnit builds the collector when
 // API_GO_REALTIME_SIGNALS_MODE=go. It returns nil in the legacy default. Config
 // validation guarantees MySQL, Redis and Mongo for go mode.
-func newRealtimeSignalsUnit(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn *dashboardstats.Connection) *realtimeSignalsUnit {
+func newRealtimeSignalsUnit(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn *mongodb.Client) *realtimeSignalsUnit {
 	if db == nil || redisClient == nil || mongoConn == nil {
 		log.Printf("api-go: realtime signals collector not built (mysql, redis or mongo missing)")
 		return nil

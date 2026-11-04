@@ -34,7 +34,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 const (
@@ -94,7 +94,7 @@ func TestArchivePreparationWorkerIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

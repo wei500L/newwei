@@ -30,7 +30,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func integrationMySQL(t *testing.T) *sql.DB {
@@ -39,7 +39,7 @@ func integrationMySQL(t *testing.T) *sql.DB {
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL not set — integration test requires MySQL")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

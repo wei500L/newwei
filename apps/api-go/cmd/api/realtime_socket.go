@@ -14,19 +14,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationalert"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimeevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignals"
@@ -90,16 +88,13 @@ func wireRealtimeSocket(
 	db *sql.DB,
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	auth *authhttp.Authenticator,
 ) (*realtimeSocketUnit, error) {
 	if db == nil || redisClient == nil || redisOptions == nil {
 		return nil, errRealtimeSocketResources
 	}
-	mongoDatabase, err := sharedMongoDatabase(cfg.MongoURI, mongoConn)
-	if err != nil {
-		return nil, fmt.Errorf("api-go: realtime socket event sources require a valid MONGO_URI: %w", err)
-	}
+	mongoDatabase := mongoConn.Database()
 
 	var augmenter realtimeevents.SituationAugmenter
 	if mongoDatabase != nil {
@@ -160,15 +155,12 @@ func wireClassificationAlert(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*classificationalert.Scheduler, error) {
 	if db == nil || redisClient == nil {
 		return nil, errClassificationAlertResources
 	}
-	mongoDatabase, err := sharedMongoDatabase(cfg.MongoURI, mongoConn)
-	if err != nil {
-		return nil, fmt.Errorf("api-go: classification quality alert scheduler requires a valid MONGO_URI: %w", err)
-	}
+	mongoDatabase := mongoConn.Database()
 	if mongoDatabase == nil {
 		return nil, errClassificationAlertResources
 	}
@@ -179,23 +171,4 @@ func wireClassificationAlert(
 		Redis:   redisClient,
 		Summary: summary,
 	})
-}
-
-// sharedMongoDatabase returns the process-wide Mongo database, opening it on
-// first use when MONGO_URI is configured. An already-open connection is reused
-// even when the URI is empty (every opener uses the same cfg.MongoURI); an
-// unparsable URI is reported to the caller.
-func sharedMongoDatabase(mongoURI string, mongoConn **dashboardstats.Connection) (*mongo.Database, error) {
-	if mongoConn != nil && *mongoConn != nil {
-		return (*mongoConn).Database(), nil
-	}
-	if strings.TrimSpace(mongoURI) == "" || mongoConn == nil {
-		return nil, nil
-	}
-	conn, err := dashboardstats.Open(mongoURI)
-	if err != nil {
-		return nil, err
-	}
-	*mongoConn = conn
-	return (*mongoConn).Database(), nil
 }

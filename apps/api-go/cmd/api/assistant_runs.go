@@ -12,10 +12,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/assistantqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/assistantruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 )
@@ -27,7 +27,7 @@ func wireAssistantRuns(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn *dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*assistantruns.Service, error) {
 	if db == nil || redisClient == nil || mongoConn == nil {
 		return nil, fmt.Errorf("api-go: assistant requires mysql, redis, and mongo")

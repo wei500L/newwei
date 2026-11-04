@@ -14,7 +14,6 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/infrastructuresettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -23,6 +22,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowhottest"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowsources"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
@@ -55,7 +55,7 @@ func newNewsnowHottestUnit(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	sources *newsnowsources.Service,
 ) (*newsnowHottestUnit, error) {
 	hottestGo := true
@@ -69,14 +69,7 @@ func newNewsnowHottestUnit(
 	if hottestGo && authenticator == nil {
 		return nil, fmt.Errorf("api-go: API_GO_NEWSNOW_HOTTEST_MODE=go requires jwt")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: newsnow hottest unit requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	unit := &newsnowHottestUnit{}
 	if sources == nil {

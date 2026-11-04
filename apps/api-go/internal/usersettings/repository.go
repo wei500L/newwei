@@ -11,8 +11,8 @@
 //   - 正确区分 sql.ErrNoRows（无记录，业务结果）与真实数据库错误；
 //   - 使用调用方传入的 ctx（shadow runner 的超时能取消数据库请求）；
 //   - 错误对外只暴露通用错误体（ErrDatabase），详细信息只进服务端日志；
-//     DSN 解析错误不含 DSN 原文（见 mysql_repository.go 的 parseMySQLURL
-//     ——错误信息只有 scheme/host 缺失等结构信息）。
+//     DSN 解析错误不含 DSN 原文（解析在 internal/platform/mysqldb，
+//     错误信息只有 scheme/host 缺失等结构信息）。
 package usersettings
 
 import (
