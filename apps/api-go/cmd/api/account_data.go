@@ -10,8 +10,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
-	"github.com/wei500L/newwei/apps/api-go/internal/authn"
-	"github.com/wei500L/newwei/apps/api-go/internal/authz"
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
@@ -38,6 +37,7 @@ func wireAccountData(
 	db *sql.DB,
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
+	auth *authhttp.Authenticator,
 ) error {
 	avatarGo := true
 	exportGo := true
@@ -75,9 +75,7 @@ func wireAccountData(
 		assistantRuns = accountdata.NewMongoAssistantRuns((*mongoConn).Database())
 	}
 
-	verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
-	blacklist := authn.NewRedisBlacklist(redisClient)
-	authenticator := accountsecurity.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(db), db)
+	authenticator := accountsecurity.NewAuthenticator(auth)
 	service := accountdata.NewService(accountdata.Options{
 		DB:            db,
 		Redis:         redisClient,

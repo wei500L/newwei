@@ -3,7 +3,6 @@ package notificationssocket
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 )
@@ -41,32 +41,29 @@ func (a *authenticator) authenticate(ctx context.Context, rawToken string) (sess
 	if strings.TrimSpace(rawToken) == "" {
 		return session{}, &authError{message: "Missing auth token"}
 	}
-	token, err := a.verifier.Verify(rawToken)
-	if err != nil {
-		return session{}, &authError{message: "Invalid token"}
-	}
-	if token.JTI != "" {
-		revoked, revokeErr := a.blacklist.Revoked(ctx, token.JTI)
-		if revokeErr != nil {
-			return session{}, fmt.Errorf("blacklist query failed: %w", revokeErr)
+	identity, failure := authhttp.ResolveHandshakeToken(ctx, a.verifier, a.blacklist, a.authz, rawToken)
+	if failure != nil {
+		switch failure.Status {
+		case http.StatusUnauthorized:
+			switch failure.Message {
+			case "Unauthorized":
+				return session{}, &authError{message: "Invalid token"}
+			case "Access token revoked":
+				return session{}, &authError{message: "Token revoked"}
+			default:
+				return session{}, &authError{message: failure.Message}
+			}
+		case http.StatusInternalServerError:
+			return session{}, fmt.Errorf("blacklist query failed: %s", failure.Message)
+		default:
+			return session{}, fmt.Errorf("authorization query failed: %s", failure.Message)
 		}
-		if revoked {
-			return session{}, &authError{message: "Token revoked"}
-		}
-	}
-	authorization, authzErr := a.authz.Authorize(ctx, token.Subject, token.OrgID)
-	if authzErr != nil {
-		var rejection *authz.Rejection
-		if errors.As(authzErr, &rejection) {
-			return session{}, &authError{message: rejection.Message}
-		}
-		return session{}, fmt.Errorf("authorization query failed: %w", authzErr)
 	}
 	return session{
-		userID:    authorization.UserID,
-		orgID:     authorization.OrgID,
-		jti:       token.JTI,
-		expiresAt: token.ExpiresAt,
+		userID:    identity.UserID,
+		orgID:     identity.OrgID,
+		jti:       identity.TokenID(),
+		expiresAt: identity.TokenExpiresAt(),
 	}, nil
 }
 

@@ -213,6 +213,7 @@ func (permissiveMonitorAuthz) Authorize(_ context.Context, userID, orgID string)
 func monitorToken(t *testing.T, userID, orgID string) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   userID,
 		"orgId": orgID,
 		"iss":   monitorIntegrationJWTIssuer,
@@ -229,7 +230,7 @@ func monitorToken(t *testing.T, userID, orgID string) string {
 
 func newMonitorIntegrationHandler(db *sql.DB, geocoder LocationGeocoder) *Handler {
 	verifier := authn.NewVerifier(monitorIntegrationJWTSecret, monitorIntegrationJWTIssuer, monitorIntegrationJWTAudience)
-	chain := authhttp.NewAuthenticator(verifier, allowAllMonitorBlacklist{}, permissiveMonitorAuthz{})
+	chain := authhttp.NewAuthenticator(verifier, allowAllMonitorBlacklist{}, permissiveMonitorAuthz{}, nil)
 	service := NewService(db, geocoder)
 	// Keep the integration fixture deterministic: no model profile rows exist,
 	// and a nil gateway proves the request path never reaches a real LLM.

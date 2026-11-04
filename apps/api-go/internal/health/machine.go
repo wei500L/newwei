@@ -79,28 +79,28 @@ func (g Gate) allowMachine(w http.ResponseWriter, r *http.Request, token string)
 }
 
 type mysqlMachines struct {
-	db *sql.DB
+	db       *sql.DB
+	resolver *authhttp.MachineResolver
 }
 
 func (s mysqlMachines) Find(ctx context.Context, tokenHash string) (machineRecord, bool, error) {
-	if s.db == nil {
+	if s.resolver == nil {
 		return machineRecord{}, false, sql.ErrConnDone
 	}
-	var record machineRecord
-	var active int
-	err := s.db.QueryRowContext(ctx, `
-SELECT t.id, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-INNER JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?
-LIMIT 1`, tokenHash).Scan(&record.ID, &record.ExpiresAt, &record.RevokedAt, &active)
-	if err == sql.ErrNoRows {
-		return machineRecord{}, false, nil
-	}
+	token, found, err := s.resolver.LookupHash(ctx, tokenHash)
 	if err != nil {
 		return machineRecord{}, false, err
 	}
-	record.OrgActive = active == 1
+	if !found {
+		return machineRecord{}, false, nil
+	}
+	record := machineRecord{ID: token.ID, OrgActive: token.OrgActive}
+	if token.ExpiresAt != nil {
+		record.ExpiresAt = sql.NullTime{Time: *token.ExpiresAt, Valid: true}
+	}
+	if token.RevokedAt != nil {
+		record.RevokedAt = sql.NullTime{Time: *token.RevokedAt, Valid: true}
+	}
 	return record, true, nil
 }
 

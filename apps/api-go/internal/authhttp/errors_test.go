@@ -97,6 +97,7 @@ func TestAuthenticateWritesPathWithQueryString(t *testing.T) {
 		authn.NewVerifier(testSecret, testIssuer, testAudience),
 		revokedBlacklist{},
 		unusedAuthz{t: t},
+		nil,
 	)
 	request := httptest.NewRequest(http.MethodPost, "/api/auth/refresh?includeOrgs=1&x=%2Fy", nil)
 	request.Header.Set("Authorization", "Bearer "+signAccessToken(t))
@@ -130,6 +131,7 @@ func TestAuthenticateMissingBearerShape(t *testing.T) {
 		authn.NewVerifier(testSecret, testIssuer, testAudience),
 		revokedBlacklist{},
 		unusedAuthz{t: t},
+		nil,
 	)
 	request := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	rec := httptest.NewRecorder()

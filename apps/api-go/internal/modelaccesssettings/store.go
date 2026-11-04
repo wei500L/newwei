@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
 
 // Config carries every environment-derived value the handlers need. Each field
@@ -255,52 +257,34 @@ func (i *mysqlIdentity) IsPlatformAdmin(ctx context.Context, userID string) (boo
 	return true, nil
 }
 
-// MachineToken resolves one machine token by its SHA-256 hash, joined to
-// Org.isActive.
+// MachineToken resolves one machine token by its SHA-256 hash through the
+// shared authhttp.MachineResolver (joined to Org.isActive).
 func (i *mysqlIdentity) MachineToken(ctx context.Context, tokenHash string) (machineTokenRecord, error) {
 	if i == nil || i.db == nil {
 		return machineTokenRecord{}, errNoDatabase
 	}
-	var id, orgID string
-	var rawPermissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := i.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, tokenHash,
-	).Scan(&id, &orgID, &rawPermissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
-		return machineTokenRecord{}, errMachineTokenNotFound
-	}
+	token, found, err := authhttp.NewMachineResolver(i.db, nil).LookupHash(ctx, tokenHash)
 	if err != nil {
 		return machineTokenRecord{}, err
 	}
-	var permissions machineTokenPermissions
-	if len(rawPermissions) > 0 {
-		if err := json.Unmarshal(rawPermissions, &permissions); err != nil {
-			// A non-array permissions document grants nothing; it never becomes a
-			// wildcard.
-			permissions = nil
-		}
+	if !found {
+		return machineTokenRecord{}, errMachineTokenNotFound
 	}
 	return machineTokenRecord{
-		ID:          id,
-		OrgID:       orgID,
-		Permissions: permissions,
-		Revoked:     revoked.Valid,
-		Expired:     expires.Valid && !expires.Time.After(time.Now()),
-		OrgActive:   active != 0,
+		ID:          token.ID,
+		OrgID:       token.OrgID,
+		Permissions: authhttp.ParseMachinePermissions(token.PermissionsRaw),
+		Revoked:     token.RevokedAt != nil,
+		Expired:     token.ExpiresAt != nil && !token.ExpiresAt.After(time.Now()),
+		OrgActive:   token.OrgActive,
 	}, nil
 }
 
-// TouchMachineToken refreshes lastUsedAt, best-effort like the NestJS
-// `.catch(() => undefined)`.
+// TouchMachineToken refreshes lastUsedAt best-effort through the shared resolver.
 func (i *mysqlIdentity) TouchMachineToken(ctx context.Context, id string) error {
 	if i == nil || i.db == nil {
 		return errNoDatabase
 	}
-	_, err := i.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`, nowMillis(), id)
-	return err
+	authhttp.NewMachineResolver(i.db, nil).Touch(ctx, id)
+	return nil
 }

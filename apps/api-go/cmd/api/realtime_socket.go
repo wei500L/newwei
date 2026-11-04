@@ -20,8 +20,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/authn"
-	"github.com/wei500L/newwei/apps/api-go/internal/authz"
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationalert"
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
@@ -92,6 +91,7 @@ func wireRealtimeSocket(
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
 	mongoConn **dashboardstats.Connection,
+	auth *authhttp.Authenticator,
 ) (*realtimeSocketUnit, error) {
 	if db == nil || redisClient == nil || redisOptions == nil {
 		return nil, errRealtimeSocketResources
@@ -128,9 +128,9 @@ func wireRealtimeSocket(
 
 	runtime, err := realtimesocket.New(realtimesocket.Options{
 		DB:                    db,
-		Verifier:              authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
-		Blacklist:             authn.NewRedisBlacklist(redisClient),
-		Authz:                 authz.NewMySQLRepository(db),
+		Verifier:              auth.Verifier(),
+		Blacklist:             auth.Blacklist(),
+		Authz:                 auth.Authz(),
 		Redis:                 redisClient,
 		CORS:                  cors.New(cfg.CorsOrigin),
 		TrustProxy:            strings.TrimSpace(cfg.TrustProxy) != "",

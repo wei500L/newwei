@@ -49,6 +49,7 @@ func (a vectorDiagnosticsAuthz) Authorize(context.Context, string, string) (*aut
 func mintVectorDiagnosticsToken(t *testing.T) string {
 	t.Helper()
 	claims := jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   "user-1",
 		"orgId": "org-1",
 		"iss":   vectorDiagnosticsTestIssuer,
@@ -84,6 +85,7 @@ func newVectorDiagnosticsTestHandler(t *testing.T, settings map[string]string, c
 		authn.NewVerifier(vectorDiagnosticsTestSecret, vectorDiagnosticsTestIssuer, vectorDiagnosticsTestAudience),
 		vectorDiagnosticsBlacklist{},
 		vectorDiagnosticsAuthz{permissions: permissions},
+		nil,
 	)
 	return NewVectorDiagnosticsHandler(service, NewAuthenticator(chain, store.db()), health)
 }

@@ -85,7 +85,7 @@ func TestNamespacePermissionGates(t *testing.T) {
 			harness.repository.setPermissions(testCase.permissions...)
 			conn := harness.dial(t)
 			readOpen(t, conn)
-			token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+			token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 			connectBrowser(t, conn, testCase.namespace, token, "o1", "u1")
 		})
 	}
@@ -93,7 +93,7 @@ func TestNamespacePermissionGates(t *testing.T) {
 	t.Run("missing permission", func(t *testing.T) {
 		harness := newTestRuntime(t, nil)
 		harness.repository.setPermissions("unrelated.permission")
-		token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+		token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 		for _, namespace := range []string{
 			NamespaceNewsnow,
 			NamespaceOps,
@@ -116,8 +116,8 @@ func TestNamespacePermissionGates(t *testing.T) {
 
 func TestTokenPrecedencePerNamespace(t *testing.T) {
 	harness := newTestRuntime(t, nil)
-	goodToken := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
-	badToken := signToken(t, "evil", "evil-org", "", time.Now().Add(time.Hour))
+	goodToken := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
+	badToken := signToken(t, "evil", "evil-org", "jti-test-1", time.Now().Add(time.Hour))
 
 	t.Run("newsnow header wins and bearer scheme is case insensitive", func(t *testing.T) {
 		conn := harness.dialWith(t, "", http.Header{"Authorization": []string{"bearer " + goodToken}})
@@ -152,7 +152,7 @@ func TestTokenPrecedencePerNamespace(t *testing.T) {
 
 func TestHandshakeRejectionPayloads(t *testing.T) {
 	validToken := func(t *testing.T) string {
-		return signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+		return signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	}
 
 	t.Run("ip rate limit", func(t *testing.T) {
@@ -288,8 +288,8 @@ func TestConnectionCapsArePerNamespace(t *testing.T) {
 		options.MaxConnectionsPerUser = 1
 		options.MaxConnectionsPerIP = 1
 	})
-	tokenU1 := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
-	tokenU2 := signToken(t, "u2", "o1", "", time.Now().Add(time.Hour))
+	tokenU1 := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
+	tokenU2 := signToken(t, "u2", "o1", "jti-test-1", time.Now().Add(time.Hour))
 
 	newsnow := harness.dial(t)
 	readOpen(t, newsnow)
@@ -321,7 +321,7 @@ func TestOriginAllowList(t *testing.T) {
 	harness := newTestRuntime(t, func(options *Options) {
 		options.CORS = cors.New("https://console.example")
 	})
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 
 	t.Run("allowed origin", func(t *testing.T) {
 		conn := harness.dialWith(t, "", http.Header{"Origin": []string{"https://console.example"}})
@@ -353,7 +353,7 @@ func TestMultiplexedConnectionClosesEveryNamespace(t *testing.T) {
 	harness.repository.setPermissions(permissionItemsRead)
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceNewsnow, token, "o1", "u1")
 	connectBrowser(t, conn, NamespaceSituationMonitor, token, "o1", "u1")
 

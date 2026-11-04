@@ -14,8 +14,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/analysisexport"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivepreparation"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivereading"
-	"github.com/wei500L/newwei/apps/api-go/internal/authn"
-	"github.com/wei500L/newwei/apps/api-go/internal/authz"
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
@@ -38,6 +37,7 @@ func wireArchiveReadingHTTP(
 	db *sql.DB,
 	redisClient *redis.Client,
 	mongoConn **dashboardstats.Connection,
+	auth *authhttp.Authenticator,
 ) (*archivereading.Service, error) {
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: archive reading go takeover requires mysql, jwt, and redis")
@@ -51,9 +51,7 @@ func wireArchiveReadingHTTP(
 	}
 	mongoDatabase := (*mongoConn).Database()
 
-	verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
-	blacklist := authn.NewRedisBlacklist(redisClient)
-	authenticator := accountsecurity.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(db), db)
+	authenticator := accountsecurity.NewAuthenticator(auth)
 
 	itemService := itemsreading.NewService(itemsreading.Options{
 		DB:                    db,

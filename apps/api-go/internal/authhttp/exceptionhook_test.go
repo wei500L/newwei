@@ -186,7 +186,7 @@ func TestRecordedIdentityComesFromTheVerificationChain(t *testing.T) {
 // attributed to a tenant.
 func TestRecordedIdentityIsEmptyBeforeAuthentication(t *testing.T) {
 	recorder := withRecorder(t)
-	authenticator := NewAuthenticator(authn.NewVerifier("secret", "issuer", "audience"), nil, nil)
+	authenticator := NewAuthenticator(authn.NewVerifier("secret", "issuer", "audience"), nil, nil, nil)
 	IdentityScope(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if identity := authenticator.Authenticate(w, r); identity != nil {
 			t.Fatal("a request without a bearer was authenticated")
@@ -212,6 +212,7 @@ func TestAuthenticatePublishesTheVerifiedIdentity(t *testing.T) {
 		authn.NewVerifier(testSecret, testIssuer, testAudience),
 		notRevokedBlacklist{},
 		acceptingAuthorizeRepository{},
+		nil,
 	)
 	token := signAccessToken(t)
 	IdentityScope(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
