@@ -1,7 +1,7 @@
 # MONITOR-GEOCODING-001 · 监控地点解析接入系统地理编码
 
 - 状态：`merged`；2026-11-01 核实 [#156](https://github.com/wei500L/newwei/pull/156) 实际 merge `fc9f823a34ba2257048c4c0c4ce7785f8c446a5a`；最终源 head `3b06403823be753587a81cbe0a2feb06a3c7ccb7` 已是当前 main `2e63645d` 祖先，[源 head 普通 CI 41251389520](https://github.com/wei500L/newwei/actions/runs/41251389520) 三主 job success，两个 regen skipped。不以初版实现 head 或失败旧 run 替代最终证据。
-- 当前最终 main [CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 核对时尚未完成，中间 merge run 41286940726 cancelled；`GAP-MONITOR-GEOCODING-001` 按源码范围关闭，未部署/实网验证。
+- 最终业务 merge `2e63645d` 的[CI 41286944654](https://github.com/wei500L/newwei/actions/runs/41286944654) 后续核对已 completed/success，三主 job success、两个 regen skipped；中间 merge run 41286940726 cancelled。`GAP-MONITOR-GEOCODING-001` 按源码范围关闭，未部署/实网验证；当前 main CI 见入口。
 - 缺口：`GAP-MONITOR-GEOCODING-001`，对应[态势复核 M-04](../../review/situation-realtime.md)。
 - 核对基线：main `e04fc4d8bb54596afd302a309ebc852c7676d958`；[普通 CI 41242463081](https://github.com/wei500L/newwei/actions/runs/41242463081) 三主 job success，两个 regen skipped。开工重新 fetch 并检查认领。
 - 分支建议：`codex/fix-monitor-geocoding`；已创建独立工作树 `/Users/oo/project/newwei-monitor-geocoding`（基于 `e04fc4d8`），本机仅静态审查与 gofmt。
