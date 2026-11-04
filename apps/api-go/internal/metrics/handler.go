@@ -158,7 +158,7 @@ func (h *Handler) resolvePlatformMetricsAccess(ctx context.Context, bearer strin
 	if h.machines == nil {
 		return decisionAbsent, errors.New("metrics: machine resolver is not configured")
 	}
-	token, found, err := h.machines.LookupRaw(ctx, bearer)
+	token, found, err := h.machines.LookupCreatedBy(ctx, bearer)
 	if err != nil {
 		return decisionAbsent, err
 	}

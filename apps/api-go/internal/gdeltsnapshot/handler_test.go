@@ -57,7 +57,7 @@ type machineTokenRows struct {
 }
 
 func (*machineTokenRows) Columns() []string {
-	return []string{"id", "orgId", "name", "permissions", "createdById", "expiresAt", "revokedAt", "isActive", "planTier", "subscriptionStatus"}
+	return []string{"id", "orgId", "permissions", "expiresAt", "revokedAt", "isActive"}
 }
 
 func (*machineTokenRows) Close() error { return nil }
@@ -69,14 +69,10 @@ func (r *machineTokenRows) Next(destination []driver.Value) error {
 	r.consumed = true
 	destination[0] = "mtk-row-1"
 	destination[1] = "org-a"
-	destination[2] = "machine-token"
-	destination[3] = []byte(`["settings.manage"]`)
+	destination[2] = []byte(`["settings.manage"]`)
+	destination[3] = nil
 	destination[4] = nil
-	destination[5] = nil
-	destination[6] = nil
-	destination[7] = int64(1)
-	destination[8] = nil
-	destination[9] = nil
+	destination[5] = int64(1)
 	return nil
 }
 

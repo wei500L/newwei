@@ -121,7 +121,7 @@ func (r *stubRows) Next(dest []driver.Value) error {
 
 // query answers the authentication and run-lookup statements.
 func (s *stubState) query(query string, args []driver.NamedValue) (driver.Rows, error) {
-	machineColumns := []string{"id", "orgId", "name", "permissions", "createdById", "expiresAt", "revokedAt", "isActive", "planTier", "subscriptionStatus"}
+	machineColumns := []string{"id", "orgId", "permissions", "expiresAt", "revokedAt", "isActive"}
 	if strings.Contains(query, "MachineAccessToken") {
 		hash := ""
 		if len(args) > 0 {
@@ -133,7 +133,7 @@ func (s *stubState) query(query string, args []driver.NamedValue) (driver.Rows, 
 			if token.hash == hash {
 				return &stubRows{
 					columns: machineColumns,
-					rows:    [][]driver.Value{{"token-1", "org-1", "machine-token", []byte(token.permissions), nil, nil, nil, int64(1), nil, nil}},
+					rows:    [][]driver.Value{{"token-1", "org-1", []byte(token.permissions), nil, nil, int64(1)}},
 				}, nil
 			}
 		}

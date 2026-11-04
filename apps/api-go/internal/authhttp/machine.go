@@ -20,18 +20,33 @@ var ErrInvalidMachineToken = errors.New("invalid machine token")
 // Machine actors project to NULL in audit columns (see NullableActorID).
 const machineActorPrefix = "machine:"
 
-// machineTokenSQL is the single machine-token lookup. It joins the owning Org so
-// org state is read in the same statement, exactly like every former copy.
-const machineTokenSQL = "SELECT `t`.`id`, `t`.`orgId`, `t`.`name`, `t`.`permissions`, " +
+// machineTokenSQL is the minimal lookup shared by every machine-token caller. It
+// selects only the columns every caller and test schema carries, joining the
+// owning Org so state is read in one statement. Callers that need extra profile
+// columns use LookupProfile / LookupCreatedBy instead.
+const machineTokenSQL = "SELECT `t`.`id`, `t`.`orgId`, `t`.`permissions`, " +
+	"`t`.`expiresAt`, `t`.`revokedAt`, `o`.`isActive` " +
+	"FROM `MachineAccessToken` `t` JOIN `Org` `o` ON `o`.`id` = `t`.`orgId` " +
+	"WHERE `t`.`tokenHash` = ?"
+
+// machineTokenProfileSQL additionally reads the account-security profile columns
+// (name / createdBy / planTier / subscriptionStatus).
+const machineTokenProfileSQL = "SELECT `t`.`id`, `t`.`orgId`, `t`.`name`, `t`.`permissions`, " +
 	"`t`.`createdById`, `t`.`expiresAt`, `t`.`revokedAt`, `o`.`isActive`, " +
 	"`o`.`planTier`, `o`.`subscriptionStatus` " +
 	"FROM `MachineAccessToken` `t` JOIN `Org` `o` ON `o`.`id` = `t`.`orgId` " +
 	"WHERE `t`.`tokenHash` = ?"
 
+// machineTokenCreatedBySQL reads only the columns the metrics platform-admin
+// decision needs (creator id plus validity state).
+const machineTokenCreatedBySQL = "SELECT `t`.`createdById`, `t`.`expiresAt`, `t`.`revokedAt`, `o`.`isActive` " +
+	"FROM `MachineAccessToken` `t` JOIN `Org` `o` ON `o`.`id` = `t`.`orgId` " +
+	"WHERE `t`.`tokenHash` = ?"
+
 // MachineToken is the resolved MachineAccessToken row joined with its Org.
 // PermissionsRaw is the stored JSON document; use ParseMachinePermissions to
-// turn it into the string list. ExpiresAt/RevokedAt/PlanTier/SubscriptionStatus
-// are nil when the column is SQL NULL.
+// turn it into the string list. Profile/creator fields are zero unless the
+// caller used LookupProfile / LookupCreatedBy.
 type MachineToken struct {
 	ID                 string
 	OrgID              string
@@ -61,21 +76,18 @@ func NewMachineResolver(db *sql.DB, now func() time.Time) *MachineResolver {
 	return &MachineResolver{db: db, now: now}
 }
 
-// LookupHash reads the token row by its SHA-256 hex hash without applying the
-// validity predicate or touching lastUsedAt. found is false when no row matches.
-// It backs the two callers that keep their own decision logic (metrics platform
-// admin resolution and the health probe).
+// LookupHash reads the minimal token row by its SHA-256 hex hash without
+// applying the validity predicate or touching lastUsedAt. found is false when no
+// row matches. It backs the health probe and the generic Resolve path.
 func (m *MachineResolver) LookupHash(ctx context.Context, tokenHash string) (MachineToken, bool, error) {
 	if m == nil || m.db == nil {
 		return MachineToken{}, false, errors.New("machine token resolver has no database")
 	}
 	var token MachineToken
-	var createdBy, planTier, subscriptionStatus sql.NullString
 	var expires, revoked sql.NullTime
 	var active int
 	err := m.db.QueryRowContext(ctx, machineTokenSQL, tokenHash).Scan(
-		&token.ID, &token.OrgID, &token.Name, &token.PermissionsRaw, &createdBy,
-		&expires, &revoked, &active, &planTier, &subscriptionStatus)
+		&token.ID, &token.OrgID, &token.PermissionsRaw, &expires, &revoked, &active)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MachineToken{}, false, nil
 	}
@@ -83,30 +95,77 @@ func (m *MachineResolver) LookupHash(ctx context.Context, tokenHash string) (Mac
 		return MachineToken{}, false, err
 	}
 	token.OrgActive = active != 0
-	token.CreatedByID = createdBy.String
 	token.ExpiresAt = nullTimePtr(expires)
 	token.RevokedAt = nullTimePtr(revoked)
-	token.PlanTier = nullStringPtr(planTier)
-	token.SubscriptionStatus = nullStringPtr(subscriptionStatus)
 	return token, true, nil
 }
 
-// LookupRaw hashes raw and returns the token row without applying the validity
-// predicate. found is false when no row matches. It backs callers that need to
-// distinguish "absent" from "present but unusable" (metrics platform-admin).
-func (m *MachineResolver) LookupRaw(ctx context.Context, raw string) (MachineToken, bool, error) {
-	return m.LookupHash(ctx, machineTokenHash(raw))
-}
-
-// Lookup hashes raw and returns the validated row. ErrInvalidMachineToken means
-// absent, revoked, expired (expiresAt <= now) or inactive-org. Any other error
-// is a database failure. It does not touch lastUsedAt.
+// Lookup hashes raw and returns the validated minimal row. ErrInvalidMachineToken
+// means absent, revoked, expired (expiresAt <= now) or inactive-org. Any other
+// error is a database failure. It does not touch lastUsedAt.
 func (m *MachineResolver) Lookup(ctx context.Context, raw string) (MachineToken, error) {
 	token, found, err := m.LookupHash(ctx, machineTokenHash(raw))
 	if err != nil {
 		return MachineToken{}, err
 	}
 	if !found || m.invalid(token) {
+		return MachineToken{}, ErrInvalidMachineToken
+	}
+	return token, nil
+}
+
+// LookupCreatedBy returns the metrics platform-admin decision inputs for raw.
+// found is false when no row matches; no validity predicate is applied.
+func (m *MachineResolver) LookupCreatedBy(ctx context.Context, raw string) (MachineToken, bool, error) {
+	if m == nil || m.db == nil {
+		return MachineToken{}, false, errors.New("machine token resolver has no database")
+	}
+	var token MachineToken
+	var createdBy sql.NullString
+	var expires, revoked sql.NullTime
+	var active int
+	err := m.db.QueryRowContext(ctx, machineTokenCreatedBySQL, machineTokenHash(raw)).Scan(
+		&createdBy, &expires, &revoked, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MachineToken{}, false, nil
+	}
+	if err != nil {
+		return MachineToken{}, false, err
+	}
+	token.CreatedByID = createdBy.String
+	token.ExpiresAt = nullTimePtr(expires)
+	token.RevokedAt = nullTimePtr(revoked)
+	token.OrgActive = active != 0
+	return token, true, nil
+}
+
+// LookupProfile returns the validated account-security profile row for raw: it
+// reads the extra name/createdBy/planTier/subscriptionStatus columns on top of
+// the shared validity predicate.
+func (m *MachineResolver) LookupProfile(ctx context.Context, raw string) (MachineToken, error) {
+	if m == nil || m.db == nil {
+		return MachineToken{}, errors.New("machine token resolver has no database")
+	}
+	var token MachineToken
+	var createdBy, planTier, subscriptionStatus sql.NullString
+	var expires, revoked sql.NullTime
+	var active int
+	err := m.db.QueryRowContext(ctx, machineTokenProfileSQL, machineTokenHash(raw)).Scan(
+		&token.ID, &token.OrgID, &token.Name, &token.PermissionsRaw, &createdBy,
+		&expires, &revoked, &active, &planTier, &subscriptionStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MachineToken{}, ErrInvalidMachineToken
+	}
+	if err != nil {
+		return MachineToken{}, err
+	}
+	token.OrgActive = active != 0
+	token.CreatedByID = createdBy.String
+	token.ExpiresAt = nullTimePtr(expires)
+	token.RevokedAt = nullTimePtr(revoked)
+	token.PlanTier = nullStringPtr(planTier)
+	token.SubscriptionStatus = nullStringPtr(subscriptionStatus)
+	if m.invalid(token) {
 		return MachineToken{}, ErrInvalidMachineToken
 	}
 	return token, nil

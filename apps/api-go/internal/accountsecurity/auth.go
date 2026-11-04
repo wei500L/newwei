@@ -142,7 +142,7 @@ func (a *Authenticator) authorizeMachine(ctx context.Context, token string) (*Id
 	if a == nil || a.machines == nil {
 		return nil, errNoDatabase
 	}
-	row, err := a.machines.Lookup(ctx, token)
+	row, err := a.machines.LookupProfile(ctx, token)
 	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, unauthorized("Invalid machine token")
 	}
