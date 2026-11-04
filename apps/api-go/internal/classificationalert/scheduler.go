@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // MetricSchedulerName is the "scheduler" label written to the existing
@@ -205,10 +206,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.cancel = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("classificationalert.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -260,9 +261,12 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-ticker.C:
-			if _, err := s.EvaluateOnce(ctx); err != nil {
-				log.Printf("classificationalert: scheduler tick failed: %v", err)
-			}
+			_ = safego.Call("classificationalert.scheduler.tick", func() error {
+				if _, err := s.EvaluateOnce(ctx); err != nil {
+					log.Printf("classificationalert: scheduler tick failed: %v", err)
+				}
+				return nil
+			})
 		}
 	}
 }
@@ -341,20 +345,30 @@ func (s *Scheduler) runTick(ctx context.Context) (TickResult, error) {
 
 // EvaluateOrg mirrors evaluateOrg: take the organization lease and run the
 // summary evaluation inside it. A lease held by another owner yields
-// OrgOutcomeSkipped; any error, including a panic in the evaluator (the Go
-// equivalent of a synchronous throw the NestJS try/catch would catch), fails
-// only this organization.
-func (s *Scheduler) EvaluateOrg(ctx context.Context, orgID string) (result OrgResult) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			result = OrgResult{
-				OrgID:    orgID,
-				Outcome:  OrgOutcomeFailed,
-				Err:      fmt.Errorf("classificationalert: panic while evaluating org: %v", recovered),
-				rejected: true,
-			}
+// OrgOutcomeSkipped; an error or a panic in the evaluator (the Go equivalent of
+// a synchronous throw the NestJS try/catch would catch) fails only this
+// organization. The body runs under safego.Call so a panic becomes the same
+// OrgOutcomeFailed result without unwinding the fan-out goroutine.
+func (s *Scheduler) EvaluateOrg(ctx context.Context, orgID string) OrgResult {
+	var result OrgResult
+	panicErr := safego.Call("classificationalert.scheduler.evaluateOrg", func() error {
+		result = s.evaluateOrg(ctx, orgID)
+		return nil
+	})
+	if panicErr != nil {
+		return OrgResult{
+			OrgID:    orgID,
+			Outcome:  OrgOutcomeFailed,
+			Err:      panicErr,
+			rejected: true,
 		}
-	}()
+	}
+	return result
+}
+
+// evaluateOrg is the body of EvaluateOrg. It returns a settled result and never
+// intentionally panics; EvaluateOrg runs it under safego.Call.
+func (s *Scheduler) evaluateOrg(ctx context.Context, orgID string) OrgResult {
 	if s == nil || s.options.Summary == nil {
 		return OrgResult{
 			OrgID:    orgID,
@@ -405,11 +419,11 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 	for index, orgID := range orgIDs {
 		sem <- struct{}{}
 		wg.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("classificationalert.scheduler.runOrgs", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			results[index] = s.EvaluateOrg(ctx, orgID)
-		}(index, orgID)
+		})
 	}
 	wg.Wait()
 	return results

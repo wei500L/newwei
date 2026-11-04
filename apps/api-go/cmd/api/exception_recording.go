@@ -16,6 +16,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/exec"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // exceptionRecordTimeout bounds one best-effort insert, matching the legacy 404
@@ -138,12 +139,12 @@ func (r *exceptionRecorder) enqueue(ctx context.Context, event exceptioningest.E
 		return
 	}
 	r.inflight.Add(1)
-	go func() {
+	safego.Go("api.exceptionRecorder.enqueue", func() {
 		defer r.inflight.Done()
 		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), exceptionRecordTimeout)
 		defer cancel()
 		service.RecordInternal(recordCtx, event)
-	}()
+	})
 }
 
 // sharedService returns the service, opening the shared Mongo handle on first

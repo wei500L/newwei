@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -297,7 +299,9 @@ func insightsWrap[T any](ctx context.Context, cache insightsCache, key string, t
 
 	if acquired {
 		stop := make(chan struct{})
-		go insightsRenewLockLoop(ctx, cache, lockKey, token, lockTTL, stop)
+		safego.Go("situationsignals.insightsCache.renewLock", func() {
+			insightsRenewLockLoop(ctx, cache, lockKey, token, lockTTL, stop)
+		})
 		value, loadErr := loader(ctx)
 		close(stop)
 		if loadErr != nil {

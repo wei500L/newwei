@@ -10,6 +10,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Handler processes one job. Returning an error triggers the BullMQ retry
@@ -78,16 +80,16 @@ func NewWorker(queue *Queue, handler Handler, opts WorkerOptions) *Worker {
 func (w *Worker) Start(ctx context.Context) {
 	for index := 0; index < w.opts.Concurrency; index++ {
 		w.wg.Add(1)
-		go func() {
+		safego.Go("qualityqueue.worker.run", func() {
 			defer w.wg.Done()
 			w.run(ctx)
-		}()
+		})
 	}
 	w.wg.Add(1)
-	go func() {
+	safego.Go("qualityqueue.worker.stalledChecks", func() {
 		defer w.wg.Done()
 		w.runStalledChecks(ctx)
-	}()
+	})
 }
 
 // Stop stops claiming new jobs and waits for in-flight jobs to finish. When ctx
@@ -133,7 +135,10 @@ func (w *Worker) run(ctx context.Context) {
 			}
 			continue
 		}
-		w.process(ctx, *job)
+		_ = safego.Call("qualityqueue.worker.process", func() error {
+			w.process(ctx, *job)
+			return nil
+		})
 	}
 }
 
@@ -191,10 +196,10 @@ func (w *Worker) fetch(ctx context.Context) (*Job, error) {
 func (w *Worker) process(ctx context.Context, job Job) {
 	jobCtx, cancel := context.WithCancel(ctx)
 	renewed := make(chan struct{})
-	go func() {
+	safego.Go("qualityqueue.worker.renewLock", func() {
 		defer close(renewed)
 		w.renewLock(jobCtx, job.ID, job.Token)
-	}()
+	})
 
 	var handlerErr error
 	if job.DeferredFailure != "" {
@@ -202,7 +207,11 @@ func (w *Worker) process(ctx context.Context, job Job) {
 		// raises an UnrecoverableError, so no retry is attempted.
 		handlerErr = errors.New(job.DeferredFailure)
 	} else if w.handler != nil {
-		handlerErr = w.handler(jobCtx, job)
+		// A panic in the handler is an ordinary job failure: the existing
+		// failure path below retries or moves the job to failed.
+		handlerErr = safego.Call("qualityqueue.worker.handle", func() error {
+			return w.handler(jobCtx, job)
+		})
 	}
 
 	cancel()
@@ -373,25 +382,28 @@ func (w *Worker) runStalledChecks(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			keys := []string{
-				w.queue.keys.stalled(),
-				w.queue.keys.wait(),
-				w.queue.keys.active(),
-				w.queue.keys.stalledCheck(),
-				w.queue.keys.meta(),
-				w.queue.keys.paused(),
-				w.queue.keys.marker(),
-				w.queue.keys.events(),
-			}
-			_, err := scriptMoveStalledJobsToWait.Run(ctx, w.queue.rdb, keys,
-				w.opts.MaxStalledCount,
-				w.queue.keys.base,
-				time.Now().UnixMilli(),
-				w.opts.StalledInterval.Milliseconds(),
-			).Result()
-			if err != nil && ctx.Err() == nil {
-				log.Printf("qualityqueue: stalled checker: %v", err)
-			}
+			_ = safego.Call("qualityqueue.worker.stalledCheck", func() error {
+				keys := []string{
+					w.queue.keys.stalled(),
+					w.queue.keys.wait(),
+					w.queue.keys.active(),
+					w.queue.keys.stalledCheck(),
+					w.queue.keys.meta(),
+					w.queue.keys.paused(),
+					w.queue.keys.marker(),
+					w.queue.keys.events(),
+				}
+				_, err := scriptMoveStalledJobsToWait.Run(ctx, w.queue.rdb, keys,
+					w.opts.MaxStalledCount,
+					w.queue.keys.base,
+					time.Now().UnixMilli(),
+					w.opts.StalledInterval.Milliseconds(),
+				).Result()
+				if err != nil && ctx.Err() == nil {
+					log.Printf("qualityqueue: stalled checker: %v", err)
+				}
+				return nil
+			})
 		}
 	}
 }

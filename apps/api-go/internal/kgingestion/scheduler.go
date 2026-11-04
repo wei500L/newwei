@@ -10,6 +10,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Scheduler and lock contracts, copied from
@@ -128,11 +130,11 @@ func (s *Scheduler) Start(parent context.Context) {
 	s.startOnce.Do(func() {
 		ctx, cancel := context.WithCancel(parent)
 		s.wg.Add(1)
-		go func() {
+		safego.Go("kgingestion.scheduler.loop", func() {
 			defer s.wg.Done()
 			defer cancel()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -168,9 +170,12 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			if err := s.runTick(ctx); err != nil {
-				s.logf("kgingestion: scheduler tick failed err=%v", err)
-			}
+			_ = safego.Call("kgingestion.scheduler.tick", func() error {
+				if err := s.runTick(ctx); err != nil {
+					s.logf("kgingestion: scheduler tick failed err=%v", err)
+				}
+				return nil
+			})
 			now := s.clock().UTC()
 			next = next.Add(tickInterval)
 			if !next.After(now) {
@@ -372,11 +377,11 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 		default:
 		}
 		wait.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("kgingestion.scheduler.runOrgs", func() {
 			defer wait.Done()
 			defer func() { <-sem }()
 			results[index] = s.runOrgWithLock(ctx, orgID)
-		}(index, orgID)
+		})
 	}
 	wait.Wait()
 	return results
@@ -424,7 +429,7 @@ func (s *Scheduler) startOrgLockRenew(key, token string) func() {
 		interval = 500 * time.Millisecond
 	}
 	done := make(chan struct{})
-	go func() {
+	safego.Go("kgingestion.scheduler.orgLockRenew", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -433,11 +438,13 @@ func (s *Scheduler) startOrgLockRenew(key, token string) func() {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = s.store.RenewLock(renewCtx, key, token, orgLockTTL)
+				_ = safego.Call("kgingestion.scheduler.renewOrgLock", func() error {
+					return s.store.RenewLock(renewCtx, key, token, orgLockTTL)
+				})
 				cancel()
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() { close(done) })

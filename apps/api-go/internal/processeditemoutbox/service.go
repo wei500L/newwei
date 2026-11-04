@@ -22,6 +22,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
 
@@ -156,7 +157,7 @@ func (s *Service) processBatch(ctx context.Context, ids []string) int {
 	var claimed atomic.Int64
 	for index := 0; index < workers; index++ {
 		wg.Add(1)
-		go func() {
+		safego.Go("processeditemoutbox.service.processBatch", func() {
 			defer wg.Done()
 			for id := range work {
 				if ctx.Err() != nil {
@@ -166,7 +167,7 @@ func (s *Service) processBatch(ctx context.Context, ids []string) int {
 					claimed.Add(1)
 				}
 			}
-		}()
+		})
 	}
 	for _, id := range ids {
 		if ctx.Err() != nil {

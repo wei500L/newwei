@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlsubscriptions"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // BullMQ event streams.
@@ -107,10 +108,10 @@ func (s *Sources) startQueueReaders(ctx context.Context) {
 	for _, stream := range queueStreams {
 		stream := stream
 		s.wg.Add(1)
-		go func() {
+		safego.Go("realtimeevents.queues.readQueueStream", func() {
 			defer s.wg.Done()
 			s.readQueueStream(ctx, stream)
-		}()
+		})
 	}
 }
 

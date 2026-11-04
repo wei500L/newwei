@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -100,10 +102,10 @@ func (b *Bus) Start(_ context.Context) {
 			b.mu.Unlock()
 		}
 		b.readerWG.Add(1)
-		go func() {
+		safego.Go("graphqlsubscriptions.bus.readLoop", func() {
 			defer b.readerWG.Done()
 			b.readLoop()
-		}()
+		})
 	})
 }
 
@@ -204,10 +206,10 @@ func (b *Bus) Subscribe(ctx context.Context, root, orgID string) (<-chan FeedEve
 	}
 	b.subLock.Unlock()
 
-	go func() {
+	safego.Go("graphqlsubscriptions.bus.subscribe", func() {
 		<-ctx.Done()
 		b.release(channel, orgID, feed)
-	}()
+	})
 	return feed.channel, nil
 }
 

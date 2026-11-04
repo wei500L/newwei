@@ -11,6 +11,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/newsindicator"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
 
@@ -78,7 +79,7 @@ func (s *AssociationScheduler) Start(parent context.Context) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
-	go func() {
+	safego.Go("newsbackfilljobs.associationScheduler.loop", func() {
 		defer close(s.done)
 		for {
 			next := nextSixHourTick(time.Now())
@@ -92,9 +93,12 @@ func (s *AssociationScheduler) Start(parent context.Context) {
 				return
 			case <-timer.C:
 			}
-			s.runTick(ctx)
+			_ = safego.Call("newsbackfilljobs.associationScheduler.tick", func() error {
+				s.runTick(ctx)
+				return nil
+			})
 		}
-	}()
+	})
 }
 
 // Close stops starting new ticks, waits for the in-flight tick until ctx
@@ -166,7 +170,7 @@ func (s *AssociationScheduler) runTick(ctx context.Context) {
 		case sem <- struct{}{}:
 		}
 		wg.Add(1)
-		go func(orgID string) {
+		safego.Go("newsbackfilljobs.associationScheduler.runOrgs", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			outcome := s.refreshOrgWithLock(ctx, orgID)
@@ -178,7 +182,7 @@ func (s *AssociationScheduler) runTick(ctx context.Context) {
 				skippedOrgs++
 			}
 			mu.Unlock()
-		}(orgID)
+		})
 	}
 	wg.Wait()
 	s.logger("newsbackfilljobs: association refresh tick completed orgCount=%d concurrency=%d failedOrgs=%d skippedOrgs=%d",

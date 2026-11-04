@@ -27,6 +27,8 @@ import (
 	"sync"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Path 是唯一接管的精确路径。
@@ -123,22 +125,22 @@ func (h *Handler) load(ctx context.Context, orgID string) ([]byte, int, error) {
 	)
 	var wg sync.WaitGroup
 	wg.Add(4)
-	go func() {
+	safego.Go("dashboardstats.load.itemCount", func() {
 		defer wg.Done()
 		itemCount, itemErr = h.src.CountItems(ctx, orgID)
-	}()
-	go func() {
+	})
+	safego.Go("dashboardstats.load.processed", func() {
 		defer wg.Done()
 		processed, processedErr = h.src.CountProcessed(ctx, orgID)
-	}()
-	go func() {
+	})
+	safego.Go("dashboardstats.load.recentLogs", func() {
 		defer wg.Done()
 		logs, logsErr = h.src.RecentLogs(ctx, orgID)
-	}()
-	go func() {
+	})
+	safego.Go("dashboardstats.load.queueCounts", func() {
 		defer wg.Done()
 		queue, queueOK = h.src.QueueCounts(ctx, orgID)
-	}()
+	})
 	wg.Wait()
 
 	if itemErr != nil {

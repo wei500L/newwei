@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 type articleReader interface {
@@ -114,14 +116,14 @@ func (s *Service) loadEventInputs(ctx context.Context, orgID string, start, end 
 	}
 	alertsCh := make(chan alertsResult, 1)
 	articlesCh := make(chan articleResult, 1)
-	go func() {
+	safego.Go("dashboardwarmap.loadEventInputs.alerts", func() {
 		rows, err := s.articles.Alerts(ctx, orgID, start, end)
 		alertsCh <- alertsResult{rows: rows, err: err}
-	}()
-	go func() {
+	})
+	safego.Go("dashboardwarmap.loadEventInputs.articles", func() {
 		rows, err := s.cachedEventArticles(ctx, orgID, start, end)
 		articlesCh <- articleResult{rows: rows, err: err}
-	}()
+	})
 	alerts := <-alertsCh
 	articles := <-articlesCh
 	if alerts.err != nil {

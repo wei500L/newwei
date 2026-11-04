@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 var (
@@ -53,10 +55,10 @@ func (s *cronScheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("crawlmaintenance.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -98,9 +100,12 @@ func (s *cronScheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			if err := s.tick(ctx); err != nil {
-				s.logf("crawlmaintenance: %s tick failed: %v", s.name, err)
-			}
+			_ = safego.Call("crawlmaintenance.scheduler.tick", func() error {
+				if err := s.tick(ctx); err != nil {
+					s.logf("crawlmaintenance: %s tick failed: %v", s.name, err)
+				}
+				return nil
+			})
 			timer.Reset(time.Until(s.next(s.now())))
 		}
 	}

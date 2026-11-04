@@ -10,6 +10,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbackfilljobs"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // ActiveOrgReader lists the active organization ids, ordered by id ascending.
@@ -100,11 +101,11 @@ func (s *Scheduler) Start(parent context.Context) {
 	s.startOnce.Do(func() {
 		ctx, cancel := context.WithCancel(parent)
 		s.wg.Add(1)
-		go func() {
+		safego.Go("sentimentsnapshot.scheduler.loop", func() {
 			defer s.wg.Done()
 			defer cancel()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -120,7 +121,9 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if err := s.runOnce(ctx); err != nil {
+		if err := safego.Call("sentimentsnapshot.scheduler.tick", func() error {
+			return s.runOnce(ctx)
+		}); err != nil {
 			s.logf("sentimentsnapshot: tick failed err=%v", err)
 		}
 	}
@@ -218,7 +221,7 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 		case semaphore <- struct{}{}:
 		}
 		wait.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("sentimentsnapshot.scheduler.runOrgs", func() {
 			defer wait.Done()
 			defer func() { <-semaphore }()
 			status, err := s.rebuildOrgWithLock(ctx, orgID)
@@ -228,7 +231,7 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 				return
 			}
 			results[index] = status
-		}(index, orgID)
+		})
 	}
 	wait.Wait()
 	return results
@@ -291,14 +294,14 @@ func (s *Scheduler) aggregateBucket(ctx context.Context, orgID string, start, en
 	var topicErr error
 	var wait sync.WaitGroup
 	wait.Add(2)
-	go func() {
+	safego.Go("sentimentsnapshot.scheduler.aggregateEntitySentiment", func() {
 		defer wait.Done()
 		entities, entityErr = s.store.aggregateEntitySentiment(ctx, orgID, start, end)
-	}()
-	go func() {
+	})
+	safego.Go("sentimentsnapshot.scheduler.aggregateTopicSentiment", func() {
 		defer wait.Done()
 		topics, topicErr = s.store.aggregateTopicSentiment(ctx, orgID, start, end)
-	}()
+	})
 	wait.Wait()
 	if entityErr != nil {
 		return nil, nil, entityErr

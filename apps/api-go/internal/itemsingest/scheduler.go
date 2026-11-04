@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
 
@@ -49,10 +50,10 @@ func (s *OutboxScheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("itemsingest.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -92,7 +93,10 @@ func (s *OutboxScheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			s.runTick(ctx)
+			_ = safego.Call("itemsingest.scheduler.tick", func() error {
+				s.runTick(ctx)
+				return nil
+			})
 			now := s.now().UTC()
 			next = next.Add(time.Minute)
 			if !next.After(now) {
@@ -129,7 +133,7 @@ func (s *OutboxScheduler) startLeaseRenew(token string) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("itemsingest.scheduler.leaseRenew", func() {
 		defer ticker.Stop()
 		for {
 			select {
@@ -137,12 +141,14 @@ func (s *OutboxScheduler) startLeaseRenew(token string) func() {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := s.store.RenewLock(renewCtx, rawItemOutboxLockKey, token, rawItemOutboxLockTTL); err != nil {
+				if err := safego.Call("itemsingest.scheduler.renewLock", func() error {
+					return s.store.RenewLock(renewCtx, rawItemOutboxLockKey, token, rawItemOutboxLockTTL)
+				}); err != nil {
 					log.Printf("itemsingest: raw-item outbox lease renew failed: %v", err)
 				}
 				cancel()
 			}
 		}
-	}()
+	})
 	return func() { once.Do(func() { close(stop) }) }
 }

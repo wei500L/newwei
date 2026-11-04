@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -46,7 +48,7 @@ func (s *ScanScheduler) Start(parent context.Context) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
-	go func() {
+	safego.Go("newsbackfilljobs.scanScheduler.loop", func() {
 		defer close(s.done)
 		for {
 			next := nextFiveMinuteTick(time.Now())
@@ -60,9 +62,12 @@ func (s *ScanScheduler) Start(parent context.Context) {
 				return
 			case <-timer.C:
 			}
-			s.runTick(ctx)
+			_ = safego.Call("newsbackfilljobs.scanScheduler.tick", func() error {
+				s.runTick(ctx)
+				return nil
+			})
 		}
-	}()
+	})
 }
 
 // Close stops starting new ticks, waits for the in-flight tick until ctx

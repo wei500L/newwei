@@ -20,6 +20,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/policy"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/schema"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -166,7 +167,7 @@ func (r *Runtime) openFeed(root string) func(contract.Context) (<-chan contract.
 			return nil, err
 		}
 		out := make(chan contract.SubscriptionEvent)
-		go func() {
+		safego.Go("graphqlsubscriptions.handler.openFeed", func() {
 			defer close(out)
 			for {
 				select {
@@ -184,7 +185,7 @@ func (r *Runtime) openFeed(root string) func(contract.Context) (<-chan contract.
 					return
 				}
 			}
-		}()
+		})
 		return out, nil
 	}
 }

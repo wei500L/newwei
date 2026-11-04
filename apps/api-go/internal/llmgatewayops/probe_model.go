@@ -13,6 +13,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // authModeProfileKey and authModeManagedKey are the two test authentication
@@ -273,12 +274,12 @@ func (s *Service) CheckProxyHealth(ctx context.Context, profileID string) (proxy
 	}
 	livelinessCh := make(chan endpointResult, 1)
 	readinessCh := make(chan endpointResult, 1)
-	go func() {
+	safego.Go("llmgatewayops.checkProxyHealth.liveliness", func() {
 		livelinessCh <- endpointResult{check: checkDiagnosticEndpoint(ctx, client, "/health/liveliness", apiKey != "")}
-	}()
-	go func() {
+	})
+	safego.Go("llmgatewayops.checkProxyHealth.readiness", func() {
 		readinessCh <- endpointResult{check: checkDiagnosticEndpoint(ctx, client, "/health/readiness", apiKey != "")}
-	}()
+	})
 	liveliness := <-livelinessCh
 	readiness := <-readinessCh
 	return proxyHealthResult{

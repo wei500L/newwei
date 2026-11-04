@@ -16,6 +16,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -333,7 +334,8 @@ func (s *Service) translateMissingViaLLM(ctx context.Context, texts []string, op
 			continue
 		}
 		wait.Add(1)
-		go func(text string) {
+		text := text
+		safego.Go("rsstranslation.service.translateMissingViaLLM", func() {
 			defer wait.Done()
 			var translated string
 			permitErr := s.llmSem.withPermit(ctx, func() {
@@ -350,7 +352,7 @@ func (s *Service) translateMissingViaLLM(ctx context.Context, texts []string, op
 			mu.Lock()
 			mapped[text] = translated
 			mu.Unlock()
-		}(text)
+		})
 	}
 	wait.Wait()
 	return mapped

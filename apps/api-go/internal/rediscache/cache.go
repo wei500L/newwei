@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // ErrNoClient is returned when a caller passes a nil client. Redis is required
@@ -104,7 +106,7 @@ func startRenewal(client *redis.Client, key, token string, ttl, interval time.Du
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("rediscache.cache.renewLock", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -112,13 +114,16 @@ func startRenewal(client *redis.Client, key, token string, ttl, interval time.Du
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewScript.Run(renewCtx, client, []string{key}, token,
-					strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
-				cancel()
+				_ = safego.Call("rediscache.cache.renewLock.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = renewScript.Run(renewCtx, client, []string{key}, token,
+						strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {

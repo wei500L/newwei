@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports the subset of CacheService the scheduler uses: JSON get/set,
@@ -309,7 +311,7 @@ func (s *Service) startLeaseRenewal(ctx context.Context, key, token string, ttl 
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("newssourcescheduler.cache.renewLease", func() {
 		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -318,10 +320,13 @@ func (s *Service) startLeaseRenewal(ctx context.Context, key, token string, ttl 
 			case <-stop:
 				return
 			case <-ticker.C:
-				s.renewLease(ctx, key, token, ttl)
+				_ = safego.Call("newssourcescheduler.cache.renewLease.tick", func() error {
+					s.renewLease(ctx, key, token, ttl)
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() {
 		close(stop)
 		<-done

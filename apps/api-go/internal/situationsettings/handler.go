@@ -11,6 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignals"
 )
 
@@ -218,22 +219,22 @@ func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, setti
 	externalCh := make(chan externalResult, 1)
 	qualityCh := make(chan qualityResult, 1)
 
-	go func() {
+	safego.Go("situationsettings.handler.externalSnapshot", func() {
 		if externalProvider == nil {
 			externalCh <- externalResult{err: errNoExternalSnapshotProvider}
 			return
 		}
 		summary, err := externalProvider.GetStatusSummary(r.Context())
 		externalCh <- externalResult{value: summary, err: err}
-	}()
-	go func() {
+	})
+	safego.Go("situationsettings.handler.qualitySummary", func() {
 		if qualityProvider == nil {
 			qualityCh <- qualityResult{}
 			return
 		}
 		summary, err := qualityProvider.GetQualitySummary(r.Context(), orgID)
 		qualityCh <- qualityResult{value: summary, err: err}
-	}()
+	})
 
 	external := <-externalCh
 	quality := <-qualityCh

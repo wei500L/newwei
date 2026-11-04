@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // releaseLockScript and renewLockScript are the CacheService.withLock scripts:
@@ -73,7 +75,7 @@ func (l *redisLock) startRenew() {
 	if interval < 500*time.Millisecond {
 		interval = 500 * time.Millisecond
 	}
-	go func() {
+	safego.Go("newsbackfilljobs.lock.renewLock", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -81,12 +83,15 @@ func (l *redisLock) startRenew() {
 			case <-l.stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewLockScript.Run(renewCtx, l.client, []string{l.key}, l.token, l.ttl.Milliseconds()).Err()
-				cancel()
+				_ = safego.Call("newsbackfilljobs.lock.renewLock.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = renewLockScript.Run(renewCtx, l.client, []string{l.key}, l.token, l.ttl.Milliseconds()).Err()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 }
 
 // Release stops the renewal and deletes the key only when this lease still owns

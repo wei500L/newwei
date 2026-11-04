@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Relay is the AIS relay service: the aggregation state, the upstream client and the
@@ -39,9 +41,9 @@ func (r *Relay) Handler() http.Handler {
 // upstream supervisor that owns the connection lifecycle, and the ticker that refreshes
 // the snapshot cache.
 func (r *Relay) Start(ctx context.Context) {
-	go r.engine.runDrainLoop(ctx)
+	safego.Go("aisrelay.relay.runDrainLoop", func() { r.engine.runDrainLoop(ctx) })
 	r.upstream.start(ctx)
-	go r.runSnapshotTicker(ctx)
+	safego.Go("aisrelay.relay.runSnapshotTicker", func() { r.runSnapshotTicker(ctx) })
 }
 
 // runSnapshotTicker refreshes the snapshot on the configured cadence, mirroring the Node
@@ -56,7 +58,10 @@ func (r *Relay) runSnapshotTicker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.engine.refreshSnapshotOnTick()
+			_ = safego.Call("aisrelay.relay.refreshSnapshot", func() error {
+				r.engine.refreshSnapshotOnTick()
+				return nil
+			})
 		}
 	}
 }

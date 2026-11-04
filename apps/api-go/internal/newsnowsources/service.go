@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Compatible Redis keys. The prefix and suffixes are identical to the NestJS
@@ -251,14 +253,14 @@ func (s *Service) writeBothCaches(ctx context.Context, freshKey, staleKey string
 	var wait sync.WaitGroup
 	errs := make([]error, 2)
 	wait.Add(2)
-	go func() {
+	safego.Go("newsnowsources.service.writeBothCaches", func() {
 		defer wait.Done()
 		errs[0] = s.cacheSet(ctx, freshKey, payload, freshTTL)
-	}()
-	go func() {
+	})
+	safego.Go("newsnowsources.service.writeBothCaches", func() {
 		defer wait.Done()
 		errs[1] = s.cacheSet(ctx, staleKey, payload, staleTTLSeconds)
-	}()
+	})
 	wait.Wait()
 	for _, writeErr := range errs {
 		if writeErr != nil {
@@ -317,14 +319,14 @@ func (s *Service) FetchBatch(ctx context.Context, ids []string, forceRefresh boo
 	}
 	wait.Add(workers)
 	for worker := 0; worker < workers; worker++ {
-		go func() {
+		safego.Go("newsnowsources.service.fetchBatch", func() {
 			defer wait.Done()
 			for index := range jobs {
 				item, err := s.FetchSource(ctx, unique[index], forceRefresh)
 				results[index] = item
 				errs[index] = err
 			}
-		}()
+		})
 	}
 	for index := range unique {
 		jobs <- index

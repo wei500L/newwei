@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // minuteInterval is CronExpression.EVERY_MINUTE.
@@ -45,11 +47,11 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("realtimesignals.scheduler.loop", func() {
 			defer s.wg.Done()
 			defer close(s.loopDone)
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -105,12 +107,15 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 			s.wg.Add(1)
-			go func() {
+			safego.Go("realtimesignals.scheduler.tick", func() {
 				defer s.wg.Done()
-				if err := s.service.RefreshScheduled(ctx); err != nil {
-					s.logger.Printf("realtimesignals: scheduled refresh failed: %v", err)
-				}
-			}()
+				_ = safego.Call("realtimesignals.scheduler.refresh", func() error {
+					if err := s.service.RefreshScheduled(ctx); err != nil {
+						s.logger.Printf("realtimesignals: scheduled refresh failed: %v", err)
+					}
+					return nil
+				})
+			})
 			now := s.now()
 			next = next.Add(minuteInterval)
 			if !next.After(now) {

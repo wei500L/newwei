@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowsources"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Recommended feed (T5). The scoring, filtering, dedupe and ordering are ported
@@ -66,19 +67,19 @@ func (s *Service) GetRecommendedFeed(ctx context.Context, input RecommendedInput
 	)
 	var wait sync.WaitGroup
 	wait.Add(5)
-	go func() {
+	safego.Go("newsnowhottest.recommended.profile", func() {
 		defer wait.Done()
 		profile, profileErr = s.behavior.GetScoringProfile(ctx, input.OrgID, input.UserID)
-	}()
-	go func() {
+	})
+	safego.Go("newsnowhottest.recommended.collaborative", func() {
 		defer wait.Done()
 		collaborative, collabErr = s.behavior.GetCollaborativeProfile(ctx, input.OrgID, input.UserID)
-	}()
-	go func() {
+	})
+	safego.Go("newsnowhottest.recommended.settings", func() {
 		defer wait.Done()
 		settings, settingsFound, settingsErr = s.settings.NewsnowSettings(ctx, input.OrgID, input.UserID)
-	}()
-	go func() {
+	})
+	safego.Go("newsnowhottest.recommended.hottestAnalysis", func() {
 		defer wait.Done()
 		response, err := s.GetHottestAnalysis(ctx, analysisInput{
 			OrgID:        input.OrgID,
@@ -90,11 +91,11 @@ func (s *Service) GetRecommendedFeed(ctx context.Context, input RecommendedInput
 			return
 		}
 		analysis = &response
-	}()
-	go func() {
+	})
+	safego.Go("newsnowhottest.recommended.batch", func() {
 		defer wait.Done()
 		batch = s.sources.FetchBatch(ctx, hottestSourceIDs, input.ForceRefresh)
-	}()
+	})
 	wait.Wait()
 
 	if profileErr != nil {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Situation-monitor event bridge.
@@ -72,12 +74,12 @@ func (s *Sources) openSituationSubscription(ctx context.Context) error {
 	}
 	s.bridgeSub = pubsub
 	s.wg.Add(1)
-	go func() {
+	safego.Go("realtimeevents.situation.readPubSub", func() {
 		defer s.wg.Done()
 		s.readPubSub(ctx, pubsub, func(_ string, payload []byte) {
 			s.handleSituationBridge(ctx, payload)
 		})
-	}()
+	})
 	return nil
 }
 

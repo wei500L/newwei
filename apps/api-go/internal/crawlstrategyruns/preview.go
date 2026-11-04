@@ -18,6 +18,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlprofile"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports NewsSourceService.preview (news-source.service.ts:631-918)
@@ -217,14 +218,14 @@ func (s *PreviewService) Preview(ctx context.Context, orgID, sourceID string) (a
 		waitGroup    sync.WaitGroup
 	)
 	waitGroup.Add(2)
-	go func() {
+	safego.Go("crawlstrategyruns.preview.overlay", func() {
 		defer waitGroup.Done()
 		overlay, overlayErr = s.workflows.CompileNewsSourceOverlay(ctx, orgID, nullStringValue(source.WorkflowID), nullStringValue(source.WorkflowVersionID))
-	}()
-	go func() {
+	})
+	safego.Go("crawlstrategyruns.preview.template", func() {
 		defer waitGroup.Done()
 		templateOpts, templateOK, templateErr = s.loadTemplateCrawlOptions(ctx, nullStringValue(source.CrawlTemplateID))
-	}()
+	})
 	waitGroup.Wait()
 	// Error precedence follows the original sequential order.
 	if overlayErr != nil {
@@ -396,14 +397,14 @@ func (s *PreviewService) Preview(ctx context.Context, orgID, sourceID string) (a
 		activeJobErr   error
 	)
 	waitGroup.Add(2)
-	go func() {
+	safego.Go("crawlstrategyruns.preview.recentCrawls", func() {
 		defer waitGroup.Done()
 		crawlLookup, recentCrawlErr = s.findRecentCrawls(ctx, orgID, candidateURLs, seedConfig.DedupeWindowHours)
-	}()
-	go func() {
+	})
+	safego.Go("crawlstrategyruns.preview.activeJobs", func() {
 		defer waitGroup.Done()
 		activeLookup, activeJobErr = s.findActivePipelineJobs(ctx, source.ID, candidateURLs, activeCutoff)
-	}()
+	})
 	waitGroup.Wait()
 	if recentCrawlErr != nil {
 		return nil, recentCrawlErr

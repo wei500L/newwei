@@ -9,6 +9,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -102,10 +104,10 @@ func (s *DeliveryScheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("userdigest.deliveryScheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -154,9 +156,12 @@ func (s *DeliveryScheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			if err := s.runTick(ctx); err != nil {
-				log.Printf("userdigest: delivery tick failed: %v", err)
-			}
+			_ = safego.Call("userdigest.deliveryScheduler.tick", func() error {
+				if err := s.runTick(ctx); err != nil {
+					log.Printf("userdigest: delivery tick failed: %v", err)
+				}
+				return nil
+			})
 			now := s.clock().UTC()
 			next = next.Add(time.Minute)
 			if !next.After(now) {
@@ -364,12 +369,12 @@ func (s *DeliveryScheduler) runOrgs(ctx context.Context, orgIDs []string, concur
 		default:
 		}
 		wg.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("userdigest.deliveryScheduler.runOrgs", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			summary, outcome, err := s.runOrgWithLock(ctx, orgID)
 			results[index] = orgRunResult{orgID: orgID, outcome: outcome, summary: summary, err: err}
-		}(index, orgID)
+		})
 	}
 	wg.Wait()
 	return results
@@ -423,7 +428,7 @@ func (s *DeliveryScheduler) startOrgLockRenew(key, token string) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	var once sync.Once
-	go func() {
+	safego.Go("userdigest.deliveryScheduler.orgLockRenew", func() {
 		defer ticker.Stop()
 		for {
 			select {
@@ -431,11 +436,13 @@ func (s *DeliveryScheduler) startOrgLockRenew(key, token string) func() {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = s.deps.Store.RenewLock(renewCtx, key, token, deliveryOrgLockTTL)
+				_ = safego.Call("userdigest.deliveryScheduler.renewLock", func() error {
+					return s.deps.Store.RenewLock(renewCtx, key, token, deliveryOrgLockTTL)
+				})
 				cancel()
 			}
 		}
-	}()
+	})
 	return func() { once.Do(func() { close(stop) }) }
 }
 

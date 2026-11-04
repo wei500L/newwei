@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // warningGroup is one aggregated warning: the first warning seen for a code plus
@@ -273,17 +275,17 @@ func (s *Service) persist(ctx context.Context, payload *Payload, generatedAt, ex
 	var insertErr, cacheErr error
 	var writes sync.WaitGroup
 	writes.Add(2)
-	go func() {
+	safego.Go("gdeltsnapshot.persist.insert", func() {
 		defer writes.Done()
 		insertErr = s.store.Insert(ctx, row)
-	}()
-	go func() {
+	})
+	safego.Go("gdeltsnapshot.persist.cache", func() {
 		defer writes.Done()
 		cacheErr = s.cache.SetMany(ctx,
 			cacheEntry{key: freshCacheKey, value: payloadBytes, ttl: freshTTL},
 			cacheEntry{key: staleCacheKey, value: payloadBytes, ttl: staleTTL},
 		)
-	}()
+	})
 	writes.Wait()
 	if insertErr != nil {
 		return insertErr

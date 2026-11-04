@@ -15,6 +15,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/rediscache"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // RuntimePort is the settings surface the collector needs. The production
@@ -732,7 +733,7 @@ func settleWithConcurrency[T, R any](ctx context.Context, items []T, concurrency
 	var waitGroup sync.WaitGroup
 	for workerIndex := 0; workerIndex < safeConcurrency; workerIndex++ {
 		waitGroup.Add(1)
-		go func() {
+		safego.Go("realtimesignals.settleWithConcurrency", func() {
 			defer waitGroup.Done()
 			for {
 				index := int(atomic.AddInt64(&nextIndex, 1)) - 1
@@ -742,7 +743,7 @@ func settleWithConcurrency[T, R any](ctx context.Context, items []T, concurrency
 				value, err := worker(ctx, index, items[index])
 				results[index] = settledResult[R]{value: value, err: err}
 			}
-		}()
+		})
 	}
 	waitGroup.Wait()
 	return results

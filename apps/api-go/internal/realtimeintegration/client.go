@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -155,7 +157,7 @@ func dialSocketClient(t *testing.T, wsBaseURL, path string) *sioClient {
 		t.Fatalf("read engine.io open packet: %v", err)
 	}
 	client.open = open
-	go client.readLoop()
+	safego.Go("realtimeintegration.client.readLoop", func() { client.readLoop() })
 	t.Cleanup(client.close)
 	return client
 }

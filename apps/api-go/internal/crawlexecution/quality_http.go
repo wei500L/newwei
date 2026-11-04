@@ -27,6 +27,8 @@ import (
 	"sync"
 
 	"golang.org/x/net/html"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Publish-signal probe defaults (CrawlPublishSignalService).
@@ -231,7 +233,7 @@ func (s *Service) enrichCandidatePublishSignals(
 	var workers sync.WaitGroup
 	for workerIndex := 0; workerIndex < result.EffectiveConcurrency; workerIndex++ {
 		workers.Add(1)
-		go func() {
+		safego.Go("crawlexecution.enrichCandidatePublishSignals.worker", func() {
 			defer workers.Done()
 			for {
 				cursorMutex.Lock()
@@ -254,7 +256,7 @@ func (s *Service) enrichCandidatePublishSignals(
 					Attempted:     true,
 				}
 			}
-		}()
+		})
 	}
 	workers.Wait()
 	for index, outcome := range outcomes {

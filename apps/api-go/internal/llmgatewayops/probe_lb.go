@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // LB test defaults and limits.
@@ -108,12 +110,12 @@ func (s *Service) TestProxyLoadBalancing(ctx context.Context, profileID string, 
 	var waitGroup sync.WaitGroup
 	for worker := 0; worker < workers; worker++ {
 		waitGroup.Add(1)
-		go func() {
+		safego.Go("llmgatewayops.testProxyLoadBalancing.worker", func() {
 			defer waitGroup.Done()
 			for index := range jobs {
 				outcomes[index] = s.runLBAttempt(ctx, client, model, prompt, index+1, apiKey != "", log)
 			}
-		}()
+		})
 	}
 	for index := 0; index < attempts; index++ {
 		jobs <- index

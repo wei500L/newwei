@@ -7,6 +7,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -59,10 +61,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("processeditemoutbox.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -103,7 +105,10 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			s.runTick(ctx)
+			_ = safego.Call("processeditemoutbox.scheduler.tick", func() error {
+				s.runTick(ctx)
+				return nil
+			})
 			now := s.now().UTC()
 			next = next.Add(tickPeriod)
 			if !next.After(now) {
@@ -149,7 +154,7 @@ func (s *Scheduler) startLeaseRenew(token string) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("processeditemoutbox.scheduler.leaseRenew", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -158,13 +163,15 @@ func (s *Scheduler) startLeaseRenew(token string) func() {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := s.locks.RenewLock(renewCtx, lockKey, token, lockTTL); err != nil {
+				if err := safego.Call("processeditemoutbox.scheduler.renewLock", func() error {
+					return s.locks.RenewLock(renewCtx, lockKey, token, lockTTL)
+				}); err != nil {
 					log.Printf("processeditemoutbox: renew cron lease failed: %v", err)
 				}
 				cancel()
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {

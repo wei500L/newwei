@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -79,7 +81,7 @@ func (c *engineConn) serve() {
 	// that never answers a ping must not stay connected forever.
 	c.lastPong.Store(time.Now().UnixNano())
 	c.pingWG.Add(1)
-	go c.pingLoop()
+	safego.Go("socketio.connection.pingLoop", func() { c.pingLoop() })
 
 	// Engine.IO clients may only start using the transport after CONNECT. Before
 	// the first namespace connects, cap the wait with ConnectWait; once at least
