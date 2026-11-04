@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -41,7 +42,9 @@ const (
 // Deps are the narrow ports the scheduler needs.
 type Deps struct {
 	Repository Repository
-	Locks      LockStore
+	// Locks is the shared Redis cron lease. The physical key is lockKey and the
+	// scheduler renews best-effort while the tick is in flight.
+	Locks *cronlock.Lock
 	// Now is an optional clock used by tests.
 	Now func() time.Time
 	// Rand is an optional jitter source used by tests.
@@ -155,22 +158,23 @@ func (s *Scheduler) runTick(ctx context.Context) error {
 	if s.stopped() {
 		return nil
 	}
-	token, err := newToken()
-	if err != nil {
-		return fmt.Errorf("auditoutbox: generate cron lease token: %w", err)
-	}
-	acquired, err := s.deps.Locks.SetIfAbsent(ctx, lockKey, token, lockTTL)
+	acquired, err := s.deps.Locks.WithLease(ctx, lockKey, lockTTL, cronlock.RenewBestEffort, func(runCtx context.Context) error {
+		return s.runTickLocked(runCtx)
+	})
 	if err != nil {
 		return fmt.Errorf("auditoutbox: acquire cron lease: %w", err)
 	}
 	if !acquired {
 		log.Printf("auditoutbox: batch skipped because another instance holds the cron lease")
-		return nil
 	}
-	stopRenew, release := s.startLockRenew(token)
-	defer release()
-	defer stopRenew()
+	return nil
+}
 
+// runTickLocked scans the three statuses with the fixed batch instant, loads the
+// payloads of the selected rows only, and processes them with the delivery
+// concurrency. Any batch-level failure is logged and ends this tick without
+// deleting anything.
+func (s *Scheduler) runTickLocked(ctx context.Context) error {
 	now := s.clock().UTC().Truncate(time.Millisecond)
 	staleCutoff := now.Add(-staleLockWindow)
 	candidates, err := s.collectCandidates(ctx, now, staleCutoff)
@@ -392,41 +396,6 @@ func (s *Scheduler) backoffDelay(attempt int) time.Duration {
 	return time.Duration(math.Round(exponential * (0.5 + s.rand())))
 }
 
-// startLockRenew renews the lease about every TTL/3 until the returned stop
-// function runs. The returned release function removes the lease with the owner
-// token using a background context, so a cancelled tick still releases it.
-func (s *Scheduler) startLockRenew(token string) (stop func(), release func()) {
-	interval := lockTTL / 3
-	if interval <= 0 {
-		interval = time.Second
-	}
-	ticker := time.NewTicker(interval)
-	stopCh := make(chan struct{})
-	var once sync.Once
-
-	safego.Go("auditoutbox.scheduler.lockRenew", func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopCh:
-				return
-			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = safego.Call("auditoutbox.scheduler.renewLock", func() error {
-					return s.deps.Locks.RenewLock(renewCtx, lockKey, token, lockTTL)
-				})
-				cancel()
-			}
-		}
-	})
-
-	return func() { once.Do(func() { close(stopCh) }) }, func() {
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.deps.Locks.ReleaseLock(releaseCtx, lockKey, token)
-	}
-}
-
 func (s *Scheduler) stopped() bool {
 	select {
 	case <-s.stop:
@@ -454,15 +423,6 @@ func (s *Scheduler) rand() float64 {
 // every DATETIME(3) column Prisma writes has millisecond precision.
 func nowMillis() time.Time {
 	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
-// newToken returns a random 16-byte hex owner token for the cron lease.
-func newToken() (string, error) {
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf[:]), nil
 }
 
 // newRowID generates a client-side identifier in the shape Prisma's cuid()

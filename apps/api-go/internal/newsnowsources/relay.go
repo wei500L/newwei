@@ -2,10 +2,25 @@ package newsnowsources
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"strings"
 )
+
+// newRefreshID builds the random version-4 UUID the relay payload carries as
+// refreshId, matching Node's randomUUID shape.
+func newRefreshID() (string, error) {
+	buffer := make([]byte, 16)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	buffer[6] = (buffer[6] & 0x0f) | 0x40
+	buffer[8] = (buffer[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(buffer)
+	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
+}
 
 // sourceRefreshChannel is the source-specific relay channel consumed by the
 // NestJS subscriber. It carries no orgId, user or secret: the subscriber derives
@@ -60,7 +75,7 @@ func (s *Service) publishRefresh(ctx context.Context, sourceID string, interval 
 		updatedTime = isoMillis(millisOf(s.now()))
 	}
 
-	refreshID, err := newLockToken()
+	refreshID, err := newRefreshID()
 	if err != nil {
 		log.Printf("newsnowsources: failed to build refresh id for %q: %v", sourceID, err)
 		return

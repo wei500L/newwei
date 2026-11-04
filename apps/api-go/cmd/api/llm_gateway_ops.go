@@ -50,8 +50,8 @@ func wireLLMGatewayOps(
 	}
 	mongoDatabase := (*mongoConn).Database()
 
-	// Read-only profile port: no lock pool, no write path.
-	profiles := newLLMGatewayProfilesService(cfg, db, redisClient, nil)
+	// Read-only profile port: no write path takes the profiles lock.
+	profiles := newLLMGatewayProfilesService(cfg, db, redisClient)
 	logs := llmlogs.NewProbeWriter(db, mongoDatabase)
 	service := llmgatewayops.NewService(db, redisClient, profiles, logs, llmgatewayops.Config{
 		MasterKey: cfg.LiteLLMMasterKey,

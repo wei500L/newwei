@@ -12,6 +12,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 )
 
@@ -116,8 +117,9 @@ func (s *AdaptiveScheduler) runTick(ctx context.Context) error {
 		return fmt.Errorf("crawlmaintenance: adaptive concurrency is not fully configured")
 	}
 	now := s.loop.now()
-	_, err := withRedisLock(ctx, s.redis, adaptiveLockKey,
+	_, err := cronlock.New(s.redis).WithLease(ctx, "lock:"+adaptiveLockKey,
 		time.Duration(adaptiveLockTTLMs)*time.Millisecond,
+		cronlock.RenewBestEffort,
 		func(runCtx context.Context) error { return s.adjustConcurrency(runCtx, now) })
 	return err
 }

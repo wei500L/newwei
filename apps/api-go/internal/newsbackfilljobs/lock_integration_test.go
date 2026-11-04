@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 func testRedisClient(t *testing.T) *redis.Client {
@@ -36,29 +38,29 @@ func TestIntegrationScanLockIsExclusiveAndReleased(t *testing.T) {
 	client.Del(ctx, key)
 	defer client.Del(ctx, key)
 
-	first, err := acquireRedisLock(ctx, client, key, 2*time.Second)
+	first, acquired, err := cronlock.New(client).Acquire(ctx, key, 2*time.Second, cronlock.RenewBestEffort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first == nil {
+	if !acquired || first == nil {
 		t.Fatal("first acquisition failed")
 	}
-	second, err := acquireRedisLock(ctx, client, key, 2*time.Second)
+	second, acquired, err := cronlock.New(client).Acquire(ctx, key, 2*time.Second, cronlock.RenewBestEffort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second != nil {
+	if acquired || second != nil {
 		t.Fatal("second acquisition must fail while the first is held")
 	}
-	first.Release()
-	third, err := acquireRedisLock(ctx, client, key, 2*time.Second)
+	_ = first.Release(ctx)
+	third, acquired, err := cronlock.New(client).Acquire(ctx, key, 2*time.Second, cronlock.RenewBestEffort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if third == nil {
+	if !acquired || third == nil {
 		t.Fatal("acquisition after release failed")
 	}
-	third.Release()
+	_ = third.Release(ctx)
 	if exists, err := client.Exists(ctx, key).Result(); err != nil || exists != 0 {
 		t.Fatalf("lock key still exists exists=%d err=%v", exists, err)
 	}
@@ -72,21 +74,21 @@ func TestIntegrationLockRenewalKeepsTheLease(t *testing.T) {
 	client.Del(ctx, key)
 	defer client.Del(ctx, key)
 
-	lock, err := acquireRedisLock(ctx, client, key, 1100*time.Millisecond)
-	if err != nil || lock == nil {
+	lock, acquired, err := cronlock.New(client).Acquire(ctx, key, 1100*time.Millisecond, cronlock.RenewBestEffort)
+	if err != nil || !acquired || lock == nil {
 		t.Fatalf("acquire: %v", err)
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release(ctx) }()
 	time.Sleep(1600 * time.Millisecond)
 	// The lease would have expired without the renewal goroutine.
 	if ttl, err := client.PTTL(ctx, key).Result(); err != nil || ttl <= 0 {
 		t.Fatalf("lease expired or missing: ttl=%v err=%v", ttl, err)
 	}
-	other, err := acquireRedisLock(ctx, client, key, 2*time.Second)
+	other, otherAcquired, err := cronlock.New(client).Acquire(ctx, key, 2*time.Second, cronlock.RenewBestEffort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if other != nil {
+	if otherAcquired || other != nil {
 		t.Fatal("a renewed lease must not be stealable")
 	}
 }

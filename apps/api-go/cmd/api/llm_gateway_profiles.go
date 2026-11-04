@@ -13,7 +13,6 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 // wireLLMGatewayProfiles registers the seven LLM gateway configuration-control
@@ -29,16 +28,7 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm gateway profiles go takeover requires mysql, redis, and jwt")
 	}
-	// The lock pool is separate from the shared pool and retains no idle
-	// connections, so releasing a lock connection always closes the physical
-	// MySQL session.
-	lockDB, err := usersettings.OpenMySQLFromURL(cfg.DatabaseURL)
-	if err != nil {
-		return fmt.Errorf("api-go: llm gateway profiles lock pool: %w", err)
-	}
-	lockDB.SetMaxIdleConns(0)
-
-	service := newLLMGatewayProfilesService(cfg, db, redisClient, lockDB)
+	service := newLLMGatewayProfilesService(cfg, db, redisClient)
 	handler := llmgatewayprofiles.NewHandler(
 		llmgatewayprofiles.NewAuthenticator(authenticator, db),
 		service,
@@ -71,10 +61,10 @@ func wireLLMGatewayProfiles(gateway *legacyproxy.Gateway, cfg config.Config, db 
 //
 // Both the seven profile routes and the governance/diagnostics batch use it, so
 // one profile document is normalized, selected and decrypted identically on both
-// paths. lockDB is nil for read-only consumers: they must not open a second
-// GET_LOCK pool just to read a profile snapshot.
-func newLLMGatewayProfilesService(cfg config.Config, db *sql.DB, redisClient *redis.Client, lockDB *sql.DB) *llmgatewayprofiles.Service {
-	return llmgatewayprofiles.NewService(db, lockDB, redisClient, llmgatewayprofiles.Config{
+// paths. Writes take the profiles GET_LOCK on the shared pool through mysqllock;
+// read-only consumers simply never call withProfilesLock.
+func newLLMGatewayProfilesService(cfg config.Config, db *sql.DB, redisClient *redis.Client) *llmgatewayprofiles.Service {
+	return llmgatewayprofiles.NewService(db, redisClient, llmgatewayprofiles.Config{
 		Env: llmgatewayprofiles.EnvDefaults{
 			Model:           cfg.LLMGatewayModel,
 			APIBase:         cfg.LiteLLMAPIBase,

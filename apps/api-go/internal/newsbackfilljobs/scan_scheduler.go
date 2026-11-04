@@ -8,6 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -98,25 +99,24 @@ func (s *ScanScheduler) Close(ctx context.Context) error {
 // scan. A lock held by another instance skips the tick, exactly like the
 // NestJS withLock null result.
 func (s *ScanScheduler) runTick(ctx context.Context) {
-	lock, err := acquireRedisLock(ctx, s.redis, scanLockKey, scanLockTTL)
+	acquired, err := cronlock.New(s.redis).WithLease(ctx, scanLockKey, scanLockTTL, cronlock.RenewBestEffort, func(runCtx context.Context) error {
+		result, scanErr := s.service.Scan(runCtx)
+		if scanErr != nil {
+			s.service.logger("newsbackfilljobs: clustering recovery scan failed: %v", scanErr)
+			return nil
+		}
+		if result.Queued > 0 || result.Failed > 0 || result.Skipped > 0 || result.Recovered > 0 || result.SkippedNotReady {
+			s.service.logger("newsbackfilljobs: clustering recovery scan scanned=%d queued=%d skipped=%d failed=%d recovered=%d skippedNotReady=%t",
+				result.Scanned, result.Queued, result.Skipped, result.Failed, result.Recovered, result.SkippedNotReady)
+		}
+		return nil
+	})
 	if err != nil {
 		s.service.logger("newsbackfilljobs: scan lock acquire failed: %v", err)
 		return
 	}
-	if lock == nil {
+	if !acquired {
 		s.service.logger("newsbackfilljobs: skipped clustering recovery scan because the previous tick is still running")
-		return
-	}
-	defer lock.Release()
-
-	result, err := s.service.Scan(ctx)
-	if err != nil {
-		s.service.logger("newsbackfilljobs: clustering recovery scan failed: %v", err)
-		return
-	}
-	if result.Queued > 0 || result.Failed > 0 || result.Skipped > 0 || result.Recovered > 0 || result.SkippedNotReady {
-		s.service.logger("newsbackfilljobs: clustering recovery scan scanned=%d queued=%d skipped=%d failed=%d recovered=%d skippedNotReady=%t",
-			result.Scanned, result.Queued, result.Skipped, result.Failed, result.Recovered, result.SkippedNotReady)
 	}
 }
 

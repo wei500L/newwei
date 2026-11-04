@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // TestMergeCandidatesKeepsNestOrderingAndLimit covers the selection contract:
@@ -247,7 +250,7 @@ func TestCloseStopsNewClaims(t *testing.T) {
 func newTestScheduler(repo *fakeRepository, locks *fakeLockStore, now func() time.Time) *Scheduler {
 	return NewScheduler(Deps{
 		Repository: repo,
-		Locks:      locks,
+		Locks:      cronlock.NewStore(locks),
 		Now:        now,
 		Rand:       func() float64 { return 0.5 },
 	})
@@ -385,23 +388,28 @@ func (r *fakeRepository) payloadIDSnapshot() []string {
 	return r.payloadIDCalls[0]
 }
 
-// fakeLockStore records the cron lease calls.
+// fakeLockStore is an in-memory cronlock.Store. It records release and renewal
+// calls so the tests can prove the lease is released exactly once per tick.
 type fakeLockStore struct {
 	acquired     bool
 	releaseCalls int
 	renewCalls   int
+	value        string
 }
 
-func (s *fakeLockStore) SetIfAbsent(context.Context, string, string, time.Duration) (bool, error) {
-	return s.acquired, nil
+func (s *fakeLockStore) SetNX(_ context.Context, _ string, value string, _ time.Duration) (bool, error) {
+	if !s.acquired {
+		return false, nil
+	}
+	s.value = value
+	return true, nil
 }
 
-func (s *fakeLockStore) RenewLock(context.Context, string, string, time.Duration) error {
-	s.renewCalls++
-	return nil
-}
-
-func (s *fakeLockStore) ReleaseLock(context.Context, string, string) error {
+func (s *fakeLockStore) Eval(_ context.Context, script string, _ []string, _ ...string) (int64, error) {
+	if strings.Contains(script, "pexpire") {
+		s.renewCalls++
+		return 1, nil
+	}
 	s.releaseCalls++
-	return nil
+	return 1, nil
 }
