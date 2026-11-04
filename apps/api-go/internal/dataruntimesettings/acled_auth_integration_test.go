@@ -24,7 +24,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 const acledIntegrationKey = "realtime_signals_acled_auth_state"
@@ -39,7 +39,7 @@ func openAcledIntegration(t *testing.T) (*Service, *sql.DB, *redis.Client) {
 	if addr == "" {
 		t.Skip("API_GO_TEST_REDIS_ADDR not set — integration test requires Redis")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

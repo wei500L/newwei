@@ -7,42 +7,31 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/kgingestion"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 )
 
-// kgIngestionRuntime is the wired scheduler plus the Mongo connection this wire
-// helper opened when no other subsystem had one. Close owns both.
+// kgIngestionRuntime is the wired scheduler. The shared Mongo client is owned
+// and closed by main, so this unit only owns the scheduler.
 type kgIngestionRuntime struct {
 	scheduler *kgingestion.Scheduler
-	mongo     *dashboardstats.Connection
 }
 
-// Close stops the scheduler, waits for in-flight organizations and releases a
-// connection this helper opened. A timed-out organization lock is left to
-// expire naturally.
+// Close stops the scheduler and waits for in-flight organizations. A timed-out
+// organization lock is left to expire naturally.
 func (r *kgIngestionRuntime) Close(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
-	var first error
 	if r.scheduler != nil {
-		if err := r.scheduler.Close(ctx); err != nil {
-			first = err
-		}
+		return r.scheduler.Close(ctx)
 	}
-	if r.mongo != nil {
-		if err := r.mongo.Disconnect(ctx); err != nil && first == nil {
-			first = err
-		}
-	}
-	return first
+	return nil
 }
 
 // wireKGIngestion builds the knowledge-graph ingestion scheduler when
@@ -51,14 +40,12 @@ func (r *kgIngestionRuntime) Close(ctx context.Context) error {
 // LLM request logs reuse the existing llmlogs writer and stay best effort when
 // Mongo is unavailable.
 //
-// mongoDatabase is an already-open shared connection (a dashboard/graphql
-// subsystem may have one). When it is nil and MONGO_URI is set, this helper
-// opens its own connection and owns it.
+// mongo is the process-wide shared client opened by main.
 func wireKGIngestion(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoDatabase *mongo.Database,
+	mongo *mongodb.Client,
 ) (*kgIngestionRuntime, error) {
 	if db == nil {
 		return nil, fmt.Errorf("api-go: API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go requires mysql")
@@ -66,20 +53,12 @@ func wireKGIngestion(
 	if redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go requires redis")
 	}
+	if mongo == nil {
+		return nil, fmt.Errorf("api-go: API_GO_KNOWLEDGE_GRAPH_INGESTION_MODE=go requires mongo")
+	}
+	mongoDatabase := mongo.Database()
 
 	runtime := &kgIngestionRuntime{}
-	if mongoDatabase == nil && cfg.MongoURI != "" {
-		opened, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			// The request log is best effort; an invalid MONGO_URI must not
-			// block the graph writes.
-			log.Printf("api-go: knowledge graph LLM request logs disabled: invalid MONGO_URI")
-		} else {
-			runtime.mongo = opened
-			mongoDatabase = opened.Database()
-		}
-	}
-
 	logger := log.Default()
 	completer := publicportal.NewKGCompleter(publicportal.NewMySQLStore(db), publicportal.GatewayEnv{
 		EncryptionKey: cfg.SettingsEncryptionKey,
@@ -113,21 +92,6 @@ func wireKGIngestion(
 		Logger:     logger,
 	})
 	return runtime, nil
-}
-
-// sharedKGIngestionMongo returns the first already-open Mongo database, so the
-// ingestion LLM request log reuses the shared connection instead of opening a
-// second client.
-func sharedKGIngestionMongo(connections ...*dashboardstats.Connection) *mongo.Database {
-	for _, connection := range connections {
-		if connection == nil {
-			continue
-		}
-		if database := connection.Database(); database != nil {
-			return database
-		}
-	}
-	return nil
 }
 
 // kgIngestionAttemptObserver writes one llmrequestlogs row per real model

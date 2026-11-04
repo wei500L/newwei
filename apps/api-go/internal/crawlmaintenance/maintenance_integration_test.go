@@ -35,8 +35,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingswrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 type maintenanceHarness struct {
@@ -68,7 +68,7 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 	// steps against the shared `app` schema, and this package needs a narrower
 	// CrawlTask/AuditLog/MongoOutbox shape. Creating a dedicated database keeps
 	// the shared tables untouched, mirroring the #114 schema isolation.
-	baseDB, err := usersettings.OpenMySQLFromURL(databaseURL)
+	baseDB, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -81,7 +81,7 @@ func newMaintenanceHarness(t *testing.T) *maintenanceHarness {
 		t.Fatalf("parse DATABASE_URL: %v", err)
 	}
 	parsedDatabaseURL.Path = "/" + mysqlDatabaseName
-	db, err := usersettings.OpenMySQLFromURL(parsedDatabaseURL.String())
+	db, err := mysqldb.Open(parsedDatabaseURL.String(), mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open integration mysql: %v", err)
 	}

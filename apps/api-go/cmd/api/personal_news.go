@@ -13,9 +13,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/contentcatalog"
 	"github.com/wei500L/newwei/apps/api-go/internal/contentsubscriptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
 )
 
@@ -30,7 +30,7 @@ func wirePersonalNews(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*userdigest.Service, error) {
 	behaviorGo := true
 	subsGo := true
@@ -53,22 +53,15 @@ func wirePersonalNews(
 
 	var subsSvc *contentsubscriptions.Service
 	if subsGo || digestGo || deliveryGo {
-		if mongoConn == nil || *mongoConn == nil {
-			conn, err := dashboardstats.Open(cfg.MongoURI)
-			if err != nil {
-				return nil, fmt.Errorf("api-go: personal news go takeover requires a valid MONGO_URI")
-			}
-			*mongoConn = conn
-		}
 		models := contentcatalog.NewModelClient(db)
-		catalog := contentcatalog.NewService(db, redisClient, (*mongoConn).Database(), models)
+		catalog := contentcatalog.NewService(db, redisClient, mongoConn.Database(), models)
 		subsSvc = contentsubscriptions.NewService(db, catalog)
 	}
 
 	var digestSvc *userdigest.Service
 	if digestGo || deliveryGo {
 		searcher := userdigest.NewElasticsearchFromEnv()
-		digestSvc = userdigest.NewService(db, (*mongoConn).Database(), subsSvc, searcher)
+		digestSvc = userdigest.NewService(db, mongoConn.Database(), subsSvc, searcher)
 	}
 
 	if behaviorGo || subsGo || digestGo {

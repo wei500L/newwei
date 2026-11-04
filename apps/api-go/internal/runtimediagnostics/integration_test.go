@@ -13,7 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 type stubRealtimeSettings struct {
@@ -45,7 +45,7 @@ func integrationRuntime(t *testing.T) (*realtimeStore, *realtimeStore) {
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: addr, Protocol: 2})
 	t.Cleanup(func() { _ = rdb.Close() })
-	pool, err := usersettings.OpenMySQLFromURL(url)
+	pool, err := mysqldb.Open(url, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

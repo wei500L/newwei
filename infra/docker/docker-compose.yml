@@ -460,6 +460,10 @@ services:
       WS_REDIS_ADAPTER_KEY: ${WS_REDIS_ADAPTER_KEY:-socket.io}
       GRAPHQL_SUBSCRIPTION_BUS: ${GRAPHQL_SUBSCRIPTION_BUS:-redis}
       DATABASE_URL: mysql://${MYSQL_USER:-root}:${MYSQL_PASSWORD}@mysql:${MYSQL_PORT:-3306}/${MYSQL_DB}
+      # Shared MySQL pool bounds (defaults 50 open / 10 idle / 300s lifetime).
+      DATABASE_MAX_OPEN_CONNS: ${DATABASE_MAX_OPEN_CONNS:-50}
+      DATABASE_MAX_IDLE_CONNS: ${DATABASE_MAX_IDLE_CONNS:-10}
+      DATABASE_CONN_MAX_LIFETIME_SECONDS: ${DATABASE_CONN_MAX_LIFETIME_SECONDS:-300}
       # The OIDC login unit builds the web callback from NEXTAUTH_URL and the
       # IdP redirect_uri from API_BASE_URL (the public API origin). Both are read
       # per request; the public origin now points at this gateway.

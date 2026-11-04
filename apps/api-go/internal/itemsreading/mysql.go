@@ -4,13 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -71,83 +67,6 @@ type crawlTaskConfigSource struct {
 			SourceID *string `json:"sourceId"`
 		} `json:"metadata"`
 	} `json:"itemPayload"`
-}
-
-// openMySQLFromURL parses a Prisma-style mysql:// DATABASE_URL (the
-// mysql+prisma:// alias is accepted as well) into a connection pool.
-//
-// The DSN is pinned to utf8mb4 with the utf8mb4_unicode_ci collation, ParseTime
-// so the DATETIME(3) columns arrive as time.Time, and a UTC session location
-// because the stored timestamps carry no zone of their own. The URL's own query
-// parameters are ignored on purpose: the charset, collation and time handling
-// above are the whole contract. The pool connects lazily, so an unreachable
-// host surfaces on the first query rather than at wiring time.
-func openMySQLFromURL(databaseURL string) (*sql.DB, error) {
-	config, err := mySQLConfigFromURL(databaseURL)
-	if err != nil {
-		return nil, err
-	}
-	db, err := sql.Open("mysql", config.FormatDSN())
-	if err != nil {
-		return nil, fmt.Errorf("mysql open failed: %w", err)
-	}
-	return db, nil
-}
-
-// mySQLConfigFromURL converts a Prisma-style URL into a driver configuration.
-// Credentials come from the parsed userinfo, so a percent-encoded password is
-// decoded exactly once. Error messages describe the structure only; the DSN
-// text and its credentials never reach a log line.
-func mySQLConfigFromURL(databaseURL string) (mysql.Config, error) {
-	var config mysql.Config
-	trimmed := strings.TrimSpace(databaseURL)
-	if trimmed == "" {
-		return config, errors.New("DATABASE_URL is empty")
-	}
-
-	scheme := trimmed
-	if index := strings.Index(trimmed, "://"); index >= 0 {
-		scheme = trimmed[:index]
-	}
-	switch scheme {
-	case "mysql", "mysql+prisma":
-	default:
-		return config, fmt.Errorf("unsupported DATABASE_URL scheme %q (want mysql or mysql+prisma)", scheme)
-	}
-
-	parsed, err := url.Parse(trimmed)
-	if err != nil {
-		return config, errors.New("DATABASE_URL is not a valid URL")
-	}
-	if parsed.Host == "" {
-		return config, errors.New("DATABASE_URL has no host")
-	}
-
-	host := parsed.Hostname()
-	port := parsed.Port()
-	if port == "" {
-		port = "3306"
-	}
-	config.Net = "tcp"
-	config.Addr = host + ":" + port
-
-	if parsed.User != nil {
-		config.User = parsed.User.Username()
-		config.Passwd, _ = parsed.User.Password()
-	}
-
-	databaseName := strings.TrimPrefix(parsed.Path, "/")
-	if databaseName == "" {
-		return config, errors.New("DATABASE_URL has no database name")
-	}
-	config.DBName = databaseName
-
-	config.Params = map[string]string{"charset": "utf8mb4"}
-	config.ParseTime = true
-	config.Loc = time.UTC
-	config.Collation = "utf8mb4_unicode_ci"
-
-	return config, nil
 }
 
 // mySQLPlaceholders renders count comma-separated placeholders. Only the count

@@ -11,13 +11,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/emailsettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/geocoding"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayops"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimediagnostics"
 )
@@ -103,19 +103,12 @@ func wireRuntimeDiagnostics(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: runtime diagnostics go takeover requires mysql, redis, and jwt")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: runtime diagnostics go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	profiles := newLLMGatewayProfilesService(cfg, db, redisClient)
 	ops := llmgatewayops.NewService(db, redisClient, profiles, nil, llmgatewayops.Config{

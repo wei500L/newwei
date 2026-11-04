@@ -41,10 +41,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworker"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // errCrawlWorkerResources reports a missing shared handle in go mode.
@@ -111,22 +111,16 @@ func wireCrawlWorker(
 	db *sql.DB,
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*crawlWorkerRuntime, error) {
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: crawl worker requested by API_GO_CRAWL_WORKER_MODE=go but BULLMQ_WORKERS_ENABLED=false; no consumer started")
 		return nil, nil
 	}
-	if db == nil || redisClient == nil {
+	if db == nil || redisClient == nil || mongoConn == nil {
 		return nil, errCrawlWorkerResources
 	}
-	mongoDatabase, err := sharedMongoDatabase(cfg.MongoURI, mongoConn)
-	if err != nil {
-		return nil, fmt.Errorf("api-go: crawl worker requires a valid MONGO_URI: %w", err)
-	}
-	if mongoDatabase == nil {
-		return nil, errCrawlWorkerResources
-	}
+	mongoDatabase := mongoConn.Database()
 	if redisOptions == nil {
 		redisOptions = newRedisOptions(cfg)
 	}

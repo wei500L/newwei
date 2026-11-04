@@ -15,12 +15,12 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlsubscriptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelinerecovery"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/qualityqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/searchreindex"
@@ -70,7 +70,7 @@ func startResidualDuties(
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	graphqlRuntime *graphqlsubscriptions.Runtime,
 ) (*residualDutiesRuntime, error) {
 	runtime := &residualDutiesRuntime{}
@@ -183,7 +183,7 @@ func wirePipelineRecoveryWrites(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: API_GO_PIPELINE_RECOVERY_WRITE_MODE=go requires mysql, redis, and jwt")
@@ -191,14 +191,7 @@ func wirePipelineRecoveryWrites(
 	if mongoConn == nil {
 		return fmt.Errorf("api-go: API_GO_PIPELINE_RECOVERY_WRITE_MODE=go requires mongo")
 	}
-	if *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: API_GO_PIPELINE_RECOVERY_WRITE_MODE=go requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	database := (*mongoConn).Database()
+	database := mongoConn.Database()
 	producer := pipelineenqueue.New(pipelineenqueue.Options{Redis: redisClient, Mongo: database})
 	service := pipelinerecovery.NewServiceWithProducer(db, database, producer)
 	handler := pipelinerecovery.NewHandler(authenticator, service)
@@ -251,7 +244,7 @@ func startStartupReconcile(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*startupreconcile.Reconciler, error) {
 	if redisClient == nil {
 		return nil, fmt.Errorf("api-go: API_GO_STARTUP_RECONCILE_MODE=go requires redis")
@@ -262,19 +255,9 @@ func startStartupReconcile(
 	} else if mongoConn == nil {
 		log.Printf("api-go: startup reconcile: mongo handle is not configured, skipping TTL alignment")
 	} else {
-		if *mongoConn == nil {
-			conn, err := dashboardstats.Open(cfg.MongoURI)
-			if err != nil {
-				log.Printf("api-go: startup reconcile: mongo is not available, skipping TTL alignment")
-			} else {
-				*mongoConn = conn
-			}
-		}
-		if *mongoConn != nil {
-			settings = platformgovernance.NewService(db, redisClient, (*mongoConn).Database(), platformgovernance.Env{
-				TaskLogRetentionDays: cfg.PlatformGovernanceTaskLogRetentionDays,
-			})
-		}
+		settings = platformgovernance.NewService(db, redisClient, mongoConn.Database(), platformgovernance.Env{
+			TaskLogRetentionDays: cfg.PlatformGovernanceTaskLogRetentionDays,
+		})
 	}
 	searchIndex := searchreindex.NewElasticsearchFromEnv()
 	if settings == nil && searchIndex == nil {

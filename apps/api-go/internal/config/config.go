@@ -164,6 +164,13 @@ type Config struct {
 	// 启动时必填（启动失败——Go 接管端点不能依赖缺失的数据库）。
 	// 值本身不进入日志/healthz/错误文本。
 	DatabaseURL string
+	// DatabaseMaxOpenConns / DatabaseMaxIdleConns /
+	// DatabaseConnMaxLifetimeSeconds bound the shared MySQL pool. Defaults are
+	// 50 / 10 / 300; an out-of-range or non-integer value fails startup so a
+	// misconfiguration cannot silently leave the pool unbounded.
+	DatabaseMaxOpenConns           int
+	DatabaseMaxIdleConns           int
+	DatabaseConnMaxLifetimeSeconds int
 
 	// ScheduleEnabled mirrors the NestJS `process.env.SCHEDULE_ENABLED !==
 	// "false"` check. Background units (audit outbox, raw_item replay) use it to
@@ -638,9 +645,40 @@ func load(getenv func(string) string, lookup func(string) (string, bool)) (Confi
 	}
 	cfg.Port = port
 
-	// 只读取原文，不做解析（解析在 usersettings.OpenMySQLFromURL，错误
-	// 不阻断解析本身）。下方显式要求非空（启动失败）。
+	// 只读取原文，不做解析（解析在 mysqldb.Open，错误不阻断解析本身）。
+	// 下方显式要求非空（启动失败）。
 	cfg.DatabaseURL = strings.TrimSpace(getenv("DATABASE_URL"))
+
+	// The shared MySQL pool bounds. Defaults mirror the documented deployment
+	// values; every value must be a positive integer when present so a typo
+	// fails startup instead of silently disabling the bound.
+	cfg.DatabaseMaxOpenConns = 50
+	if raw := strings.TrimSpace(getenv("DATABASE_MAX_OPEN_CONNS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("DATABASE_MAX_OPEN_CONNS must be a positive integer, got %q", raw))
+		} else {
+			cfg.DatabaseMaxOpenConns = value
+		}
+	}
+	cfg.DatabaseMaxIdleConns = 10
+	if raw := strings.TrimSpace(getenv("DATABASE_MAX_IDLE_CONNS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			errs = append(errs, fmt.Sprintf("DATABASE_MAX_IDLE_CONNS must be a non-negative integer, got %q", raw))
+		} else {
+			cfg.DatabaseMaxIdleConns = value
+		}
+	}
+	cfg.DatabaseConnMaxLifetimeSeconds = 300
+	if raw := strings.TrimSpace(getenv("DATABASE_CONN_MAX_LIFETIME_SECONDS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			errs = append(errs, fmt.Sprintf("DATABASE_CONN_MAX_LIFETIME_SECONDS must be a positive integer, got %q", raw))
+		} else {
+			cfg.DatabaseConnMaxLifetimeSeconds = value
+		}
+	}
 
 	// SCHEDULE_ENABLED is the cross-process scheduling stop switch. The exact
 	// comparison matches the NestJS `!== "false"` check character for

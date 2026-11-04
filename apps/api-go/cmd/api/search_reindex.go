@@ -12,8 +12,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/searchreindex"
 )
 
@@ -33,23 +33,16 @@ func wireSearchReindex(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*searchreindex.Service, error) {
 	if db == nil || redisClient == nil || authenticator == nil || cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("api-go: search reindex go takeover requires mysql, jwt, and redis")
-	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: search reindex go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
 	}
 	// The global NestJS JwtAuthGuard resolves mtk_ machine tokens through
 	// MachineTokenService. The admin logs service exposes the identical
 	// lookup, so both endpoints accept the same credentials as NestJS.
 	machines := adminlogs.NewService(db, nil)
-	service := searchreindex.NewService(redisClient, (*mongoConn).Database(), machines)
+	service := searchreindex.NewService(redisClient, mongoConn.Database(), machines)
 	handler := searchreindex.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.SearchReindexKey, func(w http.ResponseWriter, r *http.Request) {

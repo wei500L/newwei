@@ -18,7 +18,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func integrationDB(t *testing.T) *sql.DB {
@@ -27,7 +27,7 @@ func integrationDB(t *testing.T) *sql.DB {
 	if url == "" {
 		t.Skip("DATABASE_URL not set - integration test requires MySQL")
 	}
-	db, err := usersettings.OpenMySQLFromURL(url)
+	db, err := mysqldb.Open(url, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

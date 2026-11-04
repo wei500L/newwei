@@ -12,13 +12,12 @@ import (
 	"log"
 
 	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireCrawlFrontierLlmWorker builds the two LLM queue consumers when
@@ -29,7 +28,7 @@ func wireCrawlFrontierLlmWorker(
 	db *sql.DB,
 	redisClient *redis.Client,
 	redisOptions *redis.Options,
-	mongoDatabase *mongo.Database,
+	mongo *mongodb.Client,
 ) (*crawlfrontierllm.Runtime, error) {
 	if !cfg.BullMQWorkersEnabled {
 		log.Printf("api-go: frontier LLM worker owner is go but BULLMQ_WORKERS_ENABLED=false; no consumer starts")
@@ -41,21 +40,9 @@ func wireCrawlFrontierLlmWorker(
 	if redisOptions == nil {
 		redisOptions = newRedisOptions(cfg)
 	}
-	var ownedMongo *dashboardstats.Connection
-	if mongoDatabase == nil && cfg.MongoURI != "" {
-		connection, openErr := dashboardstats.Open(cfg.MongoURI)
-		if openErr != nil {
-			// The request log is best effort in Nest as well: a Mongo outage
-			// must not stop judge/learn processing.
-			log.Printf("api-go: frontier LLM request log disabled (invalid MONGO_URI): %v", openErr)
-		} else {
-			ownedMongo = connection
-			mongoDatabase = connection.Database()
-		}
-	}
 	var sink crawlfrontierllm.RequestLogSink
-	if mongoDatabase != nil {
-		sink = frontierLogSink{writer: llmlogs.NewFrontierWriter(db, mongoDatabase)}
+	if mongo != nil {
+		sink = frontierLogSink{writer: llmlogs.NewFrontierWriter(db, mongo.Database())}
 	}
 	runtime, err := crawlfrontierllm.NewRuntime(crawlfrontierllm.RuntimeOptions{
 		DB:           db,
@@ -63,7 +50,6 @@ func wireCrawlFrontierLlmWorker(
 		RedisOptions: redisOptions,
 		Logs:         sink,
 		Workflows:    crawlworkflow.NewService(db),
-		Mongo:        ownedMongo,
 		Env: crawlfrontierllm.LLMGatewayEnv{
 			APIBase:       cfg.LiteLLMAPIBase,
 			APIKey:        cfg.LiteLLMAPIKey,
@@ -125,17 +111,4 @@ func (s frontierLogSink) WriteFrontierLog(ctx context.Context, entry crawlfronti
 		GovernanceTargetProfileID: entry.GovernanceTargetProfileID,
 		APISurface:                entry.APISurface, Metadata: metadata, OccurredAt: entry.OccurredAt,
 	})
-}
-
-// frontierMongoDatabase reuses an already-open Mongo connection for the LLM
-// request log; nil keeps the log best-effort-off (Nest's logRequest is also
-// best effort when Mongo is unavailable).
-func frontierMongoDatabase(graphqlConnection, dashboardConnection *dashboardstats.Connection) *mongo.Database {
-	if graphqlConnection != nil {
-		return graphqlConnection.Database()
-	}
-	if dashboardConnection != nil {
-		return dashboardConnection.Database()
-	}
-	return nil
 }

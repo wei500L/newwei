@@ -20,13 +20,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireNewsSourceScheduler builds the Go owner of the news-source cron and the
@@ -47,7 +47,7 @@ func wireNewsSourceScheduler(
 	authenticator *authhttp.Authenticator,
 	itemsService *itemsingest.Service,
 	crawlTaskService *crawltaskwrite.Service,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*newssourcescheduler.Scheduler, error) {
 	schedulerGo := true
 	opsGo := true
@@ -60,14 +60,7 @@ func wireNewsSourceScheduler(
 	if opsGo && authenticator == nil {
 		return nil, fmt.Errorf("api-go: API_GO_NEWS_SOURCE_OPS_MODE=go requires the JWT authenticator")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: news source scheduler/ops go mode requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 
 	pipeline := pipelineenqueue.New(pipelineenqueue.Options{Redis: redisClient, Mongo: mongoDatabase})
 	if itemsService == nil {

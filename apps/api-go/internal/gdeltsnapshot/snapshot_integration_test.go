@@ -37,7 +37,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 const createSnapshotTable = "CREATE TABLE IF NOT EXISTS SituationMonitorExternalSnapshot (" +
@@ -64,7 +64,7 @@ func TestGDELTSnapshotIntegration(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL not set — integration test requires a MySQL service")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

@@ -28,6 +28,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func integrationDatabaseURL(t *testing.T) string {
@@ -57,7 +59,7 @@ const createIntegrationTable = "CREATE TABLE IF NOT EXISTS UserSetting (" +
 
 func TestUserSettingsMySQLIntegration(t *testing.T) {
 	databaseURL := integrationDatabaseURL(t)
-	db, err := OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -333,7 +335,7 @@ func TestUserSettingsMySQLIntegration(t *testing.T) {
 // 联合唯一键不产生重复行、并发、跨用户隔离、拒绝非固定 key。
 func TestUserSettingsMySQLIntegrationWrite(t *testing.T) {
 	databaseURL := integrationDatabaseURL(t)
-	db, err := OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

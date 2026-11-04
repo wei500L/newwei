@@ -57,7 +57,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 // ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ type frontierWritesHarness struct {
 // real crawlfrontierllm chain service and the WriteService under test.
 func frontierWritesNewHarness(t *testing.T) *frontierWritesHarness {
 	t.Helper()
-	db, err := usersettings.OpenMySQLFromURL(integrationDatabaseURL(t))
+	db, err := mysqldb.Open(integrationDatabaseURL(t), mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

@@ -11,8 +11,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 )
 
@@ -30,20 +30,13 @@ func wirePlatformGovernanceSettings(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: platform governance settings go takeover requires mysql, redis, and jwt")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: platform governance settings go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	service := platformgovernance.NewService(db, redisClient, (*mongoConn).Database(), platformgovernance.Env{
+	service := platformgovernance.NewService(db, redisClient, mongoConn.Database(), platformgovernance.Env{
 		AssistantGuardrailsEnabled:     cfg.PlatformGovernanceAssistantGuardrailsEnabled,
 		AssistantGuardrails:            cfg.PlatformGovernanceAssistantGuardrailsRaw,
 		AssistantOrgSubmitLimitPerHour: cfg.PlatformGovernanceAssistantOrgSubmitLimitPerHour,

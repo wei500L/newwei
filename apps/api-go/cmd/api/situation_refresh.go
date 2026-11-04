@@ -13,9 +13,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignals"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignalsworker"
 )
@@ -45,7 +45,7 @@ func wireSituationRefresh(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn *dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	authenticator *authhttp.Authenticator,
 	scheduler *newssourcescheduler.Scheduler,
 	poller *situationsignalsworker.Service,
