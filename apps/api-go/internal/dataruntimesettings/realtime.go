@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // storedRealtimeSettings is the read model of the realtime_signals_settings JSON
@@ -342,8 +344,11 @@ func (s *Service) resolveStoredSecret(raw json.RawMessage, keyName string) strin
 	if trimmed[0] == '"' {
 		return normalizeStringRaw(trimmed)
 	}
-	var envelope encryptedStringValueV1
-	if err := json.Unmarshal(trimmed, &envelope); err != nil || !envelope.valid() {
+	if !settingscrypto.IsEnvelope(trimmed) {
+		return ""
+	}
+	var envelope settingscrypto.Envelope
+	if err := json.Unmarshal(trimmed, &envelope); err != nil {
 		return ""
 	}
 	key := s.settingsKey()
@@ -351,7 +356,7 @@ func (s *Service) resolveStoredSecret(raw json.RawMessage, keyName string) strin
 		logBackground("missing SYSTEM_SETTINGS_ENCRYPTION_KEY for "+keyName, nil)
 		return ""
 	}
-	plain, err := decryptStringValueV1(envelope, key)
+	plain, err := settingscrypto.Decrypt(envelope, key)
 	if err != nil {
 		logBackground("failed to decrypt "+keyName, err)
 		return ""

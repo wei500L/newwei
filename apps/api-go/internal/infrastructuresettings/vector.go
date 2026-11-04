@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // vectorPublicSettings is the public vector-service settings model. Every field
@@ -139,7 +141,7 @@ func (s *Service) resolveVectorToken(raw json.RawMessage) (string, bool) {
 			logBackground("missing SYSTEM_SETTINGS_ENCRYPTION_KEY for vector service token", nil)
 			return "", false
 		}
-		plain, err := decryptStringValueV1(value.encrypted, key)
+		plain, err := settingscrypto.Decrypt(value.encrypted, key)
 		if err != nil {
 			logBackground("failed to decrypt vector service token", err)
 			return "", false

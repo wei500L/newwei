@@ -2,8 +2,6 @@ package publicportal
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 func TestGatewayCompletionUsesConfiguredProfile(t *testing.T) {
@@ -106,24 +106,17 @@ func bytes32() []byte {
 }
 
 func encryptForTest(plain string, key []byte) map[string]any {
-	block, err := aes.NewCipher(key)
+	envelope, err := settingscrypto.Encrypt(plain, key)
 	if err != nil {
 		panic(err)
 	}
-	gcm, err := cipher.NewGCM(block)
+	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		panic(err)
 	}
-	iv := make([]byte, gcm.NonceSize())
-	_, _ = rand.Read(iv)
-	sealed := gcm.Seal(nil, iv, []byte(plain), nil)
-	tag := sealed[len(sealed)-gcm.Overhead():]
-	data := sealed[:len(sealed)-gcm.Overhead()]
-	return map[string]any{
-		"__enc": "system-settings:v1",
-		"alg":   "aes-256-gcm",
-		"iv":    base64.StdEncoding.EncodeToString(iv),
-		"tag":   base64.StdEncoding.EncodeToString(tag),
-		"data":  base64.StdEncoding.EncodeToString(data),
+	var asMap map[string]any
+	if err := json.Unmarshal(encoded, &asMap); err != nil {
+		panic(err)
 	}
+	return asMap
 }

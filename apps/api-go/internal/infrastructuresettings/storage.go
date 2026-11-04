@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"math"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // storageAdminSettings is the public storage settings model. `endpoint` is
@@ -275,7 +277,7 @@ func (s *Service) resolveStorageSecret(raw json.RawMessage) (string, bool) {
 			logBackground("missing SYSTEM_SETTINGS_ENCRYPTION_KEY for storage secret", nil)
 			return s.cfg.S3SecretAccessKey, true
 		}
-		plain, err := decryptStringValueV1(value.encrypted, key)
+		plain, err := settingscrypto.Decrypt(value.encrypted, key)
 		if err != nil {
 			logBackground("failed to decrypt storage secret", err)
 			return s.cfg.S3SecretAccessKey, true

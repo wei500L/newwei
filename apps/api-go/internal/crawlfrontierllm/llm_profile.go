@@ -2,17 +2,15 @@ package crawlfrontierllm
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // llm_profile.go resolves the active LiteLLM gateway profile the same way
@@ -315,67 +313,27 @@ func profileAPIKey(raw any, encryptionKey string) string {
 }
 
 func decryptSecret(payload map[string]any, encryptionKey string) (string, error) {
-	if payload["__enc"] != "system-settings:v1" || payload["alg"] != "aes-256-gcm" {
+	if payload["__enc"] != settingscrypto.EnvelopeTag || payload["alg"] != settingscrypto.Algorithm {
 		return "", errors.New("not an encrypted setting")
 	}
-	key, err := decodeSettingsKey(encryptionKey)
+	iv := jsonString(payload["iv"])
+	tag := jsonString(payload["tag"])
+	data := jsonString(payload["data"])
+	key, err := settingscrypto.ParseKey(encryptionKey)
 	if err != nil {
 		return "", err
 	}
-	iv, err := base64.StdEncoding.DecodeString(jsonString(payload["iv"]))
+	plain, err := settingscrypto.Decrypt(settingscrypto.Envelope{
+		Enc:  settingscrypto.EnvelopeTag,
+		Alg:  settingscrypto.Algorithm,
+		IV:   &iv,
+		Tag:  &tag,
+		Data: &data,
+	}, key)
 	if err != nil {
 		return "", err
 	}
-	tag, err := base64.StdEncoding.DecodeString(jsonString(payload["tag"]))
-	if err != nil {
-		return "", err
-	}
-	data, err := base64.StdEncoding.DecodeString(jsonString(payload["data"]))
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plain, err := gcm.Open(nil, iv, append(data, tag...), nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
-}
-
-func decodeSettingsKey(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, errors.New("missing encryption key")
-	}
-	hexCandidate := strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if len(hexCandidate) == 64 && isHexString(hexCandidate) {
-		return hex.DecodeString(hexCandidate)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(trimmed)
-	if err != nil || len(decoded) != 32 {
-		return nil, errors.New("invalid encryption key")
-	}
-	return decoded, nil
-}
-
-func isHexString(value string) bool {
-	for _, char := range value {
-		switch {
-		case char >= '0' && char <= '9':
-		case char >= 'a' && char <= 'f':
-		case char >= 'A' && char <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
+	return plain, nil
 }
 
 func stripBearer(value string) string {

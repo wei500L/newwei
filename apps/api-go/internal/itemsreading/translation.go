@@ -2,15 +2,13 @@ package itemsreading
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // System setting keys and cache keys shared with NestJS.
@@ -499,15 +497,6 @@ func normalizeLLMGatewaySettings(settings llmGatewaySettings) llmGatewaySettings
 	return normalized
 }
 
-// encryptedStringValueV1 is the system-settings AES-256-GCM envelope.
-type encryptedStringValueV1 struct {
-	Enc  string `json:"__enc"`
-	Alg  string `json:"alg"`
-	IV   string `json:"iv"`
-	Tag  string `json:"tag"`
-	Data string `json:"data"`
-}
-
 // resolveStoredAPIKey ports resolveStoredApiKey: a legacy plain string is used
 // verbatim, a v1 envelope is decrypted, and anything else (or a decryption
 // failure) counts as "not configured".
@@ -523,69 +512,30 @@ func resolveStoredAPIKey(raw OpenJSON) string {
 		}
 		return strings.TrimSpace(text)
 	}
-	var envelope encryptedStringValueV1
+	if !settingscrypto.IsEnvelope(raw.Bytes()) {
+		return ""
+	}
+	var envelope settingscrypto.Envelope
 	if err := json.Unmarshal(raw.Bytes(), &envelope); err != nil {
 		return ""
 	}
-	plaintext, ok := decryptStringValueV1(envelope)
+	key, ok := systemSettingsKey()
 	if !ok {
+		return ""
+	}
+	plaintext, err := settingscrypto.Decrypt(envelope, key)
+	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(plaintext)
 }
 
-// decryptStringValueV1 decrypts one AES-256-GCM envelope.
-func decryptStringValueV1(envelope encryptedStringValueV1) (string, bool) {
-	if envelope.Enc != "system-settings:v1" || envelope.Alg != "aes-256-gcm" {
-		return "", false
-	}
-	key, ok := systemSettingsKey()
-	if !ok {
-		return "", false
-	}
-	iv, err := base64.StdEncoding.DecodeString(envelope.IV)
-	if err != nil {
-		return "", false
-	}
-	tag, err := base64.StdEncoding.DecodeString(envelope.Tag)
-	if err != nil {
-		return "", false
-	}
-	data, err := base64.StdEncoding.DecodeString(envelope.Data)
-	if err != nil {
-		return "", false
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", false
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", false
-	}
-	sealed := append(append([]byte{}, data...), tag...)
-	plaintext, err := aead.Open(nil, iv, sealed, nil)
-	if err != nil {
-		return "", false
-	}
-	return string(plaintext), true
-}
-
-// systemSettingsKey decodes SYSTEM_SETTINGS_ENCRYPTION_KEY (64 hex chars or 32
-// base64 bytes).
+// systemSettingsKey decodes SYSTEM_SETTINGS_ENCRYPTION_KEY (64 hex chars or a
+// Node-compatible 32-byte base64 value).
 func systemSettingsKey() ([]byte, bool) {
-	raw := strings.TrimSpace(os.Getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
-	if raw == "" {
+	key, err := settingscrypto.ParseKey(os.Getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+	if err != nil {
 		return nil, false
 	}
-	candidate := strings.TrimPrefix(raw, "0x")
-	if len(candidate) == 64 {
-		if decoded, err := hex.DecodeString(candidate); err == nil && len(decoded) == 32 {
-			return decoded, true
-		}
-	}
-	if decoded, err := base64.StdEncoding.DecodeString(raw); err == nil && len(decoded) == 32 {
-		return decoded, true
-	}
-	return nil, false
+	return key, true
 }

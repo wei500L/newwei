@@ -3,6 +3,8 @@ package infrastructuresettings
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // secretValueKind discriminates the four shapes a stored secret value can have.
@@ -27,7 +29,7 @@ const (
 type storedSecretValue struct {
 	kind      secretValueKind
 	plaintext string
-	encrypted encryptedStringValueV1
+	encrypted settingscrypto.Envelope
 }
 
 // parseStoredSecretValue classifies one stored JSON value.
@@ -44,11 +46,11 @@ func parseStoredSecretValue(raw json.RawMessage) storedSecretValue {
 		}
 		return storedSecretValue{kind: secretPlaintext, plaintext: text}
 	case '{':
-		var envelope encryptedStringValueV1
+		var envelope settingscrypto.Envelope
 		if err := json.Unmarshal(trimmed, &envelope); err != nil {
 			return storedSecretValue{kind: secretInvalid}
 		}
-		if !envelope.valid() {
+		if !envelope.Valid() {
 			return storedSecretValue{kind: secretInvalid}
 		}
 		return storedSecretValue{kind: secretEncrypted, encrypted: envelope}

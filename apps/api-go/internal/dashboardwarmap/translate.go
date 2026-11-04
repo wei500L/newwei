@@ -3,10 +3,7 @@ package dashboardwarmap
 import (
 	"bytes"
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 const (
@@ -483,63 +481,25 @@ func boundedInt(value any, fallback, min, max int) (int, bool) {
 }
 
 func decryptSetting(payload map[string]any, encryptionKey string) (string, error) {
-	if payload["__enc"] != "system-settings:v1" || payload["alg"] != "aes-256-gcm" {
+	if payload["__enc"] != settingscrypto.EnvelopeTag || payload["alg"] != settingscrypto.Algorithm {
 		return "", errors.New("not an encrypted setting")
 	}
-	key, err := decodeSettingsKey(encryptionKey)
+	iv := stringOrEmpty(payload["iv"])
+	tag := stringOrEmpty(payload["tag"])
+	data := stringOrEmpty(payload["data"])
+	key, err := settingscrypto.ParseKey(encryptionKey)
 	if err != nil {
 		return "", err
 	}
-	iv, err := base64.StdEncoding.DecodeString(stringOrEmpty(payload["iv"]))
+	plain, err := settingscrypto.Decrypt(settingscrypto.Envelope{
+		Enc:  settingscrypto.EnvelopeTag,
+		Alg:  settingscrypto.Algorithm,
+		IV:   &iv,
+		Tag:  &tag,
+		Data: &data,
+	}, key)
 	if err != nil {
 		return "", err
 	}
-	tag, err := base64.StdEncoding.DecodeString(stringOrEmpty(payload["tag"]))
-	if err != nil {
-		return "", err
-	}
-	data, err := base64.StdEncoding.DecodeString(stringOrEmpty(payload["data"]))
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plain, err := gcm.Open(nil, iv, append(data, tag...), nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
-}
-
-func decodeSettingsKey(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, errors.New("missing encryption key")
-	}
-	hexCandidate := strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if len(hexCandidate) == 64 && isHex(hexCandidate) {
-		return hex.DecodeString(hexCandidate)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(trimmed)
-	if err != nil || len(decoded) != 32 {
-		return nil, errors.New("invalid encryption key")
-	}
-	return decoded, nil
-}
-
-func isHex(value string) bool {
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
+	return plain, nil
 }
