@@ -14,7 +14,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // testLogger discards the tracker's log lines so a failing transition can be
@@ -45,7 +45,7 @@ type fakeStore struct {
 	readErr    error
 	readHook   func(call int)
 	metas      map[string]JobMeta
-	jobs       map[string]*bullmqwire.Job
+	jobs       map[string]*bullmq.Job
 	metaErr    error
 	jobErr     error
 	upsertErrs map[string]error
@@ -58,7 +58,7 @@ type fakeStore struct {
 func newFakeStore() *fakeStore {
 	return &fakeStore{
 		metas:      map[string]JobMeta{},
-		jobs:       map[string]*bullmqwire.Job{},
+		jobs:       map[string]*bullmq.Job{},
 		upsertErrs: map[string]error{},
 	}
 }
@@ -99,7 +99,7 @@ func (s *fakeStore) GetJobMeta(_ context.Context, jobID string) (JobMeta, bool, 
 	return meta, found, nil
 }
 
-func (s *fakeStore) GetJob(_ context.Context, jobID string) (*bullmqwire.Job, error) {
+func (s *fakeStore) GetJob(_ context.Context, jobID string) (*bullmq.Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.jobErr != nil {
@@ -360,7 +360,7 @@ func TestHandleEventDispatchesTransitions(t *testing.T) {
 	store.metas["job-removed"] = JobMeta{
 		OrgID: "org-2", Status: JobStatusWaiting, KeepCompleted: false, KeepFailed: true,
 	}
-	store.jobs["job-completed"] = &bullmqwire.Job{
+	store.jobs["job-completed"] = &bullmq.Job{
 		Data: json.RawMessage(`{"orgId":"org-1"}`),
 		Opts: json.RawMessage(`{"removeOnComplete":true}`),
 	}
@@ -436,7 +436,7 @@ func TestTrackTransitionCreatesMetaFromJobHash(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			store := newFakeStore()
-			store.jobs["job-1"] = &bullmqwire.Job{
+			store.jobs["job-1"] = &bullmq.Job{
 				Data: json.RawMessage(`{"orgId":"org-1","pipelineJobId":"pipe-1"}`),
 				Opts: json.RawMessage(testCase.opts),
 			}
@@ -463,12 +463,12 @@ func TestTrackTransitionCreatesMetaFromJobHash(t *testing.T) {
 func TestTrackTransitionSkipsUnknownJobs(t *testing.T) {
 	cases := []struct {
 		name string
-		job  *bullmqwire.Job
+		job  *bullmq.Job
 	}{
 		{name: "the job hash is already removed", job: nil},
-		{name: "the job payload has no org", job: &bullmqwire.Job{Data: json.RawMessage(`{"pipelineJobId":"pipe-1"}`)}},
-		{name: "the job payload has an empty org", job: &bullmqwire.Job{Data: json.RawMessage(`{"orgId":""}`)}},
-		{name: "the job payload is not an object", job: &bullmqwire.Job{Data: json.RawMessage(`"text"`)}},
+		{name: "the job payload has no org", job: &bullmq.Job{Data: json.RawMessage(`{"pipelineJobId":"pipe-1"}`)}},
+		{name: "the job payload has an empty org", job: &bullmq.Job{Data: json.RawMessage(`{"orgId":""}`)}},
+		{name: "the job payload is not an object", job: &bullmq.Job{Data: json.RawMessage(`"text"`)}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -540,8 +540,8 @@ func TestTrackRemoval(t *testing.T) {
 func TestTrackTransitionFailureDoesNotAbortTheEventLoop(t *testing.T) {
 	store := newFakeStore()
 	store.upsertErrs["job-broken"] = errors.New("redis is down")
-	store.jobs["job-broken"] = &bullmqwire.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
-	store.jobs["job-good"] = &bullmqwire.Job{Data: json.RawMessage(`{"orgId":"org-2"}`)}
+	store.jobs["job-broken"] = &bullmq.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
+	store.jobs["job-good"] = &bullmq.Job{Data: json.RawMessage(`{"orgId":"org-2"}`)}
 	store.batches = [][]StreamEvent{{
 		{ID: "1-0", Event: eventWaiting, JobID: "job-broken"},
 		{ID: "2-0", Event: eventWaiting, JobID: "job-good"},
@@ -570,7 +570,7 @@ func TestTrackTransitionFailureDoesNotAbortTheEventLoop(t *testing.T) {
 func TestReadEventsAdvancesTheCursor(t *testing.T) {
 	store := newFakeStore()
 	store.metas["job-1"] = JobMeta{OrgID: "org-1", Status: JobStatusWaiting, KeepCompleted: false, KeepFailed: true}
-	store.jobs["job-2"] = &bullmqwire.Job{Data: json.RawMessage(`{"orgId":"org-2"}`)}
+	store.jobs["job-2"] = &bullmq.Job{Data: json.RawMessage(`{"orgId":"org-2"}`)}
 	store.batches = [][]StreamEvent{
 		{{ID: "1-0", Event: eventActive, JobID: "job-1"}},
 		{
@@ -626,7 +626,7 @@ func TestAcquireAndReadSkipsReadsWhenNotTheOwner(t *testing.T) {
 
 func TestAcquireAndReadStopsWhenTheLeaseIsLost(t *testing.T) {
 	store := newFakeStore()
-	store.jobs["job-1"] = &bullmqwire.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
+	store.jobs["job-1"] = &bullmq.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
 	store.batches = [][]StreamEvent{{{ID: "1-0", Event: eventWaiting, JobID: "job-1"}}}
 	lease := &fakeLease{acquired: true}
 	store.readHook = func(call int) {
@@ -664,7 +664,7 @@ func TestAcquireAndReadStopsWhenTheLeaseIsLost(t *testing.T) {
 
 func TestRunCompetesAgainAfterLosingTheLease(t *testing.T) {
 	store := newFakeStore()
-	store.jobs["job-1"] = &bullmqwire.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
+	store.jobs["job-1"] = &bullmq.Job{Data: json.RawMessage(`{"orgId":"org-1"}`)}
 	store.batches = [][]StreamEvent{{{ID: "1-0", Event: eventWaiting, JobID: "job-1"}}}
 	parent, cancelParent := context.WithCancel(context.Background())
 	defer cancelParent()

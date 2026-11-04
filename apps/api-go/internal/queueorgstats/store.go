@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // ErrNoRedis is returned when the command client is missing.
@@ -36,7 +36,7 @@ type Store interface {
 	GetJobMeta(ctx context.Context, jobID string) (meta JobMeta, found bool, err error)
 	// GetJob returns the decoded job hash, or nil when the job no longer exists
 	// (Queue.getJob returns undefined for a removed job).
-	GetJob(ctx context.Context, jobID string) (*bullmqwire.Job, error)
+	GetJob(ctx context.Context, jobID string) (*bullmq.Job, error)
 	// UpsertJobMetaAndCount runs upsertAndTransitionScript.
 	UpsertJobMetaAndCount(ctx context.Context, input UpsertJobMetaInput) error
 	// TransitionTerminalAndRemove runs terminalAndRemoveScript: the terminal
@@ -55,7 +55,7 @@ type Store interface {
 type redisStore struct {
 	commands *redis.Client
 	blocking *redis.Client
-	keys     bullmqwire.Keys
+	keys     bullmq.Keys
 }
 
 // newRedisStore builds the Redis store over the shared command client and the
@@ -125,11 +125,11 @@ func (s *redisStore) GetJobMeta(ctx context.Context, jobID string) (JobMeta, boo
 
 // GetJob decodes the job hash with the shared BullMQ reader. The tracker needs
 // the same decoding as the queue console, so it does not parse the hash itself.
-func (s *redisStore) GetJob(ctx context.Context, jobID string) (*bullmqwire.Job, error) {
+func (s *redisStore) GetJob(ctx context.Context, jobID string) (*bullmq.Job, error) {
 	if s == nil || s.commands == nil {
 		return nil, ErrNoRedis
 	}
-	job, err := bullmqwire.ReadJob(ctx, s.commands, s.keys, jobID)
+	job, err := bullmq.ReadJob(ctx, s.commands, s.keys, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("queueorgstats: read job %s: %w", jobID, err)
 	}

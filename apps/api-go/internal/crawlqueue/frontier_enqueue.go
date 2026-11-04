@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // frontier_enqueue.go is the producer side of the Frontier node and Frontier LLM
@@ -136,18 +136,21 @@ func (p *Producer) EnqueueFrontierNode(ctx context.Context, options EnqueueFront
 	if err != nil {
 		return err
 	}
-	jobOptions := jobOptions{
-		Attempts:         int64(attempts),
+	jobOptions := bullmq.JobOptions{
+		Attempts:         int64Ptr16(int64(attempts)),
 		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: failedRetentionAge, Count: failedRetentionCount},
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr16(failedRetentionAge), Count: int64Ptr16(failedRetentionCount)},
 		JobID:            jobID,
-		Deduplication:    &deduplicationOptions{ID: "crawl-frontier-node:" + options.FrontierNodeID},
-		Priority:         ToBullmqPriority(options.SourcePriority),
+		Deduplication:    &bullmq.Deduplication{ID: "crawl-frontier-node:" + options.FrontierNodeID},
+	}
+	if priority := ToBullmqPriority(options.SourcePriority); priority != nil {
+		value := int64(*priority)
+		jobOptions.Priority = &value
 	}
 	if settings.RetryBackoffMs != 0 {
-		jobOptions.Backoff = &backoffOptions{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
+		jobOptions.Backoff = &bullmq.Backoff{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
 	}
-	return p.addFrontierJob(ctx, queueName, FrontierNodeJobName, jobID, encodedData, jobOptions)
+	return p.addFrontierJob(ctx, queueName, FrontierNodeJobName, encodedData, jobOptions)
 }
 
 // EnqueueFrontierLlmJudge mirrors enqueueFrontierLlmJudge: one attempt, the
@@ -171,17 +174,17 @@ func (p *Producer) EnqueueFrontierLlmJudge(ctx context.Context, options EnqueueF
 		return err
 	}
 	jobID := FrontierLlmJudgeJobID(options.NodeID, options.Mode, p.now())
-	jobOptions := jobOptions{
-		Attempts:         1,
+	jobOptions := bullmq.JobOptions{
+		Attempts:         int64Ptr16(1),
 		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: failedRetentionAge, Count: failedRetentionCount},
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr16(failedRetentionAge), Count: int64Ptr16(failedRetentionCount)},
 		JobID:            jobID,
-		Deduplication:    &deduplicationOptions{ID: fmt.Sprintf("crawl-frontier-llm-judge:%s:%s", options.NodeID, options.Mode)},
+		Deduplication:    &bullmq.Deduplication{ID: fmt.Sprintf("crawl-frontier-llm-judge:%s:%s", options.NodeID, options.Mode)},
 	}
 	if settings.RetryBackoffMs != 0 {
-		jobOptions.Backoff = &backoffOptions{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
+		jobOptions.Backoff = &bullmq.Backoff{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
 	}
-	return p.addFrontierJob(ctx, FrontierLlmJudgeQueue, FrontierLlmJudgeJobName, jobID, encodedData, jobOptions)
+	return p.addFrontierJob(ctx, FrontierLlmJudgeQueue, FrontierLlmJudgeJobName, encodedData, jobOptions)
 }
 
 // EnqueueFrontierLlmLearn mirrors enqueueFrontierLlmLearn: one attempt and the
@@ -204,69 +207,28 @@ func (p *Producer) EnqueueFrontierLlmLearn(ctx context.Context, options EnqueueF
 		return err
 	}
 	jobID := FrontierLlmLearnJobID(options.RunID, p.now())
-	jobOptions := jobOptions{
-		Attempts:         1,
+	jobOptions := bullmq.JobOptions{
+		Attempts:         int64Ptr16(1),
 		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: failedRetentionAge, Count: failedRetentionCount},
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr16(failedRetentionAge), Count: int64Ptr16(failedRetentionCount)},
 		JobID:            jobID,
-		Deduplication:    &deduplicationOptions{ID: "crawl-frontier-llm-learn:" + options.RunID},
+		Deduplication:    &bullmq.Deduplication{ID: "crawl-frontier-llm-learn:" + options.RunID},
 	}
 	if settings.RetryBackoffMs != 0 {
-		jobOptions.Backoff = &backoffOptions{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
+		jobOptions.Backoff = &bullmq.Backoff{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
 	}
-	return p.addFrontierJob(ctx, FrontierLlmLearnQueue, FrontierLlmLearnJobName, jobID, encodedData, jobOptions)
+	return p.addFrontierJob(ctx, FrontierLlmLearnQueue, FrontierLlmLearnJobName, encodedData, jobOptions)
 }
 
 // JobKindFrontierNodeConstant is the frontier_node jobKind literal. It mirrors
 // craw-queue.service.ts and stays a constant so the data struct cannot drift.
 const JobKindFrontierNodeConstant = "frontier_node"
 
-// addFrontierJob runs the official add script. The LLM queues never use a
-// priority, so the standard script (the same one EnqueueTask uses for its
-// non-prioritized branch) is enough; the prioritized path keeps the existing
-// script for symmetry with producer.go.
-func (p *Producer) addFrontierJob(ctx context.Context, queueName, jobName, jobID string, data []byte, options jobOptions) error {
-	keys := keysFor(queueName)
-	encodedOptions, err := msgpack.Marshal(options)
-	if err != nil {
-		return err
-	}
-	deduplicationKey := keys.dedup + options.Deduplication.ID
-	arguments := []any{
-		Prefix + ":" + queueName + ":",
-		jobID,
-		jobName,
-		p.now().UnixMilli(),
-		nil, // parentKey
-		nil, // parentDependenciesKey
-		nil, // parent
-		nil, // repeatJobKey
-		deduplicationKey,
-	}
-	encodedArguments, err := msgpack.Marshal(arguments)
-	if err != nil {
-		return err
-	}
-	script := addStandardJobScript
-	scriptKeys := []string{
-		keys.wait, keys.paused, keys.meta, keys.id, keys.completed,
-		keys.delayed, keys.active, keys.events, keys.marker,
-	}
-	if options.Priority != nil && *options.Priority != 0 {
-		script = addPrioritizedJobScript
-		scriptKeys = []string{
-			keys.marker, keys.meta, keys.id, keys.prioritized, keys.delayed,
-			keys.completed, keys.active, keys.events, keys.pc,
-		}
-	}
-	result, err := p.redis.Eval(ctx, script, scriptKeys, encodedArguments, string(data), encodedOptions).Result()
-	if err != nil {
-		return err
-	}
-	if _, err := jobIDFromEval(result); err != nil {
-		return err
-	}
-	return nil
+// addFrontierJob adds one frontier job through the shared Queue. The LLM queues
+// never use a priority, so a single standard add path covers every frontier job.
+func (p *Producer) addFrontierJob(ctx context.Context, queueName, jobName string, data []byte, options bullmq.JobOptions) error {
+	_, err := bullmq.NewQueue(p.redis, Prefix, queueName).Add(ctx, jobName, json.RawMessage(data), options)
+	return err
 }
 
 // FrontierNodeJobID is `${frontierNodeId}-${Date.now()}-${queueClass}`.

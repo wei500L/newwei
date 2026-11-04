@@ -13,7 +13,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
 
@@ -70,7 +70,7 @@ func eventsFor(t *testing.T, client *redis.Client, queue string) []redis.XMessag
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), integrationDelay)
 	defer cancel()
-	keys := bullmqwire.NewKeys(bullmqwire.Prefix, queue)
+	keys := bullmq.NewKeys(bullmq.Prefix, queue)
 	messages, err := client.XRange(ctx, keys.Events, "-", "+").Result()
 	if err != nil {
 		t.Fatalf("read events %s: %v", queue, err)
@@ -95,7 +95,7 @@ func hasEvent(messages []redis.XMessage, event, jobID string) bool {
 func TestQueueOpsIntegrationRetryFailedJob(t *testing.T) {
 	service, client := integrationService(t)
 	ctx := context.Background()
-	keys := bullmqwire.NewKeys(bullmqwire.Prefix, pipelineenqueue.QueueName)
+	keys := bullmq.NewKeys(bullmq.Prefix, pipelineenqueue.QueueName)
 	jobID := "item-retry-raw-1"
 
 	seedJobHash(t, client, keys.Job(jobID),
@@ -149,7 +149,7 @@ func TestQueueOpsIntegrationRetryFailedJob(t *testing.T) {
 func TestQueueOpsIntegrationDeleteDelayedJob(t *testing.T) {
 	service, client := integrationService(t)
 	ctx := context.Background()
-	keys := bullmqwire.NewKeys(bullmqwire.Prefix, pipelineenqueue.QueueName)
+	keys := bullmq.NewKeys(bullmq.Prefix, pipelineenqueue.QueueName)
 	jobID := "item-delayed-raw-1"
 
 	seedJobHash(t, client, keys.Job(jobID),
@@ -191,8 +191,8 @@ func TestQueueOpsIntegrationDeleteDelayedJob(t *testing.T) {
 func TestQueueOpsIntegrationDLQReplay(t *testing.T) {
 	service, client := integrationService(t)
 	ctx := context.Background()
-	dlqKeys := bullmqwire.NewKeys(bullmqwire.Prefix, dlqQueue)
-	pipelineKeys := bullmqwire.NewKeys(bullmqwire.Prefix, pipelineenqueue.QueueName)
+	dlqKeys := bullmq.NewKeys(bullmq.Prefix, dlqQueue)
+	pipelineKeys := bullmq.NewKeys(bullmq.Prefix, pipelineenqueue.QueueName)
 	dlqJobID := "dlq-itemPipeline-job-1-3"
 
 	seedDLQJob := func() {
@@ -284,7 +284,7 @@ func TestQueueOpsIntegrationDLQReplay(t *testing.T) {
 func TestQueueOpsIntegrationQueueList(t *testing.T) {
 	service, client := integrationService(t)
 	ctx := context.Background()
-	keys := bullmqwire.NewKeys(bullmqwire.Prefix, pipelineenqueue.QueueName)
+	keys := bullmq.NewKeys(bullmq.Prefix, pipelineenqueue.QueueName)
 
 	for _, jobID := range []string{"failed-1", "failed-2"} {
 		seedJobHash(t, client, keys.Job(jobID), "name", "process-item", "data", `{"orgId":"org-a"}`)
@@ -353,7 +353,7 @@ func TestQueueOpsIntegrationQueueList(t *testing.T) {
 func TestQueueOpsIntegrationCleanFailedJobs(t *testing.T) {
 	service, client := integrationService(t)
 	ctx := context.Background()
-	keys := bullmqwire.NewKeys(bullmqwire.Prefix, pipelineenqueue.QueueName)
+	keys := bullmq.NewKeys(bullmq.Prefix, pipelineenqueue.QueueName)
 	for _, jobID := range []string{"failed-1", "failed-2", "failed-3"} {
 		seedJobHash(t, client, keys.Job(jobID), "name", "process-item", "data", `{"orgId":"org-a"}`,
 			"finishedOn", "1700000000000")

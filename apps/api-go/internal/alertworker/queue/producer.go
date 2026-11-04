@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // ProducerStore is the subset of the shared go-redis client this producer uses.
@@ -32,6 +34,7 @@ type Producer struct {
 	client  ProducerStore
 	keys    Keys
 	scripts queueScripts
+	queue   *bullmq.Queue
 	now     func() time.Time
 }
 
@@ -51,6 +54,7 @@ func NewProducer(client ProducerStore, prefix string) (*Producer, error) {
 		client:  client,
 		keys:    NewKeys(prefix, QueueName),
 		scripts: scripts,
+		queue:   bullmq.NewQueue(client, prefix, QueueName),
 		now:     time.Now,
 	}, nil
 }
@@ -455,40 +459,73 @@ func (p *Producer) addStandardJob(ctx context.Context, name, jobID string, data 
 	return p.addJob(ctx, name, jobID, data, timestampMs, opts, "")
 }
 
-// addJob selects the delayed or the standard add script exactly like
-// Scripts.addJob: a positive opts.delay takes the delayed path.
+// addJob adds one job through the shared Queue. It keeps the producer's option
+// map and maps it onto bullmq.JobOptions; a positive delay selects the delayed
+// add command and a repeat iteration carries its repeat job key, exactly like
+// Scripts.addJob.
 func (p *Producer) addJob(ctx context.Context, name, jobID string, data []byte, timestampMs int64, opts map[string]any, repeatJobKey string) error {
-	args, err := MarshalMsgpack(buildJobArguments(p.keys.Base, jobID, name, timestampMs, repeatJobKey))
-	if err != nil {
-		return err
-	}
-	encodedOpts, err := MarshalMsgpack(opts)
-	if err != nil {
-		return err
-	}
-	delay, _ := opts["delay"].(int64)
-	var result any
-	if delay > 0 {
-		result, err = p.scripts.addDelayedJob.Run(ctx, p.client,
-			[]string{p.keys.Marker, p.keys.Meta, p.keys.ID, p.keys.Delayed, p.keys.Completed, p.keys.Events},
-			args, data, encodedOpts,
-		).Result()
-	} else {
-		result, err = p.scripts.addStandardJob.Run(ctx, p.client,
-			[]string{p.keys.Wait, p.keys.Paused, p.keys.Meta, p.keys.ID, p.keys.Completed, p.keys.Delayed, p.keys.Active, p.keys.Events, p.keys.Marker},
-			args, data, encodedOpts,
-		).Result()
-	}
-	if err != nil {
+	jobOpts := alertJobOptions(opts)
+	jobOpts.JobID = jobID
+	jobOpts.RepeatJobKey = repeatJobKey
+	if _, err := p.queue.Add(ctx, name, json.RawMessage(data), jobOpts); err != nil {
 		return fmt.Errorf("alertworker/queue: add job %s: %w", jobID, err)
 	}
-	// A duplicate job id is not an error in BullMQ 5.63.2: handleDuplicatedJob
-	// emits a "duplicated" event and returns the job id string, so Queue.add
-	// resolves with the existing job.
-	if code := toInt64(result); code < 0 {
-		return fmt.Errorf("alertworker/queue: add job %s rejected with BullMQ code %d", jobID, code)
-	}
 	return nil
+}
+
+// alertJobOptions maps the caller option map onto bullmq.JobOptions.
+func alertJobOptions(opts map[string]any) bullmq.JobOptions {
+	jobOpts := bullmq.JobOptions{}
+	if value, ok := opts["attempts"]; ok {
+		attempts := alertInt64(value)
+		jobOpts.Attempts = &attempts
+	}
+	if value, ok := opts["removeOnComplete"]; ok {
+		jobOpts.RemoveOnComplete = value
+	}
+	if value, ok := opts["removeOnFail"]; ok {
+		jobOpts.RemoveOnFail = value
+	}
+	if value, ok := opts["delay"]; ok {
+		delay := alertInt64(value)
+		jobOpts.Delay = &delay
+	}
+	if value, ok := opts["timestamp"]; ok {
+		timestamp := alertInt64(value)
+		jobOpts.Timestamp = &timestamp
+	}
+	if value, ok := opts["prevMillis"]; ok {
+		prev := alertInt64(value)
+		jobOpts.PrevMillis = &prev
+	}
+	if value, ok := opts["repeat"]; ok {
+		jobOpts.Repeat = value
+	}
+	if backoff, ok := opts["backoff"].(map[string]any); ok {
+		kind, _ := backoff["type"].(string)
+		if _, hasDelay := backoff["delay"]; hasDelay {
+			jobOpts.Backoff = &bullmq.Backoff{Type: kind, Delay: alertInt64(backoff["delay"])}
+		} else {
+			jobOpts.Backoff = map[string]any{"type": kind}
+		}
+	}
+	return jobOpts
+}
+
+// alertInt64 converts a numeric option value.
+func alertInt64(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case int32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return 0
+	}
 }
 
 // buildJobArguments is the args array Scripts.addJob packs as ARGV[1]. Rule and

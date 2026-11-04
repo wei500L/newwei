@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // Producer writes and controls the three crawl queues through the official
@@ -76,7 +77,6 @@ func (p *Producer) EnqueueTask(ctx context.Context, taskID, orgID string, option
 	if priorityClass == PriorityClassHot {
 		queueName = QueueHot
 	}
-	keys := keysFor(queueName)
 	jobID := fmt.Sprintf("%s-%d-%s", taskID, p.now().UnixMilli(), priorityClass)
 	deduplicationID := "crawl-task:" + taskID
 	priority := ToBullmqPriority(options.SourcePriority)
@@ -96,59 +96,21 @@ func (p *Producer) EnqueueTask(ctx context.Context, taskID, orgID string, option
 		return EnqueueResult{}, err
 	}
 
-	jobOptions := jobOptions{
-		Attempts:         int64(attempts),
-		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: failedRetentionAge, Count: failedRetentionCount},
+	jobOpts := bullmq.JobOptions{
 		JobID:            jobID,
-		Deduplication:    &deduplicationOptions{ID: deduplicationID},
-		Priority:         priority,
+		Attempts:         int64Ptr16(int64(attempts)),
+		RemoveOnComplete: true,
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr16(failedRetentionAge), Count: int64Ptr16(failedRetentionCount)},
+		Deduplication:    &bullmq.Deduplication{ID: deduplicationID},
+	}
+	if priority != nil {
+		value := int64(*priority)
+		jobOpts.Priority = &value
 	}
 	if settings.RetryBackoffMs != 0 {
-		jobOptions.Backoff = &backoffOptions{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
+		jobOpts.Backoff = &bullmq.Backoff{Type: "exponential", Delay: int64(settings.RetryBackoffMs)}
 	}
-	encodedOptions, err := msgpack.Marshal(jobOptions)
-	if err != nil {
-		return EnqueueResult{}, err
-	}
-
-	// The Lua script unpacks a positional MessagePack array. Null entries are
-	// the unused parent/repeat/deduplication slots, exactly like BullMQ's
-	// Scripts.addJob passes them.
-	deduplicationKey := keys.dedup + deduplicationID
-	arguments := []any{
-		Prefix + ":" + queueName + ":",
-		jobID,
-		JobName,
-		p.now().UnixMilli(),
-		nil, // parentKey
-		nil, // parentDependenciesKey
-		nil, // parent
-		nil, // repeatJobKey
-		deduplicationKey,
-	}
-	encodedArguments, err := msgpack.Marshal(arguments)
-	if err != nil {
-		return EnqueueResult{}, err
-	}
-
-	script := addStandardJobScript
-	scriptKeys := []string{
-		keys.wait, keys.paused, keys.meta, keys.id, keys.completed,
-		keys.delayed, keys.active, keys.events, keys.marker,
-	}
-	if priority != nil && *priority != 0 {
-		script = addPrioritizedJobScript
-		scriptKeys = []string{
-			keys.marker, keys.meta, keys.id, keys.prioritized, keys.delayed,
-			keys.completed, keys.active, keys.events, keys.pc,
-		}
-	}
-	result, err := p.redis.Eval(ctx, script, scriptKeys, encodedArguments, string(encodedData), encodedOptions).Result()
-	if err != nil {
-		return EnqueueResult{}, err
-	}
-	returnedID, err := jobIDFromEval(result)
+	returnedID, err := bullmq.NewQueue(p.redis, Prefix, queueName).Add(ctx, JobName, json.RawMessage(encodedData), jobOpts)
 	if err != nil {
 		return EnqueueResult{}, err
 	}
@@ -353,7 +315,7 @@ func (p *Producer) matchingJobs(ctx context.Context, keys queueKeys, ids []strin
 // removeJob runs the official removeJob script. A zero result means the job is
 // locked by another worker, which NestJS treats as a silent skip.
 func (p *Producer) removeJob(ctx context.Context, keys queueKeys, jobID string) (bool, error) {
-	result, err := p.redis.Eval(ctx, removeJobScript,
+	result, err := bullmq.ScriptRemoveJob.Run(ctx, p.redis,
 		[]string{keys.jobKey(jobID), keys.queuePrefix() + "repeat"},
 		jobID, "1", keys.queuePrefix()).Result()
 	if err != nil {
@@ -406,7 +368,7 @@ func (p *Producer) setPaused(ctx context.Context, keys queueKeys, pause bool) er
 	// The official pause script ends with an XADD statement and no return, so
 	// Redis answers nil. ioredis treats that as a null reply; go-redis maps it
 	// to redis.Nil, which is not an error here.
-	err := p.redis.Eval(ctx, pauseScript, scriptKeys, arg).Err()
+	err := bullmq.ScriptPause.Run(ctx, p.redis, scriptKeys, arg).Err()
 	if err != nil && err != redis.Nil {
 		return err
 	}
@@ -447,7 +409,7 @@ func (p *Producer) LegacyCounts(ctx context.Context) (QueueCounts, error) {
 
 // countsFor runs getCounts with the five statuses getJobCounts asks for.
 func (p *Producer) countsFor(ctx context.Context, keys queueKeys) (QueueCounts, error) {
-	result, err := p.redis.Eval(ctx, getCountsScript, []string{keys.queuePrefix()},
+	result, err := bullmq.ScriptGetCounts.Run(ctx, p.redis, []string{keys.queuePrefix()},
 		"wait", "active", "delayed", "failed", "paused").Result()
 	if err != nil {
 		return QueueCounts{}, err
@@ -538,6 +500,9 @@ func (p *Producer) PublishWorkerConcurrency(ctx context.Context, maxConcurrency 
 	}
 	return p.redis.Publish(ctx, WorkerConcurrencyChannel, payload).Err()
 }
+
+// int64Ptr16 returns a pointer to value for the optional JobOptions fields.
+func int64Ptr16(value int64) *int64 { return &value }
 
 // newTraceID mints a canonical UUID v4 like ensureTraceId.
 func newTraceID() string {

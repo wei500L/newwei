@@ -131,19 +131,7 @@ func TestQueueKeysMatchBullMQDefaults(t *testing.T) {
 	}
 }
 
-func TestScriptDigestsPinned(t *testing.T) {
-	for name, want := range scriptDigests {
-		content, err := scriptFiles.ReadFile("scripts/" + name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if got := scriptSHA256(content); got != want {
-			t.Fatalf("%s sha256 = %s, want %s", name, got, want)
-		}
-	}
-	if len(scriptDigests) != 10 {
-		t.Fatalf("vendored script count = %d, want 10", len(scriptDigests))
-	}
+func TestScriptHashesLoaded(t *testing.T) {
 	scripts, err := loadQueueScripts()
 	if err != nil {
 		t.Fatalf("load scripts: %v", err)

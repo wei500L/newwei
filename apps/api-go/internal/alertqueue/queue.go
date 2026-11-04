@@ -47,6 +47,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 const (
@@ -80,6 +82,7 @@ type Store interface {
 // long as the underlying client is.
 type Producer struct {
 	client Store
+	queue  *bullmq.Queue
 	now    func() time.Time
 }
 
@@ -90,7 +93,7 @@ func New(client Store) *Producer {
 	if client == nil {
 		panic("alertqueue: New requires a redis client")
 	}
-	return &Producer{client: client, now: time.Now}
+	return &Producer{client: client, queue: bullmq.NewQueue(client, Prefix, QueueName), now: time.Now}
 }
 
 // evaluateJobData is the one-shot evaluation payload. Field order is the JSON
@@ -248,50 +251,55 @@ func (p *Producer) RemoveRuleJobs(ctx context.Context, ruleID string) error {
 	return nil
 }
 
-// addJob runs BullMQ's addStandardJob/addDelayedJob path. It selects the
-// delayed script when opts carries a positive delay, exactly like
-// Scripts.addJob.
+// addJob runs BullMQ's add path through the shared Queue. It keeps the caller's
+// option map shape (attempts, removeOnComplete, removeOnFail, delay, timestamp,
+// prevMillis, repeat) but hands the packed document to bullmq.Queue, which
+// selects the delayed or standard add command exactly like Scripts.addJob.
 func (p *Producer) addJob(ctx context.Context, jobID, name string, data []byte, timestamp int64, opts map[string]any, repeatJobKey string) error {
-	encodedArgs, err := marshalMsgpack(buildJobArguments(p.keyPrefix(), jobID, name, timestamp, repeatJobKey))
-	if err != nil {
-		return fmt.Errorf("alertqueue: encode job arguments: %w", err)
+	jobOpts := bullmq.JobOptions{JobID: jobID, RepeatJobKey: repeatJobKey}
+	if value, ok := opts["attempts"]; ok {
+		attempts := int64Of(value)
+		jobOpts.Attempts = &attempts
 	}
-	encodedOpts, err := marshalMsgpack(opts)
-	if err != nil {
-		return fmt.Errorf("alertqueue: encode job options: %w", err)
+	if value, ok := opts["removeOnComplete"]; ok {
+		jobOpts.RemoveOnComplete = value
 	}
+	if value, ok := opts["removeOnFail"]; ok {
+		jobOpts.RemoveOnFail = value
+	}
+	if value, ok := opts["delay"]; ok {
+		delay := int64Of(value)
+		jobOpts.Delay = &delay
+	}
+	if value, ok := opts["timestamp"]; ok {
+		ts := int64Of(value)
+		jobOpts.Timestamp = &ts
+	}
+	if value, ok := opts["prevMillis"]; ok {
+		prev := int64Of(value)
+		jobOpts.PrevMillis = &prev
+	}
+	if value, ok := opts["repeat"]; ok {
+		jobOpts.Repeat = value
+	}
+	_, err := p.queue.Add(ctx, name, json.RawMessage(data), jobOpts)
+	return err
+}
 
-	delay, _ := opts["delay"].(int64)
-	if delay > 0 {
-		result, err := addDelayedJobScript.Run(ctx, p.client, []string{
-			p.key("marker"),
-			p.key("meta"),
-			p.key("id"),
-			p.key("delayed"),
-			p.key("completed"),
-			p.key("events"),
-		}, string(encodedArgs), string(data), string(encodedOpts)).Result()
-		if err != nil {
-			return fmt.Errorf("alertqueue: add delayed job: %w", err)
-		}
-		return negativeJobResult(result)
+// int64Of converts the numeric option values the callers put in the map.
+func int64Of(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case int32:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	default:
+		return 0
 	}
-
-	result, err := addStandardJobScript.Run(ctx, p.client, []string{
-		p.key("wait"),
-		p.key("paused"),
-		p.key("meta"),
-		p.key("id"),
-		p.key("completed"),
-		p.key("delayed"),
-		p.key("active"),
-		p.key("events"),
-		p.key("marker"),
-	}, string(encodedArgs), string(data), string(encodedOpts)).Result()
-	if err != nil {
-		return fmt.Errorf("alertqueue: add job: %w", err)
-	}
-	return negativeJobResult(result)
 }
 
 // buildJobArguments is the args array Scripts.addJob packs as ARGV[1]. Rules

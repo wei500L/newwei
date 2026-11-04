@@ -1,48 +1,12 @@
 package crawlworker
 
 import (
-	"bytes"
 	"errors"
 	"testing"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 )
-
-func TestScriptsAreTheVendoredBullMQScripts(t *testing.T) {
-	entries, err := scriptFiles.ReadDir("scripts")
-	if err != nil {
-		t.Fatalf("read embedded scripts: %v", err)
-	}
-	seen := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if len(name) < 4 || name[len(name)-4:] != ".lua" {
-			continue
-		}
-		expected, ok := scriptDigests[name]
-		if !ok {
-			t.Errorf("script %s is embedded but has no pinned digest", name)
-			continue
-		}
-		content, err := scriptFiles.ReadFile("scripts/" + name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if got := scriptSHA256(content); got != expected {
-			t.Errorf("%s digest = %s, want %s", name, got, expected)
-		}
-		if bytes.Contains(content, []byte("--- @include")) {
-			t.Errorf("%s still contains an unexpanded include directive", name)
-		}
-		seen++
-	}
-	if seen != len(scriptDigests) {
-		t.Fatalf("checked %d scripts, want %d", seen, len(scriptDigests))
-	}
-}
 
 func TestScriptsLoad(t *testing.T) {
 	scripts, err := loadQueueScripts()
@@ -273,7 +237,7 @@ func TestRateLimitAllQueuesSetsEveryCrawlerLimiter(t *testing.T) {
 			t.Errorf("limiter key = %q", got)
 		}
 	}
-	if _, ok := scriptDigests["moveJobFromActiveToWait-9.lua"]; !ok {
-		t.Fatal("the moveJobFromActiveToWait script must be pinned")
+	if bullmq.ScriptMoveJobFromActiveToWait.Hash() == "" {
+		t.Fatal("the shared moveJobFromActiveToWait script must be loaded")
 	}
 }

@@ -38,7 +38,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
@@ -323,7 +323,7 @@ func (t *Tracker) trackTransition(ctx context.Context, jobID string, status JobS
 		t.debugf("skipping job %s without job hash (status %s)", jobID, status)
 		return
 	}
-	orgID := bullmqwire.OrgIDFromData(job.Data)
+	orgID := bullmq.OrgIDFromData(job.Data)
 	if orgID == "" {
 		t.debugf("skipping job %s without org context (status %s)", jobID, status)
 		return

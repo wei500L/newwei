@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // TestEmbeddedScripts ensures the go:embed glob still matches every script the
@@ -23,17 +25,17 @@ func TestEmbeddedScripts(t *testing.T) {
 			t.Fatalf("script %s has no content", name)
 		}
 	}
-	raw, err := scriptFiles.ReadFile("scripts/moveToFinished.lua")
+	raw, err := bullmq.ReadScript("moveToFinished-14.lua")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Guard against copying the unexpanded command file: the include directives
 	// would make Redis fail at runtime with "attempt to call a nil value".
 	if strings.Contains(string(raw), "@include") {
-		t.Fatal("moveToFinished.lua still contains --- @include directives")
+		t.Fatal("moveToFinished-14.lua still contains --- @include directives")
 	}
 	if !strings.Contains(string(raw), "local function removeLock") {
-		t.Fatal("moveToFinished.lua is missing the expanded removeLock helper")
+		t.Fatal("moveToFinished-14.lua is missing the expanded removeLock helper")
 	}
 }
 

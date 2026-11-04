@@ -2,7 +2,6 @@ package crawlfrontierllm
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -19,9 +19,6 @@ import (
 // queue-level limiter is max 1 per 1000ms, exactly like createLlmWorker. The
 // limiter key (bull:<queue>:limiter) is shared with any NestJS worker still
 // consuming during a switchover, so both sides observe the same rate.
-
-//go:embed scripts/*.lua
-var workerScripts embed.FS
 
 type queueScripts struct {
 	moveToActive          *redis.Script
@@ -31,32 +28,16 @@ type queueScripts struct {
 	moveStalledJobsToWait *redis.Script
 }
 
+// loadWorkerScripts resolves the shared BullMQ worker commands; this package no
+// longer vendors its own copies.
 func loadWorkerScripts() (queueScripts, error) {
-	load := func(name string) (*redis.Script, error) {
-		content, err := workerScripts.ReadFile("scripts/" + name)
-		if err != nil {
-			return nil, fmt.Errorf("crawlfrontierllm: read embedded script %s: %w", name, err)
-		}
-		return redis.NewScript(string(content)), nil
-	}
-	var scripts queueScripts
-	var err error
-	if scripts.moveToActive, err = load("moveToActive-11.lua"); err != nil {
-		return queueScripts{}, err
-	}
-	if scripts.extendLock, err = load("extendLock-2.lua"); err != nil {
-		return queueScripts{}, err
-	}
-	if scripts.moveToFinished, err = load("moveToFinished-14.lua"); err != nil {
-		return queueScripts{}, err
-	}
-	if scripts.retryJob, err = load("retryJob-11.lua"); err != nil {
-		return queueScripts{}, err
-	}
-	if scripts.moveStalledJobsToWait, err = load("moveStalledJobsToWait-8.lua"); err != nil {
-		return queueScripts{}, err
-	}
-	return scripts, nil
+	return queueScripts{
+		moveToActive:          bullmq.ScriptMoveToActive,
+		extendLock:            bullmq.ScriptExtendLock,
+		moveToFinished:        bullmq.ScriptMoveToFinished,
+		retryJob:              bullmq.ScriptRetryJob,
+		moveStalledJobsToWait: bullmq.ScriptMoveStalledJobsToWait,
+	}, nil
 }
 
 // Processor runs one job. The returned value is stored as the BullMQ

@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // This file ports the pending-job scan the crawl task janitor needs. BullMQ 5
@@ -89,7 +91,7 @@ func (p *Producer) PendingJobCount(ctx context.Context) (int64, error) {
 // pendingCountsFor runs getCounts for the five pending states. The Lua script
 // maps wait/paused/active to LLEN and the remaining states to ZCARD.
 func (p *Producer) pendingCountsFor(ctx context.Context, keys queueKeys) (pendingCounts, error) {
-	result, err := p.redis.Eval(ctx, getCountsScript, []string{keys.queuePrefix()}, "wait", "paused", "delayed", "prioritized", "active").Result()
+	result, err := bullmq.ScriptGetCounts.Run(ctx, p.redis, []string{keys.queuePrefix()}, "wait", "paused", "delayed", "prioritized", "active").Result()
 	if err != nil {
 		return pendingCounts{}, err
 	}

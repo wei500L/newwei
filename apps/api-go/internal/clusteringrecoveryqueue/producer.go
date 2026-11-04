@@ -5,19 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
-// Producer adds news-event clustering recovery jobs to the BullMQ queue using
-// the official standard-add script. The caller claims the Mongo failure group
-// first; a failed enqueue is returned as an error so the caller can release
-// the claim instead of pretending the job was accepted.
+// Producer adds news-event clustering recovery jobs to the BullMQ queue through
+// the shared bullmq.Queue. The caller claims the Mongo failure group first; a
+// failed enqueue is returned as an error so the caller can release the claim
+// instead of pretending the job was accepted.
 type Producer struct {
-	client  *redis.Client
-	keys    keys
-	scripts queueScripts
+	client *redis.Client
+	queue  *bullmq.Queue
+	keys   keys
 }
 
 // NewProducer builds a producer over the shared Redis client. The client stays
@@ -26,25 +27,21 @@ func NewProducer(client *redis.Client, prefix string) (*Producer, error) {
 	if client == nil {
 		return nil, fmt.Errorf("clusteringrecoveryqueue: producer requires a redis client")
 	}
-	scripts, err := loadQueueScripts()
-	if err != nil {
-		return nil, err
-	}
 	return &Producer{
-		client:  client,
-		keys:    newKeys(prefix, QueueName),
-		scripts: scripts,
+		client: client,
+		queue:  bullmq.NewQueue(client, prefix, QueueName),
+		keys:   newKeys(prefix, QueueName),
 	}, nil
 }
 
 // Add enqueues one LLM backfill job under the caller-provided BullMQ job id.
 //
 // removeOnComplete=true, attempts=1 and the shared failed retention
-// ({age:604800,count:10000}) reproduce the NestJS queue.add options. The
-// job data is JSON with the exact NestJS field names, so a NestJS worker can
-// consume a Go-produced job and vice versa.
+// ({age:604800,count:10000}) reproduce the NestJS queue.add options. The job data
+// is JSON with the exact NestJS field names, so a NestJS worker can consume a
+// Go-produced job and vice versa.
 func (p *Producer) Add(ctx context.Context, jobID string, payload Payload) error {
-	if p == nil || p.client == nil {
+	if p == nil || p.queue == nil {
 		return fmt.Errorf("clusteringrecoveryqueue: producer is not configured")
 	}
 	if jobID == "" {
@@ -57,49 +54,15 @@ func (p *Producer) Add(ctx context.Context, jobID string, payload Payload) error
 	if err != nil {
 		return fmt.Errorf("clusteringrecoveryqueue: encode job data: %w", err)
 	}
-	packedOpts, err := pack(defaultRedisJobOptions())
-	if err != nil {
-		return err
-	}
-	packedArgs, err := pack([]any{
-		p.keys.Base,
-		jobID,
-		payload.JobType,
-		time.Now().UnixMilli(),
-		nil, // parentKey
-		nil, // parent dependencies key
-		nil, // parent data
-		nil, // repeat job key
-		nil, // deduplication key
-	})
-	if err != nil {
-		return err
-	}
-
-	result, err := p.scripts.addStandardJob.Run(ctx, p.client,
-		[]string{
-			p.keys.Wait,
-			p.keys.Paused,
-			p.keys.Meta,
-			p.keys.ID,
-			p.keys.Completed,
-			p.keys.Delayed,
-			p.keys.Active,
-			p.keys.Events,
-			p.keys.Marker,
-		},
-		packedArgs,
-		string(data),
-		packedOpts,
-	).Result()
-	if err != nil {
+	attempts := int64(1)
+	age, count := int64(FailedRetentionAgeSeconds), int64(FailedRetentionCount)
+	if _, err := p.queue.Add(ctx, payload.JobType, data, bullmq.JobOptions{
+		JobID:            jobID,
+		Attempts:         &attempts,
+		RemoveOnComplete: true,
+		RemoveOnFail:     bullmq.KeepJobs{Age: &age, Count: &count},
+	}); err != nil {
 		return fmt.Errorf("clusteringrecoveryqueue: add job: %w", err)
-	}
-	if code := toInt64(result); code < 0 {
-		return fmt.Errorf("clusteringrecoveryqueue: add job rejected with BullMQ code %d", code)
-	}
-	if returned := toText(result); returned == "" {
-		return fmt.Errorf("clusteringrecoveryqueue: add job returned no job id")
 	}
 	return nil
 }
@@ -113,9 +76,9 @@ func (p *Producer) Add(ctx context.Context, jobID string, payload Payload) error
 //
 // The probe is intentionally read-only and does not look at the job hash:
 // BullMQ removes the hash of a completed job, so hash absence alone would also
-// make the caller recover a group whose worker is between the completion
-// script and the Mongo status write. The six state containers are the exact
-// set BullMQ 5.63.2 uses for a non-flow job.
+// make the caller recover a group whose worker is between the completion script
+// and the Mongo status write. The six state containers are the exact set BullMQ
+// 5.63.2 uses for a non-flow job.
 func (p *Producer) JobIsActive(ctx context.Context, jobID string) (bool, error) {
 	if p == nil || p.client == nil {
 		return false, fmt.Errorf("clusteringrecoveryqueue: producer is not configured")

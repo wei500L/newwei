@@ -1,6 +1,6 @@
 package queueorgstats
 
-import "github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+import "github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 
 // The itemPipeline queue name and the org counter layout. QueueOrgStatsService
 // owns the same names and TTLs; the values below must stay in sync with
@@ -45,7 +45,7 @@ const (
 // queueKeys is the BullMQ key set of the itemPipeline queue. The event stream
 // key (`bull:itemPipeline:events`) is the only key the tracker reads directly
 // through it; the org counter keys are not BullMQ keys and are built below.
-var queueKeys = bullmqwire.NewKeys(bullmqwire.Prefix, itemPipelineQueueName)
+var queueKeys = bullmq.NewKeys(bullmq.Prefix, itemPipelineQueueName)
 
 // metaKey is QueueOrgStatsService.metaKey: queue:<queue>:job:<jobId>:meta.
 func metaKey(jobID string) string {
