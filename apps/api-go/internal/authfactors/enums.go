@@ -1,7 +1,5 @@
 package authfactors
 
-import "time"
-
 // The seven exact paths owned by this unit.
 const (
 	PathMfaStatus  = "/api/auth/mfa"
@@ -49,10 +47,6 @@ const (
 	mfaLockHashHexChars = 60
 	// mfaLockWaitSeconds is the GET_LOCK timeout. NestJS uses the same value.
 	mfaLockWaitSeconds = 10
-	// mfaLockReleaseTimeout bounds RELEASE_LOCK. It is derived from
-	// context.WithoutCancel so a cancelled client request can never leave the
-	// lock unreleased.
-	mfaLockReleaseTimeout = 5 * time.Second
 )
 
 // TOTP parameters. RFC 6238 with SHA-1, six digits and a 30 second period,

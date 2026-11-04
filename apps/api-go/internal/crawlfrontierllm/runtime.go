@@ -9,7 +9,6 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 )
 
 // RuntimeOptions wires the whole ownership switch: one producer, one LLM
@@ -21,9 +20,6 @@ type RuntimeOptions struct {
 	Env          LLMGatewayEnv
 	Logs         RequestLogSink
 	Workflows    *crawlworkflow.Service
-	// Mongo is the owned request-log connection opened by the wiring when no
-	// shared connection existed; Runtime closes it after both workers drain.
-	Mongo *dashboardstats.Connection
 }
 
 // Runtime owns the two Frontier LLM workers.
@@ -32,7 +28,6 @@ type Runtime struct {
 	judge    *Worker
 	learn    *Worker
 	ownRedis *redis.Client
-	mongo    *dashboardstats.Connection
 }
 
 // NewRuntime builds the service and both queue consumers. No Redis command is
@@ -52,7 +47,7 @@ func NewRuntime(options RuntimeOptions) (*Runtime, error) {
 		DB: options.DB, Redis: options.Redis, Enqueuer: producer, LLM: llm,
 		Workflows: options.Workflows,
 	})
-	runtime := &Runtime{service: service, ownRedis: ownRedis, mongo: options.Mongo}
+	runtime := &Runtime{service: service, ownRedis: ownRedis}
 	var err error
 	runtime.judge, err = newWorker(JudgeQueueName, options.Redis, newBlockingClient(options.RedisOptions, options.RedisOptions.DB), runtime.dispatch)
 	if err != nil {
@@ -109,11 +104,6 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	if r.ownRedis != nil {
 		if err := r.ownRedis.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	if r.mongo != nil {
-		if err := r.mongo.Disconnect(ctx); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

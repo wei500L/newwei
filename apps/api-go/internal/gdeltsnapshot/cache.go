@@ -3,13 +3,11 @@ package gdeltsnapshot
 import (
 	"context"
 	"errors"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // errCacheUnavailable is reported when the Redis client is missing. The
@@ -93,28 +91,13 @@ func (c redisCache) SetMany(ctx context.Context, entries ...cacheEntry) error {
 	return err
 }
 
-// redisLock is lockPort over the shared Redis client. The physical key, the
-// token shape, the renewal interval and the compare-and-delete release all
-// match CacheService so NestJS and Go contend for one lease.
+// redisLock is lockPort over the shared Redis client. The whole SET NX PX /
+// renewal / token-checked release protocol lives in cronlock; this adapter only
+// supplies the physical key prefix and the nil-client guard so NestJS and every
+// Go owner contend for the same lease.
 type redisLock struct {
 	client *redis.Client
 }
-
-// releaseLockScript deletes the lease only when the owner token still matches.
-var releaseLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      end
-      return 0
-    `)
-
-// renewLockScript extends the lease only while the owner token still matches.
-var renewLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("pexpire", KEYS[1], ARGV[2])
-      end
-      return 0
-    `)
 
 // WithLock mirrors CacheService.withLock: one SET NX PX attempt, auto-renewal
 // every max(500ms, ttl/3) while the runner is in flight, then a best-effort
@@ -124,68 +107,5 @@ func (l redisLock) WithLock(ctx context.Context, key string, ttl time.Duration, 
 	if l.client == nil {
 		return false, errCacheUnavailable
 	}
-	lockKey := "lock:" + key
-	token, err := newLockToken()
-	if err != nil {
-		return false, err
-	}
-	acquired, err := l.client.SetNX(ctx, lockKey, token, ttl).Result()
-	if err != nil {
-		return false, err
-	}
-	if !acquired {
-		return false, nil
-	}
-
-	stopRenew := l.startRenewal(lockKey, token, ttl)
-	// NestJS releases in a finally block and swallows release errors. The
-	// release therefore runs even after a cancelled run context, so a shutdown
-	// leaves the lease released instead of waiting for the TTL. stopRenew
-	// returns only after the renewal goroutine has exited, so a renewal can
-	// never race with the release.
-	defer func() {
-		stopRenew()
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = releaseLockScript.Run(releaseCtx, l.client, []string{lockKey}, token).Err()
-	}()
-	return true, runner(ctx)
-}
-
-// startRenewal keeps the lease alive while the rebuild runs. The returned stop
-// function does not return until the renewal goroutine has exited, so no
-// renewal can race with the release.
-func (l redisLock) startRenewal(key, token string, ttl time.Duration) func() {
-	interval := ttl / 3
-	if interval < 500*time.Millisecond {
-		interval = 500 * time.Millisecond
-	}
-	ticker := time.NewTicker(interval)
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	safego.Go("gdeltsnapshot.cache.renewLock", func() {
-		defer close(done)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				_ = safego.Call("gdeltsnapshot.cache.renewLock.tick", func() error {
-					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					_ = renewLockScript.Run(renewCtx, l.client,
-						[]string{key}, token, strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
-					return nil
-				})
-			}
-		}
-	})
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			close(stop)
-			<-done
-		})
-	}
+	return cronlock.New(l.client).WithLease(ctx, "lock:"+key, ttl, cronlock.RenewBestEffort, runner)
 }

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func integrationDatabaseURL(t *testing.T) string {
@@ -29,7 +29,7 @@ func integrationDatabaseURL(t *testing.T) string {
 
 func setupPipelineJobs(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := usersettings.OpenMySQLFromURL(integrationDatabaseURL(t))
+	db, err := mysqldb.Open(integrationDatabaseURL(t), mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // JanitorConfig mirrors CRAWL_TASK_JANITOR_* and the two stale timeouts. The
@@ -138,8 +139,9 @@ func (s *JanitorScheduler) runTick(ctx context.Context) error {
 			return nil
 		}
 	}
-	_, err = withRedisLock(ctx, s.redis, janitorLockKey,
+	_, err = cronlock.New(s.redis).WithLease(ctx, "lock:"+janitorLockKey,
 		time.Duration(s.config.LockTTLMs)*time.Millisecond,
+		cronlock.RenewBestEffort,
 		func(runCtx context.Context) error { return s.cleanupStaleTasks(runCtx, now) })
 	return err
 }

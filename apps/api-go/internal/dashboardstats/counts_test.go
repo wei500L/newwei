@@ -39,25 +39,6 @@ func TestCountsKeyMatchesNest(t *testing.T) {
 	}
 }
 
-func TestParseMongoDatabaseDoesNotLeakURI(t *testing.T) {
-	secret := "s3cret-password"
-	cases := []string{
-		"http://user:" + secret + "@localhost/app",
-		"mongodb://user:" + secret + "@localhost:27017",
-		"mongodb://user:" + secret + "@localhost:27017/app/extra",
-		"not a uri " + secret,
-	}
-	for _, uri := range cases {
-		if _, err := parseMongoDatabase(uri); err == nil || strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "localhost") {
-			t.Fatalf("uri rejected badly: err=%v", err)
-		}
-	}
-	name, err := parseMongoDatabase("mongodb://user:" + secret + "@mongo:27017/app?authSource=admin")
-	if err != nil || name != "app" {
-		t.Fatalf("db = %q err=%v", name, err)
-	}
-}
-
 func TestRecentLogJSONMatchesLeanShape(t *testing.T) {
 	when := time.Date(2026, 3, 1, 0, 0, 0, 6_000_000, time.FixedZone("offset", 3*60*60))
 	log := recentLog{

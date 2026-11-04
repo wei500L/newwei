@@ -31,7 +31,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 type schedulerHarness struct {
@@ -56,7 +56,7 @@ func newSchedulerHarness(t *testing.T) *schedulerHarness {
 	if redisAddr == "" {
 		t.Skip("API_GO_TEST_REDIS_ADDR not set — integration test requires Redis")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

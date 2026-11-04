@@ -36,8 +36,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authn"
 	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 const (
@@ -83,7 +83,7 @@ func newHarness(t *testing.T) *harness {
 		t.Skip("API_GO_TEST_REDIS_ADDR not set — realtime integration tests require Redis")
 	}
 
-	baseDB, err := usersettings.OpenMySQLFromURL(databaseURL)
+	baseDB, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -97,7 +97,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("parse DATABASE_URL: %v", err)
 	}
 	parsedURL.Path = "/" + databaseName
-	db, err := usersettings.OpenMySQLFromURL(parsedURL.String())
+	db, err := mysqldb.Open(parsedURL.String(), mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open integration database: %v", err)
 	}

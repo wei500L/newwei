@@ -11,8 +11,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/qualityoverview"
 )
 
@@ -26,19 +26,12 @@ func wireQualityOverview(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: quality overview go takeover requires mysql, jwt, and redis")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: quality overview go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	handler := qualityoverview.NewHandler(authenticator, qualityoverview.NewService(db, (*mongoConn).Database(), redisClient))
+	handler := qualityoverview.NewHandler(authenticator, qualityoverview.NewService(db, mongoConn.Database(), redisClient))
 	policy := cors.New(cfg.CorsOrigin)
 	gateway.RegisterGoHandler(legacyproxy.QualityOverviewKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {

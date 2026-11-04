@@ -31,7 +31,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/alertqueue"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func openAlertRulesDB(t *testing.T) *sql.DB {
@@ -40,7 +40,7 @@ func openAlertRulesDB(t *testing.T) *sql.DB {
 	if url == "" {
 		t.Skip("DATABASE_URL not set — integration test requires a MySQL service")
 	}
-	db, err := usersettings.OpenMySQLFromURL(url)
+	db, err := mysqldb.Open(url, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

@@ -36,8 +36,8 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/analysisqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
 
 const analysisTestPrefix = analysisqueue.DefaultPrefix
@@ -48,7 +48,7 @@ func integrationDatabase(t *testing.T) *sql.DB {
 	if url == "" {
 		t.Skip("DATABASE_URL not set - integration test requires MySQL")
 	}
-	db, err := usersettings.OpenMySQLFromURL(url)
+	db, err := mysqldb.Open(url, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

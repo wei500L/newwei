@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -70,6 +71,7 @@ type Service struct {
 	registry     SourceRegistry
 	secrets      RuntimeSecrets
 	store        Store
+	lock         *cronlock.Lock
 	client       *fetchClient
 	now          func() time.Time
 	env          func(string) string
@@ -93,6 +95,7 @@ func NewService(cfg ServiceConfig) *Service {
 		registry:     cfg.Registry,
 		secrets:      cfg.Secrets,
 		store:        cfg.Store,
+		lock:         cronlock.NewStore(cfg.Store),
 		client:       newFetchClient(),
 		now:          now,
 		env:          env,
@@ -145,15 +148,16 @@ func (s *Service) FetchSource(ctx context.Context, sourceID string, forceRefresh
 		return s.refresh(ctx, meta, resolvedID, sourceID, getter, freshKey, staleKey)
 	}
 
-	lock, err := s.acquireRefreshLock(ctx, freshKey)
-	if err != nil {
-		return SourceResponse{}, FetchFailedAPIError(sourceID, err)
+	var response SourceResponse
+	var refreshErr error
+	acquired, lockErr := s.lock.WithLease(ctx, "lock:"+freshKey+":refresh", refreshLockTTL, cronlock.RenewBestEffort, func(context.Context) error {
+		response, refreshErr = refresh()
+		return nil
+	})
+	if lockErr != nil {
+		return SourceResponse{}, FetchFailedAPIError(sourceID, lockErr)
 	}
-	if lock != nil {
-		renewStop := lock.startAutoRenew()
-		response, refreshErr := refresh()
-		renewStop()
-		lock.release()
+	if acquired {
 		if refreshErr != nil {
 			return SourceResponse{}, refreshErr
 		}

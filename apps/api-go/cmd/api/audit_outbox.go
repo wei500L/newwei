@@ -9,6 +9,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/auditoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // wireAuditOutbox builds the audit-log outbox replay scheduler when
@@ -28,7 +29,7 @@ func wireAuditOutbox(cfg config.Config, db *sql.DB, redisClient *redis.Client) (
 	}
 	scheduler := auditoutbox.NewScheduler(auditoutbox.Deps{
 		Repository: auditoutbox.NewMySQLRepository(db),
-		Locks:      auditoutbox.NewRedisLockStore(redisClient),
+		Locks:      cronlock.New(redisClient),
 	})
 	log.Printf("api-go: audit log outbox scheduler enabled mode=%s", "go")
 	return scheduler, nil

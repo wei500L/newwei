@@ -13,13 +13,13 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/itempipeline"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsclassifier"
 	"github.com/wei500L/newwei/apps/api-go/internal/newspipeline"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
@@ -76,7 +76,7 @@ func wireItemPipelineWorker(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	health *vectorclient.Health,
 ) (*itemPipelineRuntime, error) {
 	if !cfg.BullMQWorkersEnabled {
@@ -86,14 +86,7 @@ func wireItemPipelineWorker(
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: item pipeline worker go takeover requires mysql and redis")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: item pipeline worker go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	mongoDatabase := (*mongoConn).Database()
+	mongoDatabase := mongoConn.Database()
 	if health == nil {
 		health = &vectorclient.Health{}
 	}

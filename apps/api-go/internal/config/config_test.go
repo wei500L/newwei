@@ -764,3 +764,38 @@ func TestLLMGatewayProfileEnvProjectionPriorities(t *testing.T) {
 		t.Fatal("NODE_ENV=production must be reported")
 	}
 }
+
+func TestDatabasePoolBoundsDefaults(t *testing.T) {
+	cfg := loadDefaults(t)
+	if cfg.DatabaseMaxOpenConns != 50 || cfg.DatabaseMaxIdleConns != 10 || cfg.DatabaseConnMaxLifetimeSeconds != 300 {
+		t.Fatalf("pool defaults = %d/%d/%d, want 50/10/300",
+			cfg.DatabaseMaxOpenConns, cfg.DatabaseMaxIdleConns, cfg.DatabaseConnMaxLifetimeSeconds)
+	}
+}
+
+func TestDatabasePoolBoundsOverrides(t *testing.T) {
+	cfg, err := loadWith(t, map[string]string{
+		"DATABASE_MAX_OPEN_CONNS":            "80",
+		"DATABASE_MAX_IDLE_CONNS":            "0",
+		"DATABASE_CONN_MAX_LIFETIME_SECONDS": "600",
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DatabaseMaxOpenConns != 80 || cfg.DatabaseMaxIdleConns != 0 || cfg.DatabaseConnMaxLifetimeSeconds != 600 {
+		t.Fatalf("pool overrides = %d/%d/%d", cfg.DatabaseMaxOpenConns, cfg.DatabaseMaxIdleConns, cfg.DatabaseConnMaxLifetimeSeconds)
+	}
+}
+
+func TestDatabasePoolBoundsRejectInvalid(t *testing.T) {
+	cases := map[string]string{
+		"DATABASE_MAX_OPEN_CONNS":            "0",
+		"DATABASE_MAX_IDLE_CONNS":            "-1",
+		"DATABASE_CONN_MAX_LIFETIME_SECONDS": "abc",
+	}
+	for key, value := range cases {
+		if _, err := loadWith(t, map[string]string{key: value}); err == nil {
+			t.Fatalf("Load() should reject %s=%q", key, value)
+		}
+	}
+}

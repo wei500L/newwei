@@ -13,10 +13,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/archivepreparation"
 	"github.com/wei500L/newwei/apps/api-go/internal/archivepreparationworker"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // archivePreparationRuntime owns the archivePreparation BullMQ consumer and its
@@ -58,18 +58,11 @@ func (r *archivePreparationRuntime) Close(ctx context.Context) error {
 // wireArchivePreparationWorker constructs the worker only when
 // API_GO_ARCHIVE_PREPARATION_WORKER_MODE=go. The legacy default returns
 // (nil, nil) and registers/claims nothing.
-func wireArchivePreparationWorker(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn **dashboardstats.Connection) (*archivePreparationRuntime, error) {
+func wireArchivePreparationWorker(cfg config.Config, db *sql.DB, redisClient *redis.Client, mongoConn *mongodb.Client) (*archivePreparationRuntime, error) {
 	if db == nil || redisClient == nil {
 		return nil, fmt.Errorf("api-go: archive preparation worker go takeover requires mysql and redis")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return nil, fmt.Errorf("api-go: archive preparation worker go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	database := (*mongoConn).Database()
+	database := mongoConn.Database()
 
 	settingsService := dataruntimesettings.NewService(db, redisClient, dataruntimesettings.Config{})
 	models := litellmcompat.NewClient(db, llmlogs.NewModelRequestWriter(db, database), litellmcompat.Config{

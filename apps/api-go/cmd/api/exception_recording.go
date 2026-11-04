@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -12,22 +11,16 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/exec"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // exceptionRecordTimeout bounds one best-effort insert, matching the legacy 404
 // recorder: a slow or unreachable Mongo must not keep a goroutine alive.
 const exceptionRecordTimeout = 5 * time.Second
-
-// errNoMongoHandle reports a recorder built without a connection handle.
-var errNoMongoHandle = errors.New("no Mongo connection handle")
-
-// errNoMongoURI reports a recorder with no MONGO_URI configured.
-var errNoMongoURI = errors.New("MONGO_URI is not configured")
 
 // exceptionRecorder owns the process-wide exception-event recorder shared by the
 // REST error exits (authhttp.SetExceptionRecorder) and the GraphQL executor
@@ -48,11 +41,9 @@ var errNoMongoURI = errors.New("MONGO_URI is not configured")
 //
 // # Laziness
 //
-// The service is built on the first recorded event rather than at startup. The
-// default configuration proxies everything to NestJS, so opening a second Mongo
-// client at boot would change the process's resource use for a side channel that
-// may never be used. Once opened, the connection is handed back to the shared
-// *dashboardstats.Connection so the existing teardown closes it.
+// The service is built on the first recorded event rather than at startup; the
+// shared Mongo client itself is owned and closed by main, so this recorder only
+// lazily wraps it in an exceptioningest service.
 //
 // # Best effort
 //
@@ -60,7 +51,7 @@ var errNoMongoURI = errors.New("MONGO_URI is not configured")
 // changes a response, never blocks one, and has no retry, queue or second store.
 type exceptionRecorder struct {
 	cfg        config.Config
-	mongoConn  **dashboardstats.Connection
+	mongoConn  *mongodb.Client
 	redis      *redis.Client
 	mu         sync.Mutex
 	service    *exceptioningest.Service
@@ -72,7 +63,7 @@ type exceptionRecorder struct {
 
 // newExceptionRecorder builds the recorder. A nil connection handle yields nil so
 // the caller installs nothing.
-func newExceptionRecorder(cfg config.Config, mongoConn **dashboardstats.Connection, redisClient *redis.Client) *exceptionRecorder {
+func newExceptionRecorder(cfg config.Config, mongoConn *mongodb.Client, redisClient *redis.Client) *exceptionRecorder {
 	if mongoConn == nil {
 		return nil
 	}
@@ -147,30 +138,14 @@ func (r *exceptionRecorder) enqueue(ctx context.Context, event exceptioningest.E
 	})
 }
 
-// sharedService returns the service, opening the shared Mongo handle on first
-// use. A configuration that cannot open one disables recording permanently and
-// logs once, so a broken DSN cannot turn every error response into a dial attempt.
+// sharedService returns the service built over the shared Mongo client.
 func (r *exceptionRecorder) sharedService() *exceptioningest.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.service != nil || r.disabled {
 		return r.service
 	}
-	if *r.mongoConn == nil {
-		if r.cfg.MongoURI == "" {
-			log.Printf("api-go: exception recording disabled: %v", errNoMongoURI)
-			r.disabled = true
-			return nil
-		}
-		conn, err := dashboardstats.Open(r.cfg.MongoURI)
-		if err != nil {
-			log.Printf("api-go: exception recording disabled: %v", err)
-			r.disabled = true
-			return nil
-		}
-		*r.mongoConn = conn
-	}
-	r.service = exceptioningest.NewService((*r.mongoConn).Database(), r.redis, exceptioningest.Config{
+	r.service = exceptioningest.NewService(r.mongoConn.Database(), r.redis, exceptioningest.Config{
 		UserRateLimit:          r.cfg.ObservabilityClientExceptionUserRateLimit,
 		IPRateLimit:            r.cfg.ObservabilityClientExceptionIPRateLimit,
 		RateLimitWindowSeconds: r.cfg.ObservabilityClientExceptionWindowSeconds,

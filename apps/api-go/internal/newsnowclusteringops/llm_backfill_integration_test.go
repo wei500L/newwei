@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 const createNewsEventTable = "CREATE TABLE IF NOT EXISTS NewsEvent (" +
@@ -54,7 +54,7 @@ func integrationDB(t *testing.T) *sql.DB {
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL not set — integration test requires a MySQL service")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}

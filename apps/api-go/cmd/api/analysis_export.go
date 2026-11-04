@@ -13,11 +13,11 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
 // wireAnalysisExport registers the two analysis CSV export POST routes only when
@@ -40,25 +40,18 @@ func wireAnalysisExport(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	auth *authhttp.Authenticator,
 ) error {
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: analysis export go takeover requires mysql, jwt, and redis")
-	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: analysis export go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
 	}
 
 	authenticator := accountsecurity.NewAuthenticator(auth)
 
 	itemService := itemsreading.NewService(itemsreading.Options{
 		DB:    db,
-		Mongo: (*mongoConn).Database(),
+		Mongo: mongoConn.Database(),
 		Redis: redisClient,
 		// The candidate selection keeps the interactive read-model, vector and
 		// rerank configuration; only the page size differs (5000 instead of 50).

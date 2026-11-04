@@ -23,8 +23,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 func openIntegrationDB(t *testing.T) *sql.DB {
@@ -33,7 +33,7 @@ func openIntegrationDB(t *testing.T) *sql.DB {
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL not set — integration test requires a MySQL service")
 	}
-	db, err := usersettings.OpenMySQLFromURL(databaseURL)
+	db, err := mysqldb.Open(databaseURL, mysqldb.PoolConfig{})
 	if err != nil {
 		t.Fatalf("open mysql: %v", err)
 	}
@@ -52,13 +52,13 @@ func openIntegrationRedis(t *testing.T) *redis.Client {
 	return client
 }
 
-func openIntegrationMongo(t *testing.T) *dashboardstats.Connection {
+func openIntegrationMongo(t *testing.T) *mongodb.Client {
 	t.Helper()
 	uri := strings.TrimSpace(os.Getenv("MONGO_URI"))
 	if uri == "" {
 		t.Skip("MONGO_URI not set — integration test requires a Mongo service")
 	}
-	connection, err := dashboardstats.Open(uri)
+	connection, err := mongodb.Open(uri)
 	if err != nil {
 		t.Fatalf("open mongo: %v", err)
 	}

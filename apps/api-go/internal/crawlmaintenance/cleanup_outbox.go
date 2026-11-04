@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -112,8 +113,9 @@ func (s *CleanupOutboxScheduler) runTick(ctx context.Context) error {
 	if s == nil || s.db == nil || s.redis == nil {
 		return fmt.Errorf("crawlmaintenance: cleanup outbox is not fully configured")
 	}
-	_, err := withRedisLock(ctx, s.redis, cleanupOutboxLockKey,
+	_, err := cronlock.New(s.redis).WithLease(ctx, "lock:"+cleanupOutboxLockKey,
 		time.Duration(cleanupOutboxLockTTLMs)*time.Millisecond,
+		cronlock.RenewBestEffort,
 		func(runCtx context.Context) error {
 			if err := s.replayBatch(runCtx); err != nil {
 				s.logf("crawlmaintenance: failed to process crawl cleanup outbox batch: %v", err)

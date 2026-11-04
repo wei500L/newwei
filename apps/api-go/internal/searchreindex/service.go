@@ -10,12 +10,25 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // finalizeTimeout bounds the best-effort status write, lock release and prune
 // that run after a rebuild finishes or the service is shutting down.
 const finalizeTimeout = 10 * time.Second
+
+// reindexLockTTL is SEARCH_REINDEX_LOCK_TTL_MS from search-reindex.service.ts.
+const reindexLockTTL = 5 * time.Minute
+
+// reindexLockKeyPrefix is the physical lock key. SearchReindexService passes the
+// logical name "search:reindex:org:<orgId>" to CacheService, which adds the
+// "lock:" prefix; the physical key is kept identical so Go and NestJS exclude
+// each other during the rollout.
+const reindexLockKeyPrefix = "lock:search:reindex:org:"
+
+// reindexLockKey builds the physical Redis lock key for one organization.
+func reindexLockKey(orgID string) string { return reindexLockKeyPrefix + orgID }
 
 // MachineAuthenticator resolves an mtk_ machine token, mirroring the
 // MachineTokenService lookup the global NestJS JwtAuthGuard performs for every
@@ -74,9 +87,9 @@ func (s *Service) Close() {
 // starts the background rebuild. It returns errReindexInProgress when another run
 // already holds the lock.
 func (s *Service) startReindex(ctx context.Context, orgID string) (Job, error) {
-	lock, acquired, err := acquireReindexLock(ctx, s.jobs.redis, orgID)
+	lease, acquired, err := cronlock.New(s.jobs.redis).Acquire(ctx, reindexLockKey(orgID), reindexLockTTL, cronlock.RenewBestEffort)
 	if err != nil {
-		return Job{}, err
+		return Job{}, fmt.Errorf("%w: %v", errRedis, err)
 	}
 	if !acquired {
 		return Job{}, errReindexInProgress
@@ -84,14 +97,14 @@ func (s *Service) startReindex(ctx context.Context, orgID string) (Job, error) {
 	job, err := s.jobs.create(ctx, orgID, time.Now())
 	if err != nil {
 		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), finalizeTimeout)
-		_ = lock.release(releaseCtx)
+		_ = lease.Release(releaseCtx)
 		releaseCancel()
 		return Job{}, err
 	}
 	s.wait.Add(1)
 	safego.Go("searchreindex.service.runReindex", func() {
 		defer s.wait.Done()
-		s.runReindex(job.ID, orgID, lock)
+		s.runReindex(job.ID, orgID, lease)
 	})
 	return job, nil
 }
@@ -105,15 +118,13 @@ func (s *Service) getJob(ctx context.Context, orgID, jobID string) (*Job, error)
 // runReindex is the background transition sequence: running, the actual rebuild
 // with per-batch progress, then completed or failed, and finally stop renewing,
 // release the organization lock and prune the current organization's history.
-func (s *Service) runReindex(jobID, orgID string, lock *reindexLock) {
+func (s *Service) runReindex(jobID, orgID string, lock *cronlock.Lease) {
 	ctx := s.baseCtx
 	finishCtx := context.WithoutCancel(ctx)
-	stopRenew := lock.startAutoRenew(ctx)
 	defer func() {
-		stopRenew()
 		releaseCtx, releaseCancel := context.WithTimeout(finishCtx, finalizeTimeout)
 		defer releaseCancel()
-		_ = lock.release(releaseCtx)
+		_ = lock.Release(releaseCtx)
 		_ = s.jobs.prune(releaseCtx, orgID, time.Now())
 	}()
 

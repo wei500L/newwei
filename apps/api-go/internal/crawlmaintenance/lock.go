@@ -7,96 +7,21 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
-// Lock scripts mirror CacheService.releaseLock/extendLock: both compare the
-// owner token first, so a lease that expired and was taken by another process is
-// never released or extended by the previous owner.
-var (
-	releaseLockScript = redis.NewScript(`
+// releaseLockScript deletes a lease only while the owner token still matches.
+// The active-organization cache fill uses it directly; the cron mutual-exclusion
+// leases moved to cronlock.
+var releaseLockScript = redis.NewScript(`
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
       end
       return 0
     `)
-	renewLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("pexpire", KEYS[1], ARGV[2])
-      end
-      return 0
-    `)
-)
-
-// withRedisLock is CacheService.withLock: one SET NX PX attempt on
-// "lock:"+key, auto-renewal every max(500ms, ttl/3) while the runner is in
-// flight, then a best-effort token-checked release. A lease held by another
-// process returns acquired=false and the runner never starts.
-func withRedisLock(ctx context.Context, client *redis.Client, key string, ttl time.Duration, runner func(context.Context) error) (bool, error) {
-	if client == nil {
-		return false, errRedisUnavailable
-	}
-	lockKey := "lock:" + key
-	token, err := newLockToken()
-	if err != nil {
-		return false, err
-	}
-	acquired, err := client.SetNX(ctx, lockKey, token, ttl).Result()
-	if err != nil {
-		return false, err
-	}
-	if !acquired {
-		return false, nil
-	}
-
-	stop := startLockRenewal(client, lockKey, token, ttl)
-	defer func() {
-		stop()
-		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = releaseLockScript.Run(releaseCtx, client, []string{lockKey}, token).Err()
-	}()
-	return true, runner(ctx)
-}
-
-// startLockRenewal keeps the lease alive while the runner is in flight. The
-// returned stop function only returns after the renewal goroutine exited, so a
-// renewal can never race with the release.
-func startLockRenewal(client *redis.Client, lockKey, token string, ttl time.Duration) func() {
-	interval := ttl / 3
-	if interval < 500*time.Millisecond {
-		interval = 500 * time.Millisecond
-	}
-	ticker := time.NewTicker(interval)
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	safego.Go("crawlmaintenance.lock.renewLock", func() {
-		defer close(done)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				_ = safego.Call("crawlmaintenance.lock.renewLock.tick", func() error {
-					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					_ = renewLockScript.Run(renewCtx, client, []string{lockKey}, token, ttl.Milliseconds()).Err()
-					return nil
-				})
-			}
-		}
-	})
-	return func() {
-		close(stop)
-		<-done
-	}
-}
 
 // claimSchedulerTick mirrors multi-tenant-scheduler claimSchedulerTick: the
 // documented tick-gate key with no "lock:" prefix, {"claimedAt": ISO} as value
-// and EX ceil(ttl/1000).
+// and EX ceil(ttl/1000). It is never released, so it stays out of cronlock.
 func claimSchedulerTick(ctx context.Context, client *redis.Client, key string, ttl time.Duration, now time.Time) (bool, error) {
 	if client == nil {
 		return false, errRedisUnavailable
@@ -110,7 +35,7 @@ func claimSchedulerTick(ctx context.Context, client *redis.Client, key string, t
 }
 
 // newLockToken produces the random UUID CacheService uses as the lock owner
-// token.
+// token. The active-organization cache fill uses it directly.
 func newLockToken() (string, error) {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {

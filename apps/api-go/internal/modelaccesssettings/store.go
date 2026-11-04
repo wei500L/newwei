@@ -21,9 +21,9 @@ import (
 // depends on) with the same default, so both implementations agree when no
 // SystemSetting row exists.
 type Config struct {
-	// DatabaseURL is the same MySQL DSN the shared pool uses. It is consumed only
-	// by the dedicated lock session (lock.go); every other statement uses the
-	// shared pool.
+	// DatabaseURL is the shared MySQL DSN carried through config for wiring. The
+	// settings lock no longer opens its own session pool: lock.go holds GET_LOCK
+	// on a connection from the shared pool through mysqllock.
 	DatabaseURL string
 
 	// ModelServiceEnabled is MODEL_SERVICE_ENABLED (envBoolean, default false).
@@ -73,7 +73,7 @@ func NewService(db *sql.DB, redisClient *redis.Client, cfg Config) *Service {
 		settings: &mysqlSettings{db: db},
 		cache:    &redisCache{client: redisClient},
 		audit:    &mysqlAuditor{db: db},
-		locks:    &mysqlLock{dsn: cfg.DatabaseURL},
+		locks:    &mysqlLock{db: db},
 		identity: &mysqlIdentity{db: db},
 		cfg:      cfg,
 	}

@@ -15,13 +15,13 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/clusteringrecoveryqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbackfilljobs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsindicator"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 )
@@ -94,7 +94,7 @@ func wireNewsBackfillJobs(
 	db *sql.DB,
 	redisClient *redis.Client,
 	authenticator *authhttp.Authenticator,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 ) (*newsBackfillRuntime, error) {
 	manualGo := true
 	workerGo := true
@@ -108,14 +108,7 @@ func wireNewsBackfillJobs(
 	runtime := &newsBackfillRuntime{}
 
 	if manualGo || workerGo {
-		if mongoConn == nil || *mongoConn == nil {
-			conn, err := dashboardstats.Open(cfg.MongoURI)
-			if err != nil {
-				return nil, fmt.Errorf("api-go: news backfill jobs require a valid MONGO_URI")
-			}
-			*mongoConn = conn
-		}
-		mongoDatabase := (*mongoConn).Database()
+		mongoDatabase := mongoConn.Database()
 		clusteringService := newsnowclusteringops.NewService(newsnowclusteringops.ServiceConfig{
 			ModelServiceEnabled: newsnowEnvBool("MODEL_SERVICE_ENABLED", false),
 			ModelServiceBaseURL: os.Getenv("MODEL_SERVICE_BASE_URL"),

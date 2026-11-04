@@ -8,13 +8,12 @@ import (
 	"os"
 
 	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/dashboardstats"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignals"
 )
 
@@ -31,23 +30,13 @@ func wireSituationInsights(
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
-	mongoConn **dashboardstats.Connection,
+	mongoConn *mongodb.Client,
 	authenticator *authhttp.Authenticator,
 ) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: situation insights go takeover requires mysql, redis, and jwt")
 	}
-	if mongoConn == nil || *mongoConn == nil {
-		conn, err := dashboardstats.Open(cfg.MongoURI)
-		if err != nil {
-			return fmt.Errorf("api-go: situation insights go takeover requires a valid MONGO_URI")
-		}
-		*mongoConn = conn
-	}
-	var mongoDatabase *mongo.Database
-	if *mongoConn != nil {
-		mongoDatabase = (*mongoConn).Database()
-	}
+	mongoDatabase := mongoConn.Database()
 	settings := situationsignals.NewSettingsReader(db, redisClient, os.LookupEnv)
 	service := situationsignals.NewInsightsService(db, redisClient, mongoDatabase, settings)
 	handler := situationsignals.NewInsightsHandler(situationsignals.NewAuthenticator(authenticator, db), service)
