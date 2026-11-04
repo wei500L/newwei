@@ -32,6 +32,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 	"github.com/wei500L/newwei/apps/api-go/internal/telegramclient"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
 )
@@ -690,7 +691,7 @@ func TestTelegramAuthCompleteIntegration(t *testing.T) {
 		t.Fatalf("telegramApiId = %s", row["telegramApiId"])
 	}
 	for _, field := range []string{"telegramApiHash", "telegramSession"} {
-		if !isEncryptedSettingsValue(row[field]) {
+		if !settingscrypto.IsEnvelope(row[field]) {
 			t.Fatalf("%s is not an encrypted envelope: %s", field, row[field])
 		}
 	}

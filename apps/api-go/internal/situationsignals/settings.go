@@ -2,11 +2,7 @@ package situationsignals
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -16,6 +12,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // Settings constants mirrored from
@@ -449,7 +447,7 @@ func (s *settingsReader) storedSecret(stored *storedSituationMonitorSettings, pi
 	if text, ok := raw.asString(); ok {
 		return strings.TrimSpace(text)
 	}
-	if !raw.isEncryptedSettingsValue() {
+	if !settingscrypto.IsEnvelope(raw.raw) {
 		return ""
 	}
 	if s == nil || s.lookup == nil {
@@ -584,118 +582,25 @@ func normalizeHostEntry(value string) (string, bool) {
 	return normalized, true
 }
 
-// encryptedSettingsEnvelope is the system-settings:v1 AES-256-GCM envelope from
-// apps/api/src/modules/storage/storage-settings.crypto.ts.
-type encryptedSettingsEnvelope struct {
-	Tag  string `json:"__enc"`
-	Alg  string `json:"alg"`
-	IV   string `json:"iv"`
-	Data string `json:"data"`
-	Auth string `json:"tag"`
-}
-
-// isEncryptedSettingsValue mirrors isEncryptedStringValueV1.
-func (r rawJSON) isEncryptedSettingsValue() bool {
-	record, ok := r.asObject()
-	if !ok {
-		return false
-	}
-	var envelope encryptedSettingsEnvelope
-	if err := json.Unmarshal(r.raw, &envelope); err != nil {
-		return false
-	}
-	if envelope.Tag != "system-settings:v1" || envelope.Alg != "aes-256-gcm" {
-		return false
-	}
-	_, ivOK := record["iv"]
-	_, tagOK := record["tag"]
-	_, dataOK := record["data"]
-	if !ivOK || !tagOK || !dataOK {
-		return false
-	}
-	_, ivString := rawJSON{raw: record["iv"]}.asString()
-	_, tagString := rawJSON{raw: record["tag"]}.asString()
-	_, dataString := rawJSON{raw: record["data"]}.asString()
-	return ivString && tagString && dataString
-}
-
-// decodeSettingsKey mirrors decodeSystemSettingsKey: 64 hex characters or a
-// base64 encoding of exactly 32 bytes.
-func decodeSettingsKey(raw string) ([]byte, bool) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, false
-	}
-	hexCandidate := strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if len(hexCandidate) == 64 && isHexString(hexCandidate) {
-		decoded, err := hex.DecodeString(hexCandidate)
-		if err != nil {
-			return nil, false
-		}
-		return decoded, true
-	}
-	decoded, err := base64.StdEncoding.DecodeString(trimmed)
-	if err != nil || len(decoded) != 32 {
-		return nil, false
-	}
-	return decoded, true
-}
-
-func isHexString(value string) bool {
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9':
-		case r >= 'a' && r <= 'f':
-		case r >= 'A' && r <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// decryptSettingsSecret mirrors decryptStringValueV1. Failure is not an error:
+// decryptSettingsSecret decrypts a stored v1 envelope. Failure is not an error:
 // the caller treats an undecryptable secret as absent, exactly like NestJS.
 func decryptSettingsSecret(raw rawJSON, keyMaterial string) (string, bool) {
-	key, ok := decodeSettingsKey(keyMaterial)
-	if !ok {
+	if !settingscrypto.IsEnvelope(raw.raw) {
 		return "", false
 	}
-	var envelope encryptedSettingsEnvelope
+	var envelope settingscrypto.Envelope
 	if err := json.Unmarshal(raw.raw, &envelope); err != nil {
 		return "", false
 	}
-	iv, err := base64.StdEncoding.DecodeString(envelope.IV)
+	key, err := settingscrypto.ParseKey(keyMaterial)
 	if err != nil {
 		return "", false
 	}
-	tag, err := base64.StdEncoding.DecodeString(envelope.Auth)
+	plain, err := settingscrypto.Decrypt(envelope, key)
 	if err != nil {
 		return "", false
 	}
-	data, err := base64.StdEncoding.DecodeString(envelope.Data)
-	if err != nil {
-		return "", false
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", false
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", false
-	}
-	if len(iv) != gcm.NonceSize() {
-		return "", false
-	}
-	sealed := make([]byte, 0, len(data)+len(tag))
-	sealed = append(sealed, data...)
-	sealed = append(sealed, tag...)
-	plain, err := gcm.Open(nil, iv, sealed, nil)
-	if err != nil {
-		return "", false
-	}
-	return string(plain), true
+	return plain, true
 }
 
 // clampInt mirrors Math.max(min, Math.min(max, Math.trunc(value))).

@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 func unitService(env Env) *Service { return NewService(Options{Env: env}) }
@@ -306,7 +308,7 @@ func TestBuildNextStoredEncryptsWhenKeyPresent(t *testing.T) {
 	env := unitEnv()
 	env.EncryptionKeyRaw = testEncryptionKeyHex
 	service := unitService(env)
-	key, _ := decodeSettingsKey(testEncryptionKeyHex)
+	key, _ := settingscrypto.ParseKey(testEncryptionKeyHex)
 	encoder := secretEncoder{keyStatus: encryptionKeyStatus{present: true, valid: true, key: key}}
 	stored := decodeStoredFields([]byte(`{"translationMaxConcurrency":3}`))
 	input, err := parseUpdateSettings([]byte(`{"translationMaxConcurrency":3,"translationApiKey":"new-key"}`))
@@ -317,7 +319,7 @@ func TestBuildNextStoredEncryptsWhenKeyPresent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isEncryptedSettingsValue(next.TranslationAPIKey) {
+	if !settingscrypto.IsEnvelope(next.TranslationAPIKey) {
 		t.Fatalf("key not encrypted: %s", next.TranslationAPIKey)
 	}
 	plain, ok := decryptSettingsSecret(next.TranslationAPIKey, testEncryptionKeyHex)

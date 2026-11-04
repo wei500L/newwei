@@ -3,6 +3,8 @@ package modelaccesssettings
 import (
 	"context"
 	"log"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // encodeSecretForStorage mirrors
@@ -34,7 +36,7 @@ func (s *Service) encodeSecretForStorage(ctx context.Context, plain string) (sec
 	var key []byte
 	var keyErr error
 	if keyPresent {
-		key, keyErr = decodeSettingsKey(raw)
+		key, keyErr = settingscrypto.ParseKey(raw)
 	}
 	keyValid := keyPresent && keyErr == nil
 

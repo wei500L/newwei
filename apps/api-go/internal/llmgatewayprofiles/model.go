@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // EncryptionTag and EncryptionAlgorithm are the two envelope constants of the
@@ -26,15 +28,8 @@ type EncryptedStringValueV1 struct {
 	Data string `json:"data"`
 }
 
-// envelopeProbe is the tolerant decode boundary used to decide whether an
-// unknown JSON value is a v1 envelope.
-type envelopeProbe struct {
-	Enc  json.RawMessage `json:"__enc"`
-	Alg  json.RawMessage `json:"alg"`
-	IV   json.RawMessage `json:"iv"`
-	Tag  json.RawMessage `json:"tag"`
-	Data json.RawMessage `json:"data"`
-}
+// envelopeProbe is gone: the shared settingscrypto.IsEnvelope is the single
+// v1-envelope discriminator.
 
 // SecretValue is the apiKey slot of one stored profile. It is a discriminated
 // union so an unrecognised legacy value is preserved exactly instead of being
@@ -150,37 +145,14 @@ func decodeSecretValue(raw json.RawMessage) *SecretValue {
 
 // decodeEnvelope reports whether the object is exactly a v1 envelope.
 func decodeEnvelope(raw json.RawMessage) (EncryptedStringValueV1, bool) {
-	var probe envelopeProbe
-	if err := json.Unmarshal(raw, &probe); err != nil {
+	if !settingscrypto.IsEnvelope(raw) {
 		return EncryptedStringValueV1{}, false
 	}
-	tag, ok := jsString(probe.Enc)
-	if !ok || tag != EncryptionTag {
+	var envelope EncryptedStringValueV1
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return EncryptedStringValueV1{}, false
 	}
-	algorithm, ok := jsString(probe.Alg)
-	if !ok || algorithm != EncryptionAlgorithm {
-		return EncryptedStringValueV1{}, false
-	}
-	iv, ok := jsString(probe.IV)
-	if !ok {
-		return EncryptedStringValueV1{}, false
-	}
-	tag64, ok := jsString(probe.Tag)
-	if !ok {
-		return EncryptedStringValueV1{}, false
-	}
-	data, ok := jsString(probe.Data)
-	if !ok {
-		return EncryptedStringValueV1{}, false
-	}
-	return EncryptedStringValueV1{
-		Enc:  EncryptionTag,
-		Alg:  EncryptionAlgorithm,
-		IV:   iv,
-		Tag:  tag64,
-		Data: data,
-	}, true
+	return envelope, true
 }
 
 // NullableBool is a tri-state JSON boolean. The NestJS service can persist an

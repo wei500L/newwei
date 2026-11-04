@@ -3,6 +3,8 @@ package modelaccesssettings
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // secretValue is the named discriminated union of every stored secret shape:
@@ -21,7 +23,7 @@ import (
 type secretValue struct {
 	kind      secretKind
 	plain     string
-	encrypted encryptedSecret
+	encrypted settingscrypto.Envelope
 	raw       json.RawMessage
 }
 
@@ -41,7 +43,7 @@ func secretValuePlain(value string) secretValue {
 }
 
 // secretValueEncrypted wraps a freshly produced v1 envelope.
-func secretValueEncrypted(payload encryptedSecret) secretValue {
+func secretValueEncrypted(payload settingscrypto.Envelope) secretValue {
 	return secretValue{kind: secretEncrypted, encrypted: payload}
 }
 

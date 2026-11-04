@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // runtimeReaderCacheTTL mirrors NewsSourceRuntimeSecretsService.CACHE_TTL_MS.
@@ -101,7 +103,7 @@ func (r *RuntimeSecretReader) decode(value json.RawMessage, key []byte) (string,
 		if key == nil {
 			return "", errors.New("encrypted runtime secret requires SYSTEM_SETTINGS_ENCRYPTION_KEY")
 		}
-		plain, err := decryptStringValueV1(parsed.encrypted, key)
+		plain, err := settingscrypto.Decrypt(parsed.encrypted, key)
 		if err != nil {
 			return "", err
 		}
@@ -117,7 +119,7 @@ func (r *RuntimeSecretReader) settingsKey() []byte {
 	if !r.keyPresent || strings.TrimSpace(r.encryption) == "" {
 		return nil
 	}
-	key, err := decodeSystemSettingsKey(r.encryption)
+	key, err := settingscrypto.ParseKey(r.encryption)
 	if err != nil {
 		return nil
 	}

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // testVectorConfig is the environment default set used by the vector tests.
@@ -200,7 +202,7 @@ func TestVectorPutTokenStates(t *testing.T) {
 	}
 
 	// With a valid key and no system_security row the token is encrypted.
-	key := make([]byte, systemSettingsKeyBytes)
+	key := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +223,7 @@ func TestVectorPutTokenStates(t *testing.T) {
 	if envelope.kind != secretEncrypted {
 		t.Fatalf("token must be encrypted, got %s", encryptedWritten.Token)
 	}
-	plain, err := decryptStringValueV1(envelope.encrypted, key)
+	plain, err := settingscrypto.Decrypt(envelope.encrypted, key)
 	if err != nil || plain != "rotated" {
 		t.Fatalf("decrypt = %q %v", plain, err)
 	}
@@ -404,19 +406,19 @@ func TestStoragePatchNormalization(t *testing.T) {
 
 // TestStorageSecretFallbacks locks the three secret resolutions.
 func TestStorageSecretFallbacks(t *testing.T) {
-	key := make([]byte, systemSettingsKeyBytes)
+	key := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
-	otherKey := make([]byte, systemSettingsKeyBytes)
+	otherKey := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(otherKey); err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := encryptStringValueV1("stored-secret", key)
+	envelope, err := settingscrypto.Encrypt("stored-secret", key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := envelope.encodeJSON()
+	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -910,7 +912,7 @@ func TestSystemSecurityConfiguredFallbacks(t *testing.T) {
 // encoding-policy level: with a valid key and a flag that is not a boolean, the
 // secret is encrypted rather than stored in plaintext.
 func TestNonBooleanEncryptionFlagStillEncrypts(t *testing.T) {
-	key := make([]byte, systemSettingsKeyBytes)
+	key := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}

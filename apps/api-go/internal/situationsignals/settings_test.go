@@ -1,40 +1,22 @@
 package situationsignals
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
-// encryptSettingsSecret builds a system-settings:v1 envelope the way
-// apps/api/src/modules/storage/storage-settings.crypto.ts does.
+// encryptSettingsSecret builds a system-settings:v1 envelope with the shared
+// implementation.
 func encryptSettingsSecret(t *testing.T, plain string, key []byte) json.RawMessage {
 	t.Helper()
-	block, err := aes.NewCipher(key)
+	envelope, err := settingscrypto.Encrypt(plain, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		t.Fatal(err)
-	}
-	iv := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(iv); err != nil {
-		t.Fatal(err)
-	}
-	sealed := gcm.Seal(nil, iv, []byte(plain), nil)
-	tag := sealed[len(sealed)-gcm.Overhead():]
-	data := sealed[:len(sealed)-gcm.Overhead()]
-	encoded, err := json.Marshal(map[string]string{
-		"__enc": "system-settings:v1",
-		"alg":   "aes-256-gcm",
-		"iv":    base64.StdEncoding.EncodeToString(iv),
-		"tag":   base64.StdEncoding.EncodeToString(tag),
-		"data":  base64.StdEncoding.EncodeToString(data),
-	})
+	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,20 +34,20 @@ func testKey() []byte {
 func TestDecodeSettingsKey(t *testing.T) {
 	key := testKey()
 	hexKey := "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-	decoded, ok := decodeSettingsKey(hexKey)
-	if !ok || len(decoded) != 32 {
-		t.Fatalf("hex key = %v/%v", decoded, ok)
+	decoded, err := settingscrypto.ParseKey(hexKey)
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("hex key = %v/%v", decoded, err)
 	}
-	decoded, ok = decodeSettingsKey("0x" + hexKey)
-	if !ok || len(decoded) != 32 {
-		t.Fatalf("prefixed hex key = %v/%v", decoded, ok)
+	decoded, err = settingscrypto.ParseKey("0x" + hexKey)
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("prefixed hex key = %v/%v", decoded, err)
 	}
-	decoded, ok = decodeSettingsKey(base64.StdEncoding.EncodeToString(key))
-	if !ok || len(decoded) != 32 {
-		t.Fatalf("base64 key = %v/%v", decoded, ok)
+	decoded, err = settingscrypto.ParseKey(base64.StdEncoding.EncodeToString(key))
+	if err != nil || len(decoded) != 32 {
+		t.Fatalf("base64 key = %v/%v", decoded, err)
 	}
 	for _, invalid := range []string{"", "   ", "short", hexKey[:62], base64.StdEncoding.EncodeToString(key[:16])} {
-		if _, ok := decodeSettingsKey(invalid); ok {
+		if _, err := settingscrypto.ParseKey(invalid); err == nil {
 			t.Fatalf("%q must not decode", invalid)
 		}
 	}
@@ -91,13 +73,13 @@ func TestDecryptSettingsSecret(t *testing.T) {
 func TestIsEncryptedSettingsValue(t *testing.T) {
 	key := testKey()
 	payload := encryptSettingsSecret(t, "secret", key)
-	if !(rawJSON{raw: payload}).isEncryptedSettingsValue() {
+	if !settingscrypto.IsEnvelope(payload) {
 		t.Fatal("a valid envelope must be recognised")
 	}
 	for _, invalid := range []string{`"plain"`, `{}`, `{"__enc":"other","alg":"aes-256-gcm","iv":"a","tag":"b","data":"c"}`,
 		`{"__enc":"system-settings:v1","alg":"aes-256-cbc","iv":"a","tag":"b","data":"c"}`,
 		`{"__enc":"system-settings:v1","alg":"aes-256-gcm","iv":"a","tag":"b"}`} {
-		if (rawJSON{raw: json.RawMessage(invalid)}).isEncryptedSettingsValue() {
+		if settingscrypto.IsEnvelope(json.RawMessage(invalid)) {
 			t.Fatalf("%s must not be recognised", invalid)
 		}
 	}

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // testKey is a deterministic 32-byte key for the crypto tests.
@@ -36,39 +38,39 @@ func testKeyHex() string {
 }
 
 func TestDecodeSystemSettingsKey(t *testing.T) {
-	decoded, err := decodeSystemSettingsKey(testKeyHex())
+	decoded, err := settingscrypto.ParseKey(testKeyHex())
 	if err != nil || !bytes.Equal(decoded, testKey()) {
 		t.Fatalf("hex key decode = %x err=%v", decoded, err)
 	}
-	decoded, err = decodeSystemSettingsKey("0x" + testKeyHex())
+	decoded, err = settingscrypto.ParseKey("0x" + testKeyHex())
 	if err != nil || !bytes.Equal(decoded, testKey()) {
 		t.Fatalf("0x hex key decode = %x err=%v", decoded, err)
 	}
-	decoded, err = decodeSystemSettingsKey("  0X" + testKeyHex() + "  ")
+	decoded, err = settingscrypto.ParseKey("  0X" + testKeyHex() + "  ")
 	if err != nil || !bytes.Equal(decoded, testKey()) {
 		t.Fatalf("0X padded hex key decode = %x err=%v", decoded, err)
 	}
-	decoded, err = decodeSystemSettingsKey(testKeyBase64())
+	decoded, err = settingscrypto.ParseKey(testKeyBase64())
 	if err != nil || !bytes.Equal(decoded, testKey()) {
 		t.Fatalf("base64 key decode = %x err=%v", decoded, err)
 	}
 	// Node's base64 decoder ignores characters outside the alphabet.
 	interleaved := testKeyBase64()[:8] + "\n" + testKeyBase64()[8:]
-	decoded, err = decodeSystemSettingsKey(interleaved)
+	decoded, err = settingscrypto.ParseKey(interleaved)
 	if err != nil || !bytes.Equal(decoded, testKey()) {
 		t.Fatalf("interleaved base64 key decode = %x err=%v", decoded, err)
 	}
 
-	if _, err = decodeSystemSettingsKey(""); err == nil || err.Error() != errKeyEmptyMessage {
+	if _, err = settingscrypto.ParseKey(""); err == nil || err.Error() != errKeyEmptyMessage {
 		t.Fatalf("empty key error = %v", err)
 	}
-	if _, err = decodeSystemSettingsKey("   "); err == nil || err.Error() != errKeyEmptyMessage {
+	if _, err = settingscrypto.ParseKey("   "); err == nil || err.Error() != errKeyEmptyMessage {
 		t.Fatalf("blank key error = %v", err)
 	}
-	if _, err = decodeSystemSettingsKey("abc"); err == nil || err.Error() != errKeyLengthMessage {
+	if _, err = settingscrypto.ParseKey("abc"); err == nil || err.Error() != errKeyLengthMessage {
 		t.Fatalf("short key error = %v", err)
 	}
-	if _, err = decodeSystemSettingsKey(strings.Repeat("ab", 31)); err == nil || err.Error() != errKeyLengthMessage {
+	if _, err = settingscrypto.ParseKey(strings.Repeat("ab", 31)); err == nil || err.Error() != errKeyLengthMessage {
 		t.Fatalf("62 hex char key error = %v", err)
 	}
 }
