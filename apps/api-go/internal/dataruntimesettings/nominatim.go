@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file implements GET/PUT /api/system-settings/geo/nominatim.
@@ -242,13 +244,13 @@ func (s *Service) updateNominatimSettings(ctx context.Context, orgID, actorID st
 	if err != nil {
 		return nil, err
 	}
-	go func() {
+	safego.Go("dataruntimesettings.nominatim.audit", func() {
 		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), nominatimAuditTimeout)
 		defer cancel()
 		if auditErr := s.writeAuditLogBestEffort(auditCtx, orgID, actorID, "geo_nominatim_settings_update", metadata); auditErr != nil {
 			logBackground("nominatim settings audit write failed", auditErr)
 		}
-	}()
+	})
 
 	settings := s.applyNominatimFallback(next)
 	s.nominatimCache.put(settings, time.Now())

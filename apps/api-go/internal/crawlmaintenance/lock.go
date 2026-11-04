@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Lock scripts mirror CacheService.releaseLock/extendLock: both compare the
@@ -69,7 +71,7 @@ func startLockRenewal(client *redis.Client, lockKey, token string, ttl time.Dura
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("crawlmaintenance.lock.renewLock", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -77,12 +79,15 @@ func startLockRenewal(client *redis.Client, lockKey, token string, ttl time.Dura
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewLockScript.Run(renewCtx, client, []string{lockKey}, token, ttl.Milliseconds()).Err()
-				cancel()
+				_ = safego.Call("crawlmaintenance.lock.renewLock.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = renewLockScript.Run(renewCtx, client, []string{lockKey}, token, ttl.Milliseconds()).Err()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() {
 		close(stop)
 		<-done

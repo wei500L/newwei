@@ -163,7 +163,7 @@ func TestRevalidationDropsRevokedMembership(t *testing.T) {
 	})
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceNewsnow, token, "o1", "u1")
 
 	harness.repository.setRejection("Organization access disabled")

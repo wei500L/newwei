@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // runtimeSecretsDocument builds one stored document from raw entry values.
@@ -49,11 +51,11 @@ func runtimeSecretEntry(t *testing.T, sourceID, key string, value any) map[strin
 
 func TestRuntimeReaderMergesRequestedThenResolved(t *testing.T) {
 	keyRaw := "1111111111111111111111111111111111111111111111111111111111111111"
-	key, err := decodeSystemSettingsKey(keyRaw)
+	key, err := settingscrypto.ParseKey(keyRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := encryptStringValueV1("secret-token", key)
+	envelope, err := settingscrypto.Encrypt("secret-token", key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,8 +78,8 @@ func TestRuntimeReaderMergesRequestedThenResolved(t *testing.T) {
 
 func TestRuntimeReaderSkipsEncryptedWithoutKey(t *testing.T) {
 	keyRaw := "1111111111111111111111111111111111111111111111111111111111111111"
-	key, _ := decodeSystemSettingsKey(keyRaw)
-	envelope, _ := encryptStringValueV1("secret-token", key)
+	key, _ := settingscrypto.ParseKey(keyRaw)
+	envelope, _ := settingscrypto.Encrypt("secret-token", key)
 	document := runtimeSecretsDocument(t, []map[string]json.RawMessage{
 		runtimeSecretEntry(t, "weibo", "cookie", "plain-cookie"),
 		runtimeSecretEntry(t, "weibo", "token", envelope),

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // envModelServiceDefaults is the environment projection of the model service
@@ -150,7 +152,7 @@ func (s *Service) settingsDecryptionKey() ([]byte, bool) {
 	if raw == "" {
 		return nil, false
 	}
-	decoded, err := decodeSettingsKey(raw)
+	decoded, err := settingscrypto.ParseKey(raw)
 	if err != nil {
 		return nil, false
 	}

@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // errNoClient is returned when the lease has no Redis client.
@@ -147,7 +149,7 @@ func startGuardedRenewal(client *redis.Client, key, token string, ttl time.Durat
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("cronlock.lock.guardedRenewal", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -155,17 +157,22 @@ func startGuardedRenewal(client *redis.Client, key, token string, ttl time.Durat
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				extended, err := renewScript.Run(renewCtx, client, []string{key}, token,
-					strconv.FormatInt(ttl.Milliseconds(), 10)).Int()
-				cancel()
-				if err != nil || extended == 0 {
+				var extended int
+				renewErr := safego.Call("cronlock.lock.guardedRenewal.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					var err error
+					extended, err = renewScript.Run(renewCtx, client, []string{key}, token,
+						strconv.FormatInt(ttl.Milliseconds(), 10)).Int()
+					return err
+				})
+				if renewErr != nil || extended == 0 {
 					onLost()
 					return
 				}
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {
@@ -184,7 +191,7 @@ func startRenewal(client *redis.Client, key, token string, ttl time.Duration) fu
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("cronlock.lock.renewal", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -192,13 +199,16 @@ func startRenewal(client *redis.Client, key, token string, ttl time.Duration) fu
 			case <-stop:
 				return
 			case <-ticker.C:
-				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewScript.Run(renewCtx, client, []string{key}, token,
-					strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
-				cancel()
+				_ = safego.Call("cronlock.lock.renewal.tick", func() error {
+					renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = renewScript.Run(renewCtx, client, []string{key}, token,
+						strconv.FormatInt(ttl.Milliseconds(), 10)).Err()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {

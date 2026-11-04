@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // 快照与缓存的键/锁/超时与 NestJS 逐项对齐（observability-snapshot.service.ts
@@ -285,7 +287,7 @@ func (s *snapshotStore) startAutoRenew(key, token string, ttl, interval time.Dur
 	}
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("qualityoverview.snapshot.renewLock", func() {
 		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -294,11 +296,14 @@ func (s *snapshotStore) startAutoRenew(key, token string, ttl, interval time.Dur
 			case <-stop:
 				return
 			case <-ticker.C:
-				_, _ = renewLockScript.Run(context.Background(), s.redis,
-					[]string{key}, token, int(ttl.Milliseconds())).Result()
+				_ = safego.Call("qualityoverview.snapshot.renewLock.tick", func() error {
+					_, _ = renewLockScript.Run(context.Background(), s.redis,
+						[]string{key}, token, int(ttl.Milliseconds())).Result()
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() {
 		close(stop)
 		<-done

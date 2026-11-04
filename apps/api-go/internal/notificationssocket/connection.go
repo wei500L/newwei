@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // connection is one upgraded browser socket. All writes go through writeRaw,
@@ -106,9 +108,9 @@ func (c *connection) serve() {
 	}
 
 	pingDone := make(chan struct{})
-	go c.pingLoop(pingDone)
+	safego.Go("notificationssocket.connection.pingLoop", func() { c.pingLoop(pingDone) })
 	defer close(pingDone)
-	go c.revalidating()
+	safego.Go("notificationssocket.connection.revalidating", func() { c.revalidating() })
 
 	c.readLoop()
 }

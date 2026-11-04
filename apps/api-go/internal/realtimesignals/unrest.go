@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Unrest, outages, PizzINT and GDELT tension. All four are global responses and
@@ -40,16 +41,16 @@ func (s *Service) fetchUnrestSignal(ctx context.Context, runtime *dataruntimeset
 	type gdeltOutcome struct{ feed UnrestFeedResult }
 	acledChannel := make(chan acledOutcome, 1)
 	gdeltChannel := make(chan gdeltOutcome, 1)
-	go func() {
+	safego.Go("realtimesignals.fetchUnrestSignal.acled", func() {
 		if !runtime.Capabilities.AcledAPIEnabled {
 			acledChannel <- acledOutcome{feed: UnrestFeedResult{Events: []UnrestEvent{}, Configured: false}}
 			return
 		}
 		acledChannel <- acledOutcome{feed: s.fetchAcledUnrestEvents(ctx, runtime)}
-	}()
-	go func() {
+	})
+	safego.Go("realtimesignals.fetchUnrestSignal.gdelt", func() {
 		gdeltChannel <- gdeltOutcome{feed: s.fetchGdeltUnrestEvents(ctx, runtime)}
-	}()
+	})
 	acledFeed := (<-acledChannel).feed
 	gdeltFeed := (<-gdeltChannel).feed
 

@@ -7,6 +7,8 @@ import (
 	"log"
 	"math"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file reproduces AuthCacheSettingsService.getSettings and
@@ -244,7 +246,9 @@ func (s *Service) profileCacheWrap(
 				log.Printf("accountsecurity: profile cache lock release failed: %v", releaseErr)
 			}
 		}()
-		go s.renewProfileLock(ctx, lockKey, lockToken, options.LockTTLMs, stop)
+		safego.Go("accountsecurity.profile_cache.renewLock", func() {
+			s.renewProfileLock(ctx, lockKey, lockToken, options.LockTTLMs, stop)
+		})
 
 		value, loadErr := loader(ctx)
 		if loadErr != nil {
@@ -288,9 +292,12 @@ func (s *Service) renewProfileLock(ctx context.Context, lockKey, lockToken strin
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := s.extendLock(context.WithoutCancel(ctx), lockKey, lockToken, lockTTLMs); err != nil {
-				log.Printf("accountsecurity: profile cache lock renew failed: %v", err)
-			}
+			_ = safego.Call("accountsecurity.profile_cache.renewLock.tick", func() error {
+				if err := s.extendLock(context.WithoutCancel(ctx), lockKey, lockToken, lockTTLMs); err != nil {
+					log.Printf("accountsecurity: profile cache lock renew failed: %v", err)
+				}
+				return nil
+			})
 		}
 	}
 }

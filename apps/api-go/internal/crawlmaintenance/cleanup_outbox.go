@@ -16,6 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Cleanup outbox constants copied from CrawlCleanupOutboxService.
@@ -380,19 +382,19 @@ func (s *CleanupOutboxScheduler) deleteTaskResults(ctx context.Context, taskID, 
 	var wait sync.WaitGroup
 	errs := make([]error, 2)
 	wait.Add(2)
-	go func() {
+	safego.Go("crawlmaintenance.deleteTaskResults.crawlResults", func() {
 		defer wait.Done()
 		_, err := s.crawlResults.DeleteMany(ctx, bson.D{{Key: "taskId", Value: taskID}})
 		errs[0] = err
-	}()
-	go func() {
+	})
+	safego.Go("crawlmaintenance.deleteTaskResults.taskLogs", func() {
 		defer wait.Done()
 		_, err := s.taskLogs.DeleteMany(ctx, bson.D{
 			{Key: "orgId", Value: orgID},
 			{Key: "jobId", Value: bson.Regex{Pattern: "^" + taskID}},
 		})
 		errs[1] = err
-	}()
+	})
 	wait.Wait()
 	return errors.Join(errs...)
 }

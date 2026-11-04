@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // sha256Hex is the fingerprint helper the tests assert against.
@@ -193,8 +195,9 @@ func TestResolveKeysWithoutKeyKeepsPlaintext(t *testing.T) {
 	if envelope.kind != secretPlain {
 		t.Fatalf("expected a plaintext envelope for this setup")
 	}
-	encryptedEnvelope, err := json.Marshal(encryptedSecret{
-		Enc: "system-settings:v1", Alg: "aes-256-gcm", IV: "AAEC", Tag: "AAEC", Data: "AAEC",
+	ivText, tagText, dataText := "AAEC", "AAEC", "AAEC"
+	encryptedEnvelope, err := json.Marshal(settingscrypto.Envelope{
+		Enc: "system-settings:v1", Alg: "aes-256-gcm", IV: &ivText, Tag: &tagText, Data: &dataText,
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

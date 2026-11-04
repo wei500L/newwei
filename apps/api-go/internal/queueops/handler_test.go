@@ -129,7 +129,7 @@ func openAdminStubDB(t *testing.T, admin bool) *sql.DB {
 func newTestHandler(t *testing.T, permissions []string, admin bool) *Handler {
 	t.Helper()
 	verifier := authn.NewVerifier(testSecret, testIssuer, testAudience)
-	chain := authhttp.NewAuthenticator(verifier, allowAllBlacklist{}, staticAuthz{permissions: permissions})
+	chain := authhttp.NewAuthenticator(verifier, allowAllBlacklist{}, staticAuthz{permissions: permissions}, nil)
 	platform := platformgovernance.NewAuthenticator(chain, openAdminStubDB(t, admin))
 	service := NewService(Options{})
 	return NewHandler(chain, platform, service)
@@ -139,6 +139,7 @@ func newTestHandler(t *testing.T, permissions []string, admin bool) *Handler {
 func mintToken(t *testing.T) string {
 	t.Helper()
 	claims := jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   "user-1",
 		"orgId": "org-a",
 		"iss":   testIssuer,

@@ -3,6 +3,8 @@ package modelaccesssettings
 import (
 	"bytes"
 	"encoding/json"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // DecodeStoredSettingsSecret resolves one stored system-settings secret the way
@@ -35,7 +37,7 @@ func DecodeStoredSettingsSecret(rawValue []byte, settingsKeyRaw string) (string,
 	if settingsKeyRaw == "" {
 		return "", false
 	}
-	key, err := decodeSettingsKey(settingsKeyRaw)
+	key, err := settingscrypto.ParseKey(settingsKeyRaw)
 	if err != nil {
 		return "", false
 	}

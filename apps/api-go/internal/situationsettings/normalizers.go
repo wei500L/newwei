@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // rawAbsent reports whether a JSON member was absent from the document. A
@@ -341,7 +343,7 @@ func resolveStoredAPIKey(raw json.RawMessage, keyName string, env Env) (string, 
 	if value, ok := normalizeStringRaw(raw); ok {
 		return value, true
 	}
-	if !isEncryptedSettingsValue(raw) {
+	if !settingscrypto.IsEnvelope(raw) {
 		return "", false
 	}
 	if !env.EncryptionKeyPresent() {

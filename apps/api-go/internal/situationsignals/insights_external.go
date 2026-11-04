@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -117,7 +119,7 @@ func (s *insightsService) loadMarketsSnapshot(ctx context.Context) marketsSnapsh
 			config := entry
 			index++
 			wg.Add(1)
-			go func() {
+			safego.Go("situationsignals.insightsExternal.loadMarketsSnapshot", func() {
 				defer wg.Done()
 				quote, err := s.fetchFinnhubQuote(ctx, apiKey, config.symbol)
 				if err != nil {
@@ -128,7 +130,7 @@ func (s *insightsService) loadMarketsSnapshot(ctx context.Context) marketsSnapsh
 				}
 				item := marketItem{Symbol: config.symbol, Name: config.name, Price: quote.price, Change: quote.change, ChangePercent: quote.changePercent, Type: config.kind}
 				items[position] = &item
-			}()
+			})
 		}
 	}
 	wg.Wait()
@@ -214,14 +216,14 @@ func (s *insightsService) loadFedSnapshot(ctx context.Context) fedSnapshot {
 		position := index
 		config := series
 		wg.Add(1)
-		go func() {
+		safego.Go("situationsignals.insightsExternal.loadFedSnapshot", func() {
 			defer wg.Done()
 			observation, err := s.fetchFredSeries(ctx, apiKey, config.seriesID)
 			if err != nil {
 				return
 			}
 			results[position] = result{index: position, value: observation.value, previous: observation.previous, ok: true}
-		}()
+		})
 	}
 	wg.Wait()
 	failures := 0

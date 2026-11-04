@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Scheduler owns the wall-clock 15-minute rebuild when
@@ -36,10 +38,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("gdeltsnapshot.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -90,12 +92,15 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 			s.wg.Add(1)
-			go func() {
+			safego.Go("gdeltsnapshot.scheduler.tick", func() {
 				defer s.wg.Done()
-				if err := s.service.refreshScheduled(ctx); err != nil {
-					log.Printf("gdeltsnapshot: scheduled refresh failed: %v", err)
-				}
-			}()
+				_ = safego.Call("gdeltsnapshot.scheduler.refresh", func() error {
+					if err := s.service.refreshScheduled(ctx); err != nil {
+						log.Printf("gdeltsnapshot: scheduled refresh failed: %v", err)
+					}
+					return nil
+				})
+			})
 			now := s.now()
 			next = next.Add(refreshIntervalMinutes * time.Minute)
 			if !next.After(now) {

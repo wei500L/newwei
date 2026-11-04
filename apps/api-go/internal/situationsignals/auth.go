@@ -2,15 +2,11 @@ package situationsignals
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -45,36 +41,11 @@ type MachineTokenPermissions []string
 // return immediately. A nil identity with no response written only happens when
 // the request has already been answered.
 func (a *Authenticator) authorize(w http.ResponseWriter, r *http.Request, permission string) *authhttp.Identity {
-	raw := rawBearer(r)
-	if raw == "" {
-		authhttp.WriteUnauthorized(w, r, "")
+	if a == nil || a.chain == nil {
+		authhttp.WriteDatabaseFailure(w, r)
 		return nil
 	}
-
-	var identity *authhttp.Identity
-	if strings.HasPrefix(raw, "mtk_") {
-		resolved, err := a.authenticateMachine(r.Context(), raw)
-		if err != nil {
-			writeServiceError(w, r, err)
-			return nil
-		}
-		identity = resolved
-	} else {
-		if a == nil || a.chain == nil {
-			authhttp.WriteDatabaseFailure(w, r)
-			return nil
-		}
-		identity = a.chain.Authenticate(w, r)
-		if identity == nil {
-			return nil
-		}
-	}
-
-	if !identity.HasPermission(permission) {
-		authhttp.WriteForbidden(w, r, []string{permission})
-		return nil
-	}
-	return identity
+	return a.chain.AuthenticateWithMachine(w, r, permission)
 }
 
 // authenticateMachine mirrors MachineTokenService.validate: SHA-256 of the raw
@@ -87,37 +58,11 @@ func (a *Authenticator) authenticateMachine(ctx context.Context, token string) (
 	if a == nil || a.db == nil {
 		return nil, errNoDatabase
 	}
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var rawPermissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := a.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:]),
-	).Scan(&id, &orgID, &rawPermissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
+	identity, err := authhttp.NewMachineResolver(a.db, nil).Resolve(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, newStatus(http.StatusUnauthorized, "Invalid machine token")
 	}
-	if err != nil {
-		return nil, err
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(time.Now())) {
-		return nil, newStatus(http.StatusUnauthorized, "Invalid machine token")
-	}
-	_, _ = a.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`, time.Now().UTC().Truncate(time.Millisecond), id)
-
-	var permissions MachineTokenPermissions
-	if len(rawPermissions) > 0 {
-		if err := json.Unmarshal(rawPermissions, &permissions); err != nil {
-			// A non-array permissions document grants nothing; it never becomes
-			// a wildcard.
-			permissions = nil
-		}
-	}
-	return authhttp.NewIdentity(machineActorPrefix+id, orgID, permissions), nil
+	return identity, err
 }
 
 // rawBearer extracts the raw token from an Authorization header. It does not

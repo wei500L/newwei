@@ -15,6 +15,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Redis keys shared with RealtimeSignalsSnapshotStore.
@@ -394,7 +396,7 @@ func (s *realtimeStore) readMarkerReadiness(ctx context.Context, orgID string, n
 			ok           bool
 		}
 		ch := make(chan mysqlCounts, 1)
-		go func() {
+		safego.Go("runtimediagnostics.store.readMarkerReadiness", func() {
 			var counts mysqlCounts
 			var total int
 			if err := s.db.QueryRowContext(ctx,
@@ -426,7 +428,7 @@ func (s *realtimeStore) readMarkerReadiness(ctx context.Context, orgID string, n
 				counts.latest = &value
 			}
 			ch <- counts
-		}()
+		})
 		counts := <-ch
 		if counts.ok {
 			result.RecentProcessedArticles = counts.total
@@ -480,7 +482,7 @@ func (s *realtimeStore) mongoMarkerReadiness(ctx context.Context, orgID string, 
 
 	recentCh := make(chan int, 1)
 	withLocationCh := make(chan int, 1)
-	go func() {
+	safego.Go("runtimediagnostics.store.mongoMarkerReadiness", func() {
 		count, err := collection.CountDocuments(ctx, recentFilter)
 		if err != nil {
 			log.Printf("runtimediagnostics: marker readiness mongo count failed")
@@ -488,8 +490,8 @@ func (s *realtimeStore) mongoMarkerReadiness(ctx context.Context, orgID string, 
 			return
 		}
 		recentCh <- int(count)
-	}()
-	go func() {
+	})
+	safego.Go("runtimediagnostics.store.mongoMarkerReadiness", func() {
 		count, err := collection.CountDocuments(ctx, recentWithLocationFilter)
 		if err != nil {
 			log.Printf("runtimediagnostics: marker readiness mongo location count failed")
@@ -497,7 +499,7 @@ func (s *realtimeStore) mongoMarkerReadiness(ctx context.Context, orgID string, 
 			return
 		}
 		withLocationCh <- int(count)
-	}()
+	})
 
 	recent := <-recentCh
 	withLocation := <-withLocationCh

@@ -12,6 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbackfilljobs"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // tickInterval is CronExpression.EVERY_10_MINUTES: a wall-clock aligned
@@ -116,11 +117,11 @@ func (s *Scheduler) Start(parent context.Context) {
 	s.startOnce.Do(func() {
 		ctx, cancel := context.WithCancel(parent)
 		s.wg.Add(1)
-		go func() {
+		safego.Go("newseventstimeline.scheduler.loop", func() {
 			defer s.wg.Done()
 			defer cancel()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -136,7 +137,9 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if err := s.runOnce(ctx); err != nil {
+		if err := safego.Call("newseventstimeline.scheduler.tick", func() error {
+			return s.runOnce(ctx)
+		}); err != nil {
 			s.logf("newseventstimeline: tick failed err=%v", err)
 		}
 	}
@@ -236,7 +239,7 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 		case semaphore <- struct{}{}:
 		}
 		wait.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("newseventstimeline.scheduler.runOrgs", func() {
 			defer wait.Done()
 			defer func() { <-semaphore }()
 			status, err := s.rebuildOrgWithLock(ctx, orgID)
@@ -246,7 +249,7 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 				return
 			}
 			results[index] = status
-		}(index, orgID)
+		})
 	}
 	wait.Wait()
 	return results

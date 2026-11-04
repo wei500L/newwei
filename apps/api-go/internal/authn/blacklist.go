@@ -12,8 +12,9 @@
 //     并当作 null，故此处同样按未撤销处理；
 //   - value 非法 JSON：NestJS JSON.parse 抛错 → 请求 500（fail-closed），
 //     Go 同样返回错误由调用方 fail-closed；
-//   - jti 为空：NestJS has() 直接返回 false 不触 Redis——Go 在调用方
-//     （authhttp）于查询前跳过，语义一致；
+//   - jti 为空：NestJS has() 直接返回 false 不触 Redis——Go 的 Verify 现在
+//     拒绝缺 jti 的 token，因此调用方只会用非空 jti 查询；Revoked 仍对空串
+//     短路返回 false，保持防御边界不变；
 //   - Redis 不可达：NestJS ioredis get 抛错 → 非 HttpException →
 //     生产 500 "Internal server error"（fail-closed，绝不放行）。Go 的
 //     查询错误同样上抛，由 authhttp 映射为 500 fail-closed。

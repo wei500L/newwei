@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Upstream AISStream client.
@@ -92,7 +94,7 @@ func (u *upstreamClient) start(ctx context.Context) {
 	}
 	u.started = true
 	u.mu.Unlock()
-	go u.run(ctx)
+	safego.Go("aisrelay.upstream.run", func() { u.run(ctx) })
 }
 
 // wakeNow asks the supervisor to retry immediately, matching connectUpstream's effect
@@ -111,7 +113,9 @@ func (u *upstreamClient) run(ctx context.Context) {
 			return
 		}
 		u.engine.beginUpstreamConnect()
-		_ = u.connectOnce(ctx)
+		_ = safego.Call("aisrelay.upstream.connectOnce", func() error {
+			return u.connectOnce(ctx)
+		})
 		if ctx.Err() != nil {
 			u.engine.finishUpstreamConnect()
 			return

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Handler processes one claimed job. Returning an error moves the job to the
@@ -131,16 +133,16 @@ func (w *Worker) Run(ctx context.Context) {
 
 	var loops sync.WaitGroup
 	loops.Add(1)
-	go func() {
+	safego.Go("economicqueue.worker.stalledLoop", func() {
 		defer loops.Done()
 		w.stalledLoop(runCtx)
-	}()
+	})
 	for index := 0; index < w.opts.Concurrency; index++ {
 		loops.Add(1)
-		go func() {
+		safego.Go("economicqueue.worker.fetchLoop", func() {
 			defer loops.Done()
 			w.fetchLoop(runCtx)
-		}()
+		})
 	}
 
 	<-runCtx.Done()
@@ -202,7 +204,12 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		job, err := w.moveToActive(ctx)
+		var job *Job
+		err := safego.Call("economicqueue.worker.moveToActive", func() error {
+			var claimErr error
+			job, claimErr = w.moveToActive(ctx)
+			return claimErr
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -227,7 +234,10 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 				log.Printf("economicqueue: schedule next repeat for %s failed: %v", job.ID, err)
 			}
 		}
-		w.process(ctx, *job)
+		_ = safego.Call("economicqueue.worker.process", func() error {
+			w.process(ctx, *job)
+			return nil
+		})
 	}
 }
 
@@ -289,7 +299,9 @@ func (w *Worker) process(parent context.Context, job Job) {
 	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	go w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	safego.Go("economicqueue.worker.renewLock", func() {
+		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	})
 
 	var handlerErr error
 	if job.DeferredFailure != "" {
@@ -298,7 +310,9 @@ func (w *Worker) process(parent context.Context, job Job) {
 		// running the fetch so a terminal stall is never reported as success.
 		handlerErr = errors.New(job.DeferredFailure)
 	} else {
-		handlerErr = w.handler(jobCtx, job)
+		handlerErr = safego.Call("economicqueue.worker.handle", func() error {
+			return w.handler(jobCtx, job)
+		})
 	}
 	close(renewDone)
 	cancelJob(nil)
@@ -449,7 +463,10 @@ func (w *Worker) stalledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			w.checkStalled(ctx)
+			_ = safego.Call("economicqueue.worker.checkStalled", func() error {
+				w.checkStalled(ctx)
+				return nil
+			})
 			timer.Reset(w.opts.StalledInterval)
 		}
 	}

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // requireMessage asserts the joined class-validator message.
@@ -255,29 +257,29 @@ func itoa(value int) string {
 
 // TestSystemSettingsKeyDecoding locks the accepted key encodings.
 func TestSystemSettingsKeyDecoding(t *testing.T) {
-	raw := make([]byte, systemSettingsKeyBytes)
+	raw := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(raw); err != nil {
 		t.Fatal(err)
 	}
 	hexKey := hex.EncodeToString(raw)
 	base64Key := base64.StdEncoding.EncodeToString(raw)
 
-	if got, err := decodeSystemSettingsKey(hexKey); err != nil || hex.EncodeToString(got) != hexKey {
+	if got, err := settingscrypto.ParseKey(hexKey); err != nil || hex.EncodeToString(got) != hexKey {
 		t.Fatalf("hex key: %v %v", got, err)
 	}
-	if got, err := decodeSystemSettingsKey("0x" + hexKey); err != nil || hex.EncodeToString(got) != hexKey {
+	if got, err := settingscrypto.ParseKey("0x" + hexKey); err != nil || hex.EncodeToString(got) != hexKey {
 		t.Fatalf("0x hex key: %v %v", got, err)
 	}
-	if got, err := decodeSystemSettingsKey("  " + base64Key + "  "); err != nil || hex.EncodeToString(got) != hexKey {
+	if got, err := settingscrypto.ParseKey("  " + base64Key + "  "); err != nil || hex.EncodeToString(got) != hexKey {
 		t.Fatalf("base64 key: %v %v", got, err)
 	}
-	if _, err := decodeSystemSettingsKey("   "); !errors.Is(err, errKeyEmpty) {
+	if _, err := settingscrypto.ParseKey("   "); !errors.Is(err, settingscrypto.ErrKeyEmpty) {
 		t.Fatalf("blank key error = %v", err)
 	}
-	if _, err := decodeSystemSettingsKey("short-key"); !errors.Is(err, errKeyLength) {
+	if _, err := settingscrypto.ParseKey("short-key"); !errors.Is(err, settingscrypto.ErrKeyLength) {
 		t.Fatalf("short key error = %v", err)
 	}
-	if _, err := decodeSystemSettingsKey(hexKey[:60]); !errors.Is(err, errKeyLength) {
+	if _, err := settingscrypto.ParseKey(hexKey[:60]); !errors.Is(err, settingscrypto.ErrKeyLength) {
 		t.Fatalf("truncated hex error = %v", err)
 	}
 }
@@ -285,22 +287,22 @@ func TestSystemSettingsKeyDecoding(t *testing.T) {
 // TestEncryptDecryptV1 locks the envelope shape, the random IV and the
 // authentication failure path.
 func TestEncryptDecryptV1(t *testing.T) {
-	key := make([]byte, systemSettingsKeyBytes)
+	key := make([]byte, settingscrypto.KeyBytes)
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
-	first, err := encryptStringValueV1("super-secret", key)
+	first, err := settingscrypto.Encrypt("super-secret", key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := encryptStringValueV1("super-secret", key)
+	second, err := settingscrypto.Encrypt("super-secret", key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.valid() {
+	if !first.Valid() {
 		t.Fatalf("envelope not recognised: %+v", first)
 	}
-	if first.Enc != settingsEncTag || first.Alg != encryptionAlgorithm {
+	if first.Enc != settingscrypto.EnvelopeTag || first.Alg != settingscrypto.Algorithm {
 		t.Fatalf("envelope tags = %q %q", first.Enc, first.Alg)
 	}
 	if first.IV == nil || first.Tag == nil || first.Data == nil {
@@ -310,18 +312,18 @@ func TestEncryptDecryptV1(t *testing.T) {
 		t.Fatal("each encryption must use a fresh random IV")
 	}
 
-	encoded, err := first.encodeJSON()
+	encoded, err := json.Marshal(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var roundTrip encryptedStringValueV1
+	var roundTrip settingscrypto.Envelope
 	if err := json.Unmarshal(encoded, &roundTrip); err != nil {
 		t.Fatal(err)
 	}
-	if !roundTrip.valid() {
+	if !roundTrip.Valid() {
 		t.Fatalf("round-tripped envelope invalid: %s", encoded)
 	}
-	plain, err := decryptStringValueV1(roundTrip, key)
+	plain, err := settingscrypto.Decrypt(roundTrip, key)
 	if err != nil || plain != "super-secret" {
 		t.Fatalf("decrypt = %q %v", plain, err)
 	}
@@ -329,20 +331,20 @@ func TestEncryptDecryptV1(t *testing.T) {
 	tampered := roundTrip
 	otherTag := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef"))
 	tampered.Tag = &otherTag
-	if _, err := decryptStringValueV1(tampered, key); err == nil {
+	if _, err := settingscrypto.Decrypt(tampered, key); err == nil {
 		t.Fatal("a tampered tag must fail authentication")
 	}
 	broken := roundTrip
 	notBase64 := "!!!"
 	broken.Data = &notBase64
-	if _, err := decryptStringValueV1(broken, key); err == nil {
+	if _, err := settingscrypto.Decrypt(broken, key); err == nil {
 		t.Fatal("invalid base64 data must fail")
 	}
-	wrongKey := make([]byte, systemSettingsKeyBytes)
-	if _, err := decryptStringValueV1(roundTrip, wrongKey); err == nil {
+	wrongKey := make([]byte, settingscrypto.KeyBytes)
+	if _, err := settingscrypto.Decrypt(roundTrip, wrongKey); err == nil {
 		t.Fatal("a wrong key must fail")
 	}
-	if _, err := decryptStringValueV1(encryptedStringValueV1{}, key); err == nil {
+	if _, err := settingscrypto.Decrypt(settingscrypto.Envelope{}, key); err == nil {
 		t.Fatal("an incomplete envelope must be rejected")
 	}
 }

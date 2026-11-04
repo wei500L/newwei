@@ -18,6 +18,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
 	"github.com/wei500L/newwei/apps/api-go/internal/authfactors"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Service owns the shared MySQL pool, the shared Redis client and the two reused
@@ -427,7 +428,7 @@ func (s *Service) startLockRenewal(ctx context.Context, lockKey, token string, l
 		interval = time.Second
 	}
 	stop := make(chan struct{})
-	go func() {
+	safego.Go("authlogin.refreshLock.renew", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -439,12 +440,15 @@ func (s *Service) startLockRenewal(ctx context.Context, lockKey, token string, l
 			case <-ticker.C:
 				// context.WithoutCancel keeps the renewal alive when the client
 				// request is cancelled mid-rotation.
-				if err := s.extendLock(context.WithoutCancel(ctx), lockKey, token, lockTTL); err != nil {
-					log.Printf("authlogin: refresh lock renewal failed: %v", err)
-				}
+				_ = safego.Call("authlogin.refreshLock.renew.tick", func() error {
+					if err := s.extendLock(context.WithoutCancel(ctx), lockKey, token, lockTTL); err != nil {
+						log.Printf("authlogin: refresh lock renewal failed: %v", err)
+					}
+					return nil
+				})
 			}
 		}
-	}()
+	})
 	return func() { close(stop) }
 }
 

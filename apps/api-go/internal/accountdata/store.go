@@ -7,6 +7,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // jsDateLayout is the exact `new Date().toISOString()` member layout
@@ -39,7 +41,7 @@ func (s *Service) loadSmall(ctx context.Context, orgID, userID string) (*smallSe
 	var firstErr error
 	run := func(load func() error) {
 		group.Add(1)
-		go func() {
+		safego.Go("accountdata.loadSmall.section", func() {
 			defer group.Done()
 			if err := load(); err != nil {
 				lock.Lock()
@@ -48,7 +50,7 @@ func (s *Service) loadSmall(ctx context.Context, orgID, userID string) (*smallSe
 				}
 				lock.Unlock()
 			}
-		}()
+		})
 	}
 	run(func() error {
 		account, err := s.loadAccount(ctx, userID)

@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // These tests are deliberately pure: they exercise the DTO conversion, the merge
@@ -382,18 +384,18 @@ func TestMergeEncryptsNewSecretAndClearsOnNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var envelope encryptedStringValueV1
+	var envelope settingscrypto.Envelope
 	if err := json.Unmarshal(next.OpenskyClientSecret, &envelope); err != nil {
 		t.Fatalf("expected an envelope: %s", next.OpenskyClientSecret)
 	}
-	if !envelope.valid() {
+	if !envelope.Valid() {
 		t.Fatalf("invalid envelope: %+v", envelope)
 	}
-	key, err := decodeSystemSettingsKey(testKeyHex)
+	key, err := settingscrypto.ParseKey(testKeyHex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, err := decryptStringValueV1(envelope, key)
+	plain, err := settingscrypto.Decrypt(envelope, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,47 +674,47 @@ func TestSecretEncodingPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.encrypted == nil || !resolved.encrypted.valid() {
+	if resolved.encrypted == nil || !resolved.encrypted.Valid() {
 		t.Fatalf("resolved = %+v", resolved)
 	}
 }
 
 func TestDecodeSystemSettingsKeyAcceptsHexAndBase64(t *testing.T) {
-	key, err := decodeSystemSettingsKey("0x" + testKeyHex)
+	key, err := settingscrypto.ParseKey("0x" + testKeyHex)
 	if err != nil || len(key) != 32 {
 		t.Fatalf("0x-prefixed hex: %v", err)
 	}
 	base64Key := base64Of(key)
-	decoded, err := decodeSystemSettingsKey(base64Key)
+	decoded, err := settingscrypto.ParseKey(base64Key)
 	if err != nil || string(decoded) != string(key) {
 		t.Fatalf("base64: %v", err)
 	}
-	if _, err := decodeSystemSettingsKey("nope"); err == nil {
+	if _, err := settingscrypto.ParseKey("nope"); err == nil {
 		t.Fatal("an invalid key must fail")
 	}
-	if _, err := decodeSystemSettingsKey(""); err == nil {
+	if _, err := settingscrypto.ParseKey(""); err == nil {
 		t.Fatal("an empty key must fail")
 	}
 }
 
 func TestEnvelopeRoundTripAcrossImplementations(t *testing.T) {
-	key, err := decodeSystemSettingsKey(testKeyHex)
+	key, err := settingscrypto.ParseKey(testKeyHex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := encryptStringValueV1("cross-implementation", key)
+	envelope, err := settingscrypto.Encrypt("cross-implementation", key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := envelope.encodeJSON()
+	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded encryptedStringValueV1
+	var decoded settingscrypto.Envelope
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	plain, err := decryptStringValueV1(decoded, key)
+	plain, err := settingscrypto.Decrypt(decoded, key)
 	if err != nil || plain != "cross-implementation" {
 		t.Fatalf("plain = %q, err = %v", plain, err)
 	}
@@ -935,11 +937,11 @@ func TestSecretPolicyErrorMapsToBadRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var envelope encryptedStringValueV1
+	var envelope settingscrypto.Envelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		t.Fatalf("expected an envelope: %s", raw)
 	}
-	if !envelope.valid() {
+	if !envelope.Valid() {
 		t.Fatalf("invalid envelope: %+v", envelope)
 	}
 }

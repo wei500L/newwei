@@ -107,7 +107,7 @@ func TestServeHTTPRejectsForeignRequests(t *testing.T) {
 
 func TestCloseClosesTransportAndIsIdempotent(t *testing.T) {
 	harness := newTestRuntime(t, nil)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 
 	newsnow := harness.dial(t)
 	readOpen(t, newsnow)

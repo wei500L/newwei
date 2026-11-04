@@ -40,6 +40,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
 	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Ownership and stream constants.
@@ -165,10 +166,10 @@ func (t *Tracker) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	t.cancel = cancel
 	t.wg.Add(1)
-	go func() {
+	safego.Go("queueorgstats.tracker.run", func() {
 		defer t.wg.Done()
 		t.run(runCtx)
-	}()
+	})
 	return nil
 }
 
@@ -213,7 +214,13 @@ func (t *Tracker) run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		acquired, err := t.acquireAndRead(ctx)
+		var acquired bool
+		var err error
+		err = safego.Call("queueorgstats.tracker.acquireAndRead", func() error {
+			var readErr error
+			acquired, readErr = t.acquireAndRead(ctx)
+			return readErr
+		})
 		if ctx.Err() != nil {
 			return
 		}

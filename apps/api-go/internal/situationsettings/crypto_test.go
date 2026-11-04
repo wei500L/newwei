@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 const testEncryptionKeyHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -38,7 +40,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isEncryptedSettingsValue(envelope) {
+	if !settingscrypto.IsEnvelope(envelope) {
 		t.Fatalf("envelope not recognised: %s", envelope)
 	}
 	var decoded struct {
@@ -75,7 +77,7 @@ func TestDecodeSettingsKeyForms(t *testing.T) {
 		"0x" + testEncryptionKeyHex,
 		base64.StdEncoding.EncodeToString(key),
 	} {
-		decoded, err := decodeSettingsKey(raw)
+		decoded, err := settingscrypto.ParseKey(raw)
 		if err != nil {
 			t.Fatalf("%q: %v", raw, err)
 		}
@@ -83,10 +85,10 @@ func TestDecodeSettingsKeyForms(t *testing.T) {
 			t.Fatalf("%q decoded = %x", raw, decoded)
 		}
 	}
-	if _, err := decodeSettingsKey(""); err == nil || err.Error() != "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty" {
+	if _, err := settingscrypto.ParseKey(""); err == nil || err.Error() != "SYSTEM_SETTINGS_ENCRYPTION_KEY is empty" {
 		t.Fatalf("empty key: %v", err)
 	}
-	if _, err := decodeSettingsKey("short"); err == nil || !strings.Contains(err.Error(), "32 bytes") {
+	if _, err := settingscrypto.ParseKey("short"); err == nil || !strings.Contains(err.Error(), "32 bytes") {
 		t.Fatalf("short key: %v", err)
 	}
 }
@@ -98,7 +100,7 @@ func TestIsEncryptedSettingsValueRejectsLooseShapes(t *testing.T) {
 		`{"__enc":"system-settings:v1","alg":"aes-256-gcm","iv":1,"tag":"b","data":"c"}`,
 		`{"__enc":"other","alg":"aes-256-gcm","iv":"a","tag":"b","data":"c"}`,
 	} {
-		if isEncryptedSettingsValue(json.RawMessage(raw)) {
+		if settingscrypto.IsEnvelope(json.RawMessage(raw)) {
 			t.Fatalf("%s should not be an envelope", raw)
 		}
 	}
@@ -115,7 +117,7 @@ func TestSecretEncoderPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isEncryptedSettingsValue(encoded) {
+	if !settingscrypto.IsEnvelope(encoded) {
 		t.Fatalf("expected envelope, got %s", encoded)
 	}
 

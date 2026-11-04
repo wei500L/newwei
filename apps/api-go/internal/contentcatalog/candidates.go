@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/personalnews"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -29,12 +30,12 @@ func (s *Service) loadAllCandidates(ctx context.Context, orgID string) ([]candid
 	var taxonomy taxonomyDescriptor
 	var wg sync.WaitGroup
 	wg.Add(6)
-	go func() { defer wg.Done(); topics.rows, topics.err = s.loadTopicCandidates(ctx, orgID) }()
-	go func() { defer wg.Done(); entities.rows, entities.err = s.loadEntityCandidates(ctx, orgID) }()
-	go func() { defer wg.Done(); sources.rows, sources.err = s.loadSourceCandidates(ctx, orgID) }()
-	go func() { defer wg.Done(); keywords.rows, keywords.err = s.loadKeywordCandidates(ctx, orgID) }()
-	go func() { defer wg.Done(); geos.rows, geos.err = s.loadGeoCandidates(ctx, orgID) }()
-	go func() { defer wg.Done(); taxonomy = s.loadTaxonomy(ctx, orgID) }()
+	safego.Go("contentcatalog.loadAllCandidates.topics", func() { defer wg.Done(); topics.rows, topics.err = s.loadTopicCandidates(ctx, orgID) })
+	safego.Go("contentcatalog.loadAllCandidates.entities", func() { defer wg.Done(); entities.rows, entities.err = s.loadEntityCandidates(ctx, orgID) })
+	safego.Go("contentcatalog.loadAllCandidates.sources", func() { defer wg.Done(); sources.rows, sources.err = s.loadSourceCandidates(ctx, orgID) })
+	safego.Go("contentcatalog.loadAllCandidates.keywords", func() { defer wg.Done(); keywords.rows, keywords.err = s.loadKeywordCandidates(ctx, orgID) })
+	safego.Go("contentcatalog.loadAllCandidates.geos", func() { defer wg.Done(); geos.rows, geos.err = s.loadGeoCandidates(ctx, orgID) })
+	safego.Go("contentcatalog.loadAllCandidates.taxonomy", func() { defer wg.Done(); taxonomy = s.loadTaxonomy(ctx, orgID) })
 	wg.Wait()
 	if ctx.Err() != nil {
 		return nil, taxonomyDescriptor{}, ctx.Err()

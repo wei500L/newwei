@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // This file ports discoverDeepUrls/discoverDeepCandidates
@@ -306,7 +308,7 @@ func (d *Discovery) crawlDeepBatch(
 	var group sync.WaitGroup
 	for worker := 0; worker < limit; worker++ {
 		group.Add(1)
-		go func() {
+		safego.Go("crawlmetadata.crawlDeepBatch.worker", func() {
 			defer group.Done()
 			for {
 				mutex.Lock()
@@ -318,7 +320,7 @@ func (d *Discovery) crawlDeepBatch(
 				}
 				results[index], errs[index] = d.crawlDeepPage(ctx, client, settings, batch[index], input, crawlOptions, allowedOrigin, normalizedSeedURL)
 			}
-		}()
+		})
 	}
 	group.Wait()
 	for _, err := range errs {

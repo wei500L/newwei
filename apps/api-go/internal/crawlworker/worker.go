@@ -25,6 +25,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // FrontierNodeProcessor executes one queued Frontier node job. It is the
@@ -450,7 +451,7 @@ func (w *Worker) subscribeWorkerConcurrency() {
 	w.pubsub = pubsub
 	w.mu.Unlock()
 	w.subscriberWG.Add(1)
-	go func() {
+	safego.Go("crawlworker.worker.subscribeWorkerConcurrency", func() {
 		defer w.subscriberWG.Done()
 		for message := range pubsub.Channel() {
 			if message.Channel != crawlqueue.WorkerConcurrencyChannel {
@@ -464,7 +465,7 @@ func (w *Worker) subscribeWorkerConcurrency() {
 			w.ApplyConcurrency(concurrency)
 			w.logf("crawlworker: applied crawl worker concurrency broadcast maxConcurrency=%d", concurrency)
 		}
-	}()
+	})
 }
 
 // closeSubscriber unsubscribes and closes the C2 PubSub connection.

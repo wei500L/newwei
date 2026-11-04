@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // parallel runs fn for every index concurrently and returns results in index
@@ -20,10 +22,11 @@ func parallel[T any](count int, fn func(index int) (T, error)) ([]T, error) {
 	var wait sync.WaitGroup
 	wait.Add(count)
 	for index := 0; index < count; index++ {
-		go func(i int) {
+		i := index
+		safego.Go("newsnowsources.providerJson1.parallel", func() {
 			defer wait.Done()
 			results[i], errs[i] = fn(i)
-		}(index)
+		})
 	}
 	wait.Wait()
 	for _, err := range errs {

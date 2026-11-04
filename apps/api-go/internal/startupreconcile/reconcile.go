@@ -25,6 +25,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -90,7 +92,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 	r.wg.Add(1)
 	r.mu.Unlock()
 
-	go func() {
+	safego.Go("startupreconcile.reconciler.run", func() {
 		defer r.wg.Done()
 		acquired, err := r.RunOnce(runCtx)
 		switch {
@@ -99,7 +101,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 		case !acquired:
 			log.Printf("startupreconcile: skipped, another instance holds the %s lease", lockName)
 		}
-	}()
+	})
 }
 
 // Close waits for the in-flight reconciliation (or its cancellation) before the

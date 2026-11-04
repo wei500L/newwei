@@ -53,6 +53,11 @@ var (
 		"Latest pipeline metric value by slug.",
 		"org_id", "metric",
 	)
+	goroutinePanics = defaultRegistry.Counter(
+		"api_go_goroutine_panics_total",
+		"Panics recovered from background goroutines.",
+		"name",
+	)
 )
 
 // Default returns the process-wide registry.
@@ -104,6 +109,13 @@ func RecordIntegrationEvent(input IntegrationEventInput) {
 // alert scheduler).
 func RecordSchedulerRun(scheduler, status string) {
 	schedulerRuns.Inc(scheduler, status)
+}
+
+// RecordGoroutinePanic counts one panic recovered by internal/safego, labelled by
+// the bounded static unit name. It is the reuse point for the panic isolation
+// added by REFACTOR-SAFE-GOROUTINE-001.
+func RecordGoroutinePanic(name string) {
+	goroutinePanics.Inc(name)
 }
 
 // SetPipelineMetric mirrors setPipelineMetric: non-finite values are ignored.

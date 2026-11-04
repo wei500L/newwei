@@ -15,6 +15,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Scheduler keys and timings mirrored from
@@ -178,10 +180,10 @@ func (s *Scheduler) Start(parent context.Context) {
 		ctx, cancel := context.WithCancel(parent)
 		s.hardStop = cancel
 		s.wg.Add(1)
-		go func() {
+		safego.Go("newseventsingest.scheduler.loop", func() {
 			defer s.wg.Done()
 			s.loop(ctx)
-		}()
+		})
 	})
 }
 
@@ -227,9 +229,12 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-s.stop:
 			return
 		case <-timer.C:
-			if err := s.runTick(ctx); err != nil {
-				log.Printf("newseventsingest: tick failed: %v", err)
-			}
+			_ = safego.Call("newseventsingest.scheduler.tick", func() error {
+				if err := s.runTick(ctx); err != nil {
+					log.Printf("newseventsingest: tick failed: %v", err)
+				}
+				return nil
+			})
 			now := s.clock()
 			next = next.Add(tickInterval)
 			if !next.After(now) {
@@ -464,11 +469,11 @@ func (s *Scheduler) runOrgs(ctx context.Context, orgIDs []string, concurrency in
 		default:
 		}
 		wg.Add(1)
-		go func(index int, orgID string) {
+		safego.Go("newseventsingest.scheduler.runOrgs", func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			results[index] = s.runOrgWithLock(ctx, orgID)
-		}(index, orgID)
+		})
 	}
 	wg.Wait()
 	return results
@@ -520,7 +525,7 @@ func (s *Scheduler) startOrgLockRenew(key, token string) func() {
 	ticker := time.NewTicker(interval)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() {
+	safego.Go("newseventsingest.scheduler.orgLockRenew", func() {
 		defer close(done)
 		defer ticker.Stop()
 		for {
@@ -529,12 +534,14 @@ func (s *Scheduler) startOrgLockRenew(key, token string) func() {
 				return
 			case <-ticker.C:
 				renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = renewOrgLockScript.Run(renewCtx, s.options.RedisClient,
-					[]string{key}, token, strconv.FormatInt(orgLockTTL.Milliseconds(), 10)).Err()
+				_ = safego.Call("newseventsingest.scheduler.renewOrgLock", func() error {
+					return renewOrgLockScript.Run(renewCtx, s.options.RedisClient,
+						[]string{key}, token, strconv.FormatInt(orgLockTTL.Milliseconds(), 10)).Err()
+				})
 				cancel()
 			}
 		}
-	}()
+	})
 	var once sync.Once
 	return func() {
 		once.Do(func() {

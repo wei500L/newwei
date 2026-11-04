@@ -14,6 +14,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Handler processes one claimed job. Returning an error triggers the BullMQ
@@ -53,16 +55,17 @@ func NewWorker(client *redis.Client, cfg WorkerConfig, handler Handler) *Worker 
 // immediately; Close drains the in-flight handlers.
 func (w *Worker) Start(ctx context.Context) {
 	w.wg.Add(1)
-	go func() {
+	safego.Go("assistantqueue.worker.stalledLoop", func() {
 		defer w.wg.Done()
 		w.stalledLoop(ctx)
-	}()
+	})
 	for i := 0; i < w.config.Concurrency; i++ {
 		w.wg.Add(1)
-		go func(slot int) {
+		slot := i
+		safego.Go("assistantqueue.worker.claimLoop", func() {
 			defer w.wg.Done()
 			w.claimLoop(ctx, slot)
-		}(i)
+		})
 	}
 }
 
@@ -95,7 +98,12 @@ func (w *Worker) claimLoop(ctx context.Context, slot int) {
 			return
 		default:
 		}
-		claimed, err := w.claim(ctx)
+		var claimed *ClaimedJob
+		err := safego.Call("assistantqueue.worker.claim", func() error {
+			var claimErr error
+			claimed, claimErr = w.claim(ctx)
+			return claimErr
+		})
 		if err != nil {
 			log.Printf("%s claim failed: %v", loggerPrefix, err)
 			if !sleepOrStop(ctx, w.stop, time.Second) {
@@ -109,7 +117,10 @@ func (w *Worker) claimLoop(ctx context.Context, slot int) {
 			}
 			continue
 		}
-		w.runJob(ctx, *claimed, loggerPrefix)
+		_ = safego.Call("assistantqueue.worker.runJob", func() error {
+			w.runJob(ctx, *claimed, loggerPrefix)
+			return nil
+		})
 	}
 }
 
@@ -205,9 +216,13 @@ func (w *Worker) runJob(ctx context.Context, job ClaimedJob, loggerPrefix string
 	token := job.Token
 	renewDone := make(chan struct{})
 	if token != "" {
-		go w.renewLock(jobCtx, cancel, job.ID, token, renewDone)
+		safego.Go("assistantqueue.worker.renewLock", func() {
+			w.renewLock(jobCtx, cancel, job.ID, token, renewDone)
+		})
 	}
-	err := w.handler(jobCtx, job)
+	err := safego.Call("assistantqueue.worker.process", func() error {
+		return w.handler(jobCtx, job)
+	})
 	close(renewDone)
 	cancel()
 	// The handler's context cancellation must not decide the job result: a

@@ -148,7 +148,7 @@ func parseRuntimeEntryStrict(raw json.RawMessage) (runtimeStoredEntry, error) {
 	}
 	storedValue := entry.Value
 	if value.kind == secretEncrypted {
-		encoded, err := value.encrypted.encodeJSON()
+		encoded, err := json.Marshal(value.encrypted)
 		if err != nil {
 			return runtimeStoredEntry{}, err
 		}

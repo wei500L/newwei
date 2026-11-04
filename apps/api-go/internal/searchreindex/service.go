@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // finalizeTimeout bounds the best-effort status write, lock release and prune
@@ -88,10 +89,10 @@ func (s *Service) startReindex(ctx context.Context, orgID string) (Job, error) {
 		return Job{}, err
 	}
 	s.wait.Add(1)
-	go func() {
+	safego.Go("searchreindex.service.runReindex", func() {
 		defer s.wait.Done()
 		s.runReindex(job.ID, orgID, lock)
-	}()
+	})
 	return job, nil
 }
 

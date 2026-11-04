@@ -2,16 +2,14 @@ package economicdata
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 const situationMonitorSettingsKey = "situation_monitor_settings"
@@ -101,14 +99,6 @@ func decodeCachedSettings(payload []byte) (map[string]json.RawMessage, bool, err
 	return envelope.Value, true, nil
 }
 
-type encryptedSecret struct {
-	Enc  string `json:"__enc"`
-	Alg  string `json:"alg"`
-	IV   string `json:"iv"`
-	Tag  string `json:"tag"`
-	Data string `json:"data"`
-}
-
 func resolveStoredAPIKey(raw json.RawMessage, encryptionKey string) string {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
@@ -121,66 +111,20 @@ func resolveStoredAPIKey(raw json.RawMessage, encryptionKey string) string {
 		}
 		return ""
 	}
-	if strings.HasPrefix(trimmed, "{") {
-		var secret encryptedSecret
-		if json.Unmarshal(raw, &secret) != nil || secret.Enc != "system-settings:v1" || secret.Alg != "aes-256-gcm" {
-			return ""
-		}
-		plain, err := decryptSettingSecret(secret, encryptionKey)
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(plain)
+	if !settingscrypto.IsEnvelope(raw) {
+		return ""
 	}
-	return ""
-}
-
-func decryptSettingSecret(secret encryptedSecret, encryptionKey string) (string, error) {
-	key, err := decodeSettingsKey(encryptionKey)
+	var secret settingscrypto.Envelope
+	if json.Unmarshal(raw, &secret) != nil {
+		return ""
+	}
+	key, err := settingscrypto.ParseKey(encryptionKey)
 	if err != nil {
-		return "", err
+		return ""
 	}
-	iv, err := base64.StdEncoding.DecodeString(secret.IV)
+	plain, err := settingscrypto.Decrypt(secret, key)
 	if err != nil {
-		return "", err
+		return ""
 	}
-	tag, err := base64.StdEncoding.DecodeString(secret.Tag)
-	if err != nil {
-		return "", err
-	}
-	data, err := base64.StdEncoding.DecodeString(secret.Data)
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plain, err := gcm.Open(nil, iv, append(data, tag...), nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
-}
-
-func decodeSettingsKey(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, errors.New("missing encryption key")
-	}
-	hexCandidate := strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if len(hexCandidate) == 64 {
-		if decoded, err := hex.DecodeString(hexCandidate); err == nil {
-			return decoded, nil
-		}
-	}
-	decoded, err := base64.StdEncoding.DecodeString(trimmed)
-	if err != nil || len(decoded) != 32 {
-		return nil, errors.New("invalid encryption key")
-	}
-	return decoded, nil
+	return strings.TrimSpace(plain)
 }

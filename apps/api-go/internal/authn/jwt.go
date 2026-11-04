@@ -12,13 +12,14 @@
 //     audience 包含、exp 存在即校验（ignoreExpiration:false）、nbf 存在即
 //     校验、iat 不校验；任何 passport 层失败统一 401 message "Unauthorized"
 //     （auth.guard.js handleRequest 抛无参 UnauthorizedException）；
-//   - jti：NestJS 当前 token 恒有 jti，但 JwtStrategy 对缺失 jti 的旧
-//     token 不查 blacklist 仍放行——Go 严格复刻该语义（jti 为空 → 跳过
-//     blacklist）；
+//   - jti：NestJS 当前 token 恒有 jti（签发点恒写 UUIDv4），Go 在此强制
+//     要求 jti 非空——缺 jti 的 token 一律验签失败（对外 401）。这是有意
+//     变更：历史 Nest 语义对缺 jti 的 token 跳过 blacklist 而放行，导致这类
+//     token 无法登出/吊销；强制 jti 后所有合法 token 都能被撤销；
 //   - permissions claim：一律不读取、不信任（授权只来自 authz 的 MySQL
 //     重推导）；
-//   - mtk_ 机器令牌：机器令牌迁移不在本批范围，Go 端点不接受
-//     （见下方 ExtractBearerToken 的说明）。
+//   - mtk_ 机器令牌：authn.ExtractBearerToken 仍拒绝 mtk_（人类端点不接受
+//     机器令牌）；机器令牌由 authhttp 的 MachineResolver 单独解析。
 //
 // 信任边界：Verify 成功只代表「token 是 NestJS 以同一 secret 签发的」，
 // 不代表「请求已被授权」——可信用户上下文要等 authz 完成 membership 与
@@ -52,10 +53,11 @@ var ErrInvalidToken = errors.New("invalid access token")
 // behaviour is kept and locked by jwt_test.go.
 //
 // Both sides reject a missing header, a non-Bearer scheme and an empty token
-// (→ 401 "Unauthorized"). mtk_ machine tokens are rejected on purpose:
-// machine-token migration is outside this batch (NestJS resolves mtk_ in the
-// separate MachineTokenService path wired into jwt-auth.guard.ts), so these
-// endpoints only accept a NestJS-signed JWT.
+// (→ 401 "Unauthorized"). mtk_ machine tokens are rejected on purpose: this
+// extractor only serves human endpoints, which must keep rejecting machine
+// tokens with the same 401. Routes that accept machine tokens use
+// authhttp.Authenticator.AuthenticateWithMachine, which extracts the raw bearer
+// itself and hands mtk_ tokens to the shared MachineResolver.
 func ExtractBearerToken(r *http.Request) string {
 	header := r.Header.Get("Authorization")
 	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
@@ -73,7 +75,7 @@ func ExtractBearerToken(r *http.Request) string {
 type Token struct {
 	Subject string // sub → userId
 	OrgID   string // orgId → 待验证的组织上下文（须再经 authz 重推导）
-	JTI     string // jti（可为空——空时按 NestJS 语义跳过 blacklist）
+	JTI     string // jti（Verify 保证非空——缺 jti 即验签失败）
 	// ExpiresAt is the verified exp claim as a UTC instant. NestJS-issued
 	// tokens always carry exp; when it is missing the field stays at its zero
 	// value so callers omit the JWT metadata instead of fabricating 0. The
@@ -100,9 +102,9 @@ func NewVerifier(secret, issuer, audience string) *Verifier {
 // 只接受 HS256（WithValidMethods 同时拒绝 alg=none 与 HS384/HS512/RS256
 // 等算法混淆）；issuer 严格相等；audience 包含匹配；exp/nbf 存在即校验
 // （leeway 0——与 jsonwebtoken 默认一致，不自行扩大时钟容忍）；iat 不
-// 校验（jsonwebtoken 亦不校验）。sub/orgId 必须是非空字符串（NestJS
-// 签发的 token 恒有两者；缺失说明不是合法签发形态）。jti 原样返回，
-// 是否查询 blacklist 由调用方按 NestJS 语义决定。
+// 校验（jsonwebtoken 亦不校验）。sub/orgId/jti 必须是非空字符串（NestJS
+// 签发的 token 恒有三者；缺失说明不是合法签发形态，且无 jti 的 token 无法
+// 撤销，故一律拒绝）。jti 去空白后返回。
 func (v *Verifier) Verify(rawToken string) (Token, error) {
 	parsed, err := jwt.Parse(rawToken, func(*jwt.Token) (any, error) {
 		return v.secret, nil
@@ -122,7 +124,14 @@ func (v *Verifier) Verify(rawToken string) (Token, error) {
 	sub, _ := claims["sub"].(string)
 	orgID, _ := claims["orgId"].(string)
 	jti, _ := claims["jti"].(string)
+	jti = strings.TrimSpace(jti)
 	if strings.TrimSpace(sub) == "" || strings.TrimSpace(orgID) == "" {
+		return Token{}, ErrInvalidToken
+	}
+	// A token without jti cannot be blacklisted, so logout/revocation would be
+	// silently ineffective for it. Reject it here (uniform 401) instead of
+	// letting it bypass the revocation list.
+	if jti == "" {
 		return Token{}, ErrInvalidToken
 	}
 	// exp is already validated by the jwt library during verification (when
@@ -140,5 +149,5 @@ func (v *Verifier) Verify(rawToken string) (Token, error) {
 			expiresAt = time.Unix(value, 0).UTC()
 		}
 	}
-	return Token{Subject: sub, OrgID: orgID, JTI: strings.TrimSpace(jti), ExpiresAt: expiresAt}, nil
+	return Token{Subject: sub, OrgID: orgID, JTI: jti, ExpiresAt: expiresAt}, nil
 }

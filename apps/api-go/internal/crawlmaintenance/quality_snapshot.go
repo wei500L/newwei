@@ -12,6 +12,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Crawl quality snapshot timings copied from
@@ -156,7 +158,7 @@ func settleWithConcurrency(ctx context.Context, items []string, concurrency int,
 	var wait sync.WaitGroup
 	wait.Add(safe)
 	for workerIndex := 0; workerIndex < safe; workerIndex++ {
-		go func() {
+		safego.Go("crawlmaintenance.settleWithConcurrency", func() {
 			defer wait.Done()
 			for {
 				mu.Lock()
@@ -169,7 +171,7 @@ func settleWithConcurrency(ctx context.Context, items []string, concurrency int,
 				skipped, err := worker(ctx, items[index])
 				results[index] = orgResult{item: items[index], skipped: skipped, err: err}
 			}
-		}()
+		})
 	}
 	wait.Wait()
 	return results
@@ -214,18 +216,18 @@ func (s *QualitySnapshotScheduler) discoverRecentlyChangedTaskIDs(ctx context.Co
 		resultErr    error
 	)
 	wait.Add(3)
-	go func() {
+	safego.Go("crawlmaintenance.discoverRecentlyChangedTaskIDs.tasks", func() {
 		defer wait.Done()
 		tasks, taskErr = s.discoverChangedTasks(ctx, orgID, since)
-	}()
-	go func() {
+	})
+	safego.Go("crawlmaintenance.discoverRecentlyChangedTaskIDs.logs", func() {
 		defer wait.Done()
 		logJobIDs, logErr = s.discoverChangedLogs(ctx, orgID, since)
-	}()
-	go func() {
+	})
+	safego.Go("crawlmaintenance.discoverRecentlyChangedTaskIDs.results", func() {
 		defer wait.Done()
 		resultTaskID, resultErr = s.discoverChangedResults(ctx, orgID, since)
-	}()
+	})
 	wait.Wait()
 	if taskErr != nil {
 		return nil, taskErr

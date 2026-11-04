@@ -3,10 +3,13 @@ package modelaccesssettings
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // testKeyHex is a fixed 32 byte key in 64 hex characters.
@@ -50,7 +53,7 @@ func TestDecodeSettingsKey(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			decoded, err := decodeSettingsKey(testCase.input)
+			decoded, err := settingscrypto.ParseKey(testCase.input)
 			if testCase.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error %q, got key %x", testCase.wantErr, decoded)
@@ -70,41 +73,6 @@ func TestDecodeSettingsKey(t *testing.T) {
 	}
 }
 
-// TestNodeBase64Decode reproduces Node's lenient base64 decoder on the inputs this
-// protocol can meet.
-func TestNodeBase64Decode(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{input: "abc", want: "69b7"},
-		{input: "ab", want: "69"},
-		{input: "a", want: ""},
-		{input: "YWJj", want: "616263"},
-		{input: "YWJj=", want: "616263"},
-		{input: "YWJj==", want: "616263"},
-		{input: "AA=A", want: "00"},
-		{input: "=AAA", want: ""},
-		{input: "!!!", want: ""},
-		{input: "a b", want: "69"},
-		{input: "a\tb", want: "69"},
-		{input: "_-", want: "ff"},
-		{input: "-A", want: "f8"},
-		{input: "_A", want: "fc"},
-		{input: "A-", want: "03"},
-		{input: "0x", want: "d3"},
-		{input: "YWJ=j", want: "6162"},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.input, func(t *testing.T) {
-			got := hex.EncodeToString(nodeBase64Decode(testCase.input))
-			if got != testCase.want {
-				t.Fatalf("nodeBase64Decode(%q) = %s, want %s", testCase.input, got, testCase.want)
-			}
-		})
-	}
-}
-
 // TestEncryptDecryptRoundTrip verifies the envelope shape and the plaintext.
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	key := testKey(t)
@@ -115,11 +83,13 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	if envelope.Enc != "system-settings:v1" || envelope.Alg != "aes-256-gcm" {
 		t.Fatalf("envelope header = %+v", envelope)
 	}
-	if len(nodeBase64Decode(envelope.IV)) != 12 {
-		t.Fatalf("iv length = %d, want 12", len(nodeBase64Decode(envelope.IV)))
+	ivBytes, err := base64.StdEncoding.DecodeString(*envelope.IV)
+	if err != nil || len(ivBytes) != 12 {
+		t.Fatalf("iv length = %d, want 12", len(ivBytes))
 	}
-	if len(nodeBase64Decode(envelope.Tag)) != 16 {
-		t.Fatalf("tag length = %d, want 16", len(nodeBase64Decode(envelope.Tag)))
+	tagBytes, err := base64.StdEncoding.DecodeString(*envelope.Tag)
+	if err != nil || len(tagBytes) != 16 {
+		t.Fatalf("tag length = %d, want 16", len(tagBytes))
 	}
 	plain, err := decryptStringValueV1(envelope, key)
 	if err != nil {
@@ -134,7 +104,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt 2: %v", err)
 	}
-	if second.IV == envelope.IV {
+	if *second.IV == *envelope.IV {
 		t.Fatalf("iv was reused across writes")
 	}
 }
@@ -148,36 +118,42 @@ func TestDecryptFailuresAreGeneric(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
-		mutate func(encryptedSecret) encryptedSecret
+		mutate func(settingscrypto.Envelope) settingscrypto.Envelope
 	}{
-		{name: "corrupted tag", mutate: func(e encryptedSecret) encryptedSecret {
-			raw := nodeBase64Decode(e.Tag)
+		{name: "corrupted tag", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			raw, _ := base64.StdEncoding.DecodeString(*e.Tag)
 			raw[0] ^= 0xff
-			e.Tag = base64StdEncode(raw)
+			v := base64StdEncode(raw)
+			e.Tag = &v
 			return e
 		}},
-		{name: "corrupted data", mutate: func(e encryptedSecret) encryptedSecret {
-			raw := nodeBase64Decode(e.Data)
+		{name: "corrupted data", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			raw, _ := base64.StdEncoding.DecodeString(*e.Data)
 			raw[0] ^= 0xff
-			e.Data = base64StdEncode(raw)
+			v := base64StdEncode(raw)
+			e.Data = &v
 			return e
 		}},
-		{name: "corrupted iv", mutate: func(e encryptedSecret) encryptedSecret {
-			raw := nodeBase64Decode(e.IV)
+		{name: "corrupted iv", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			raw, _ := base64.StdEncoding.DecodeString(*e.IV)
 			raw[0] ^= 0xff
-			e.IV = base64StdEncode(raw)
+			v := base64StdEncode(raw)
+			e.IV = &v
 			return e
 		}},
-		{name: "short iv", mutate: func(e encryptedSecret) encryptedSecret {
-			e.IV = base64StdEncode([]byte{1, 2, 3})
+		{name: "short iv", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			v := base64StdEncode([]byte{1, 2, 3})
+			e.IV = &v
 			return e
 		}},
-		{name: "short tag", mutate: func(e encryptedSecret) encryptedSecret {
-			e.Tag = base64StdEncode([]byte{1, 2, 3, 4})
+		{name: "short tag", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			v := base64StdEncode([]byte{1, 2, 3, 4})
+			e.Tag = &v
 			return e
 		}},
-		{name: "empty data", mutate: func(e encryptedSecret) encryptedSecret {
-			e.Data = ""
+		{name: "empty data", mutate: func(e settingscrypto.Envelope) settingscrypto.Envelope {
+			v := ""
+			e.Data = &v
 			return e
 		}},
 	}

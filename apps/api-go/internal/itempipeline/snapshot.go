@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // SnapshotRefresher refreshes the ops snapshot of one news source.
@@ -94,7 +95,7 @@ func (c *snapshotCoalescer) request(orgID, sourceID string) {
 	if state.LastRefresh.IsZero() || now.Sub(state.LastRefresh) >= c.window {
 		state.LastRefresh = now
 		c.mu.Unlock()
-		go c.refresh(orgID, sourceID)
+		safego.Go("itempipeline.snapshot.request", func() { c.refresh(orgID, sourceID) })
 		return
 	}
 	state.Pending = true

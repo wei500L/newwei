@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // queueRuntime is one running queue worker.
@@ -45,15 +47,15 @@ func (q *queueRuntime) start(fetchCtx, stalledCtx context.Context) {
 	}
 	q.mu.Unlock()
 	q.worker.fetchWG.Add(1)
-	go func() {
+	safego.Go("crawlworker.queue.fetchLoop", func() {
 		defer q.worker.fetchWG.Done()
 		q.fetchLoop(fetchCtx)
-	}()
+	})
 	q.worker.stalledWG.Add(1)
-	go func() {
+	safego.Go("crawlworker.queue.stalledLoop", func() {
 		defer q.worker.stalledWG.Done()
 		q.stalledLoop(stalledCtx)
-	}()
+	})
 }
 
 // close releases the dedicated blocking connection. The shared command client is
@@ -107,7 +109,13 @@ func (q *queueRuntime) fetchLoop(ctx context.Context) {
 		if !q.acquireSlot(ctx) {
 			return
 		}
-		job, rateLimitTTL, delayUntil, err := q.moveToActive(ctx)
+		var job *claimedJob
+		var rateLimitTTL, delayUntil int64
+		err := safego.Call("crawlworker.queue.moveToActive", func() error {
+			var claimErr error
+			job, rateLimitTTL, delayUntil, claimErr = q.moveToActive(ctx)
+			return claimErr
+		})
 		if err != nil {
 			q.releaseSlot()
 			if ctx.Err() != nil {
@@ -127,11 +135,12 @@ func (q *queueRuntime) fetchLoop(ctx context.Context) {
 			continue
 		}
 		q.worker.jobWG.Add(1)
-		go func(job claimedJob) {
+		claimed := *job
+		safego.Go("crawlworker.queue.job", func() {
 			defer q.worker.jobWG.Done()
 			defer q.releaseSlot()
-			q.process(job)
-		}(*job)
+			q.process(claimed)
+		})
 	}
 }
 
@@ -274,8 +283,14 @@ func (q *queueRuntime) process(job claimedJob) {
 	jobCtx, cancelJob := context.WithCancelCause(q.worker.jobCtx)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	go q.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
-	outcome := q.worker.attempt.run(jobCtx, q.target(), job)
+	safego.Go("crawlworker.queue.renewLock", func() {
+		q.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	})
+	var outcome attemptOutcome
+	_ = safego.Call("crawlworker.queue.process", func() error {
+		outcome = q.worker.attempt.run(jobCtx, q.target(), job)
+		return nil
+	})
 	close(renewDone)
 	cancelJob(nil)
 	q.worker.logf("crawlworker: crawl attempt finished queue=%s jobId=%s taskId=%s outcome=%s leaseLost=%t",
@@ -548,7 +563,10 @@ func (q *queueRuntime) stalledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			q.checkStalled(ctx)
+			_ = safego.Call("crawlworker.queue.checkStalled", func() error {
+				q.checkStalled(ctx)
+				return nil
+			})
 			timer.Reset(stalledInterval)
 		}
 	}

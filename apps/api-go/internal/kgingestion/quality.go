@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Quality prepares one article's relations: normalization, the dynamic
@@ -258,10 +260,10 @@ func (q *Quality) validateRelation(
 	var wait sync.WaitGroup
 	for index, model := range models {
 		wait.Add(1)
-		go func(index int, model string) {
+		safego.Go("kgingestion.validateRelation.model", func() {
 			defer wait.Done()
 			results[index] = q.callValidationModel(ctx, input, relation, system, user, model)
-		}(index, model)
+		})
 	}
 	wait.Wait()
 

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Service owns the metadata preview chain: sitemap/robots discovery through the
@@ -197,7 +199,7 @@ func mapWithConcurrency[T any, R any](items []T, concurrency int, worker func(T)
 	var group sync.WaitGroup
 	for i := 0; i < limit; i++ {
 		group.Add(1)
-		go func() {
+		safego.Go("crawlmetadata.mapWithConcurrency", func() {
 			defer group.Done()
 			for {
 				index := int(atomic.AddInt64(&cursor, 1)) - 1
@@ -206,7 +208,7 @@ func mapWithConcurrency[T any, R any](items []T, concurrency int, worker func(T)
 				}
 				results[index] = worker(items[index])
 			}
-		}()
+		})
 	}
 	group.Wait()
 	return results

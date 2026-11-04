@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Processor runs one claimed job. It must stop writing when ctx is canceled
@@ -149,14 +151,14 @@ func (w *Worker) Start(ctx context.Context) error {
 	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
 	w.fetchDone = make(chan struct{})
 	w.stalledDone = make(chan struct{})
-	go func() {
+	safego.Go("archivepreparationworker.worker.stalledLoop", func() {
 		defer close(w.stalledDone)
 		w.stalledLoop(w.fetchCtx)
-	}()
-	go func() {
+	})
+	safego.Go("archivepreparationworker.worker.fetchLoop", func() {
 		defer close(w.fetchDone)
 		w.fetchLoop(w.fetchCtx)
-	}()
+	})
 	return nil
 }
 
@@ -244,7 +246,13 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			return
 		}
 
-		job, delayUntil, err := w.moveToActive(ctx)
+		var job *Job
+		var delayUntil int64
+		err := safego.Call("archivepreparationworker.worker.moveToActive", func() error {
+			var claimErr error
+			job, delayUntil, claimErr = w.moveToActive(ctx)
+			return claimErr
+		})
 		if err != nil {
 			<-w.slots
 			if ctx.Err() != nil {
@@ -280,11 +288,12 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		}
 		w.wg.Add(1)
 		w.mu.Unlock()
-		go func(job Job) {
+		claimed := *job
+		safego.Go("archivepreparationworker.worker.job", func() {
 			defer w.wg.Done()
 			defer func() { <-w.slots }()
-			w.process(ctx, job)
-		}(*job)
+			w.process(ctx, claimed)
+		})
 	}
 }
 
@@ -361,9 +370,13 @@ func (w *Worker) process(parent context.Context, job Job) {
 	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
-	go w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	safego.Go("archivepreparationworker.worker.renewLock", func() {
+		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
+	})
 
-	err := w.opts.Processor(jobCtx, job)
+	err := safego.Call("archivepreparationworker.worker.process", func() error {
+		return w.opts.Processor(jobCtx, job)
+	})
 	close(renewDone)
 	cancelJob(nil)
 
@@ -612,7 +625,10 @@ func (w *Worker) stalledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			w.checkStalled(ctx)
+			_ = safego.Call("archivepreparationworker.worker.checkStalled", func() error {
+				w.checkStalled(ctx)
+				return nil
+			})
 			timer.Reset(w.opts.StalledInterval)
 		}
 	}

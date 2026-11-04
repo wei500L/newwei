@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -55,9 +56,12 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.wg.Add(1)
 	s.mu.Unlock()
 
-	go func() {
+	safego.Go("bullmqcleanup.scheduler.loop", func() {
 		defer s.wg.Done()
-		s.run(runCtx)
+		_ = safego.Call("bullmqcleanup.scheduler.tick", func() error {
+			s.run(runCtx)
+			return nil
+		})
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 		for {
@@ -65,10 +69,13 @@ func (s *Scheduler) Start(ctx context.Context) {
 			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				s.run(runCtx)
+				_ = safego.Call("bullmqcleanup.scheduler.tick", func() error {
+					s.run(runCtx)
+					return nil
+				})
 			}
 		}
-	}()
+	})
 }
 
 // Close stops new ticks and waits for the in-flight cycle (or its cancellation)

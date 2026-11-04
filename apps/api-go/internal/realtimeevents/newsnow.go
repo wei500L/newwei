@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // Newsnow event sources.
@@ -146,10 +148,10 @@ func (s *Sources) openNewsnowSubscriptions(ctx context.Context) error {
 	}
 	s.adapterSub = adapterSub
 	s.wg.Add(1)
-	go func() {
+	safego.Go("realtimeevents.newsnow.adapterRead", func() {
 		defer s.wg.Done()
 		s.readPubSub(ctx, adapterSub, s.handleAdapterBroadcast)
-	}()
+	})
 
 	refreshSub, err := s.subscribeChannel(ctx, client, newsnowSourceRefreshChannel)
 	if err != nil {
@@ -158,12 +160,12 @@ func (s *Sources) openNewsnowSubscriptions(ctx context.Context) error {
 	}
 	s.refreshSub = refreshSub
 	s.wg.Add(1)
-	go func() {
+	safego.Go("realtimeevents.newsnow.refreshRead", func() {
 		defer s.wg.Done()
 		s.readPubSub(ctx, refreshSub, func(_ string, payload []byte) {
 			s.handleSourceRefresh(ctx, payload)
 		})
-	}()
+	})
 	return nil
 }
 

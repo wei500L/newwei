@@ -13,6 +13,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/workspace"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 const (
@@ -280,10 +281,10 @@ func (q *QueueObserver) Start(ctx context.Context) {
 		q.cancel = cancel
 		q.wg.Add(1)
 		q.mu.Unlock()
-		go func() {
+		safego.Go("graphqlsubscriptions.queue.readLoop", func() {
 			defer q.wg.Done()
 			q.readLoop(runCtx)
-		}()
+		})
 	})
 }
 
@@ -564,10 +565,10 @@ func (q *QueueObserver) pruneLocked(now time.Time) {
 // so re-publishing would deliver a job once per instance.
 func (q *QueueObserver) Subscribe(ctx context.Context, orgID string) <-chan FeedEvent {
 	feed, remove := q.hub.subscribe(orgID)
-	go func() {
+	safego.Go("graphqlsubscriptions.queue.subscribe", func() {
 		<-ctx.Done()
 		remove()
-	}()
+	})
 	return feed.channel
 }
 

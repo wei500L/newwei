@@ -13,6 +13,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/alertqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
+	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignalsworker"
 	"github.com/wei500L/newwei/apps/api-go/internal/telegramclient"
@@ -127,16 +128,16 @@ func (r *situationSignalsWorkerRuntime) Start(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() {
+	safego.Go("api.situationSignalsWorker.clearSubscriber", func() {
 		defer wg.Done()
 		if err := r.service.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("api-go: situation signals clear subscriber stopped: %v", err)
 		}
-	}()
-	go func() {
+	})
+	safego.Go("api.situationSignalsWorker.queueConsumer", func() {
 		defer wg.Done()
 		r.queue.Run(runCtx, r.service.HandleJob)
-	}()
+	})
 	go func() {
 		wg.Wait()
 		close(r.done)

@@ -3,7 +3,6 @@ package crawlworkflow
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -432,33 +431,16 @@ func (s *Service) NewsSourceBridge(ctx context.Context, orgID, sourceID string) 
 }
 
 // AuthenticateMachine 与 newssources.AuthenticateMachine 相同：
-// SHA-256 十六进制查 MachineAccessToken.tokenHash，连 Org.isActive；
+// 经共享 authhttp.MachineResolver（SHA-256）查 MachineAccessToken.tokenHash，连 Org.isActive；
 // 查不到、已撤销、已过期、组织停用 → 401 Invalid machine token；
 // 查到就更新 lastUsedAt。权限只解析令牌行 permissions JSON 里的字符串
 // 数组；orgId 只用令牌行的 orgId。
 func (s *Service) AuthenticateMachine(ctx context.Context, token string) (*authhttp.Identity, error) {
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var permissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := s.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:]),
-	).Scan(&id, &orgID, &permissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
+	identity, err := authhttp.NewMachineResolver(s.db, nil).Resolve(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, newStatus(401, "Invalid machine token")
 	}
-	if err != nil {
-		return nil, err
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(time.Now())) {
-		return nil, newStatus(401, "Invalid machine token")
-	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`, nowMillis(), id)
-	return authhttp.NewIdentity("machine:"+id, orgID, permissionList(permissions)), nil
+	return identity, err
 }
 
 func permissionList(raw []byte) []string {

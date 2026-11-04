@@ -43,6 +43,7 @@ func (f fixedAuthz) Authorize(context.Context, string, string) (*authz.Authoriza
 func signToken(t *testing.T, permissions []string) string {
 	t.Helper()
 	claims := jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   "user-1",
 		"orgId": "org-1",
 		"iss":   testIssuer,
@@ -74,7 +75,7 @@ func newTestHandler(t *testing.T, permissions []string) *Handler {
 			OrgID:       "org-1",
 			Permissions: permissionSet(permissions),
 		},
-	})
+	}, nil)
 	_, ops := newMemoryCache()
 	settings := &settingsReader{cache: ops, lookup: envLookup(map[string]string{})}
 	service := &Service{
@@ -279,7 +280,7 @@ func TestHandlerOrefAndTelegramRoutes(t *testing.T) {
 		authorization: &authz.Authorization{
 			UserID: "user-1", OrgID: "org-1", Permissions: permissionSet([]string{"items.read"}),
 		},
-	})
+	}, nil)
 	settings := &settingsReader{cache: ops, lookup: envLookup(map[string]string{})}
 	service := &Service{
 		cache:    ops,

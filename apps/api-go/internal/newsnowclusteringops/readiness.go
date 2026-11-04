@@ -2,14 +2,12 @@ package newsnowclusteringops
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 const (
@@ -142,101 +140,22 @@ func (s *Service) resolveModelServiceToken(raw json.RawMessage) string {
 	if plain := rawString(raw); plain != "" {
 		return plain
 	}
-	envelope, ok := decodeEncryptedEnvelope(raw)
-	if !ok {
+	if !settingscrypto.IsEnvelope(raw) {
 		return ""
 	}
-	decrypted, err := decryptSystemSettingSecret(envelope, s.cfg.EncryptionKey)
+	var envelope settingscrypto.Envelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return ""
+	}
+	key, err := settingscrypto.ParseKey(s.cfg.EncryptionKey)
+	if err != nil {
+		return ""
+	}
+	decrypted, err := settingscrypto.Decrypt(envelope, key)
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(decrypted)
-}
-
-// encryptedEnvelope is the system-settings:v1 encrypted string envelope.
-type encryptedEnvelope struct {
-	Tag  string `json:"__enc"`
-	Alg  string `json:"alg"`
-	IV   string `json:"iv"`
-	TagV string `json:"tag"`
-	Data string `json:"data"`
-}
-
-// decodeEncryptedEnvelope parses an encrypted envelope when the raw value has
-// the expected tag and algorithm.
-func decodeEncryptedEnvelope(raw json.RawMessage) (encryptedEnvelope, bool) {
-	var envelope encryptedEnvelope
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return encryptedEnvelope{}, false
-	}
-	if envelope.Tag != "system-settings:v1" || envelope.Alg != "aes-256-gcm" {
-		return encryptedEnvelope{}, false
-	}
-	return envelope, true
-}
-
-// decryptSystemSettingSecret decrypts an AES-256-GCM system-settings secret.
-func decryptSystemSettingSecret(envelope encryptedEnvelope, encryptionKey string) (string, error) {
-	key, err := decodeSettingsKey(encryptionKey)
-	if err != nil {
-		return "", err
-	}
-	iv, err := base64.StdEncoding.DecodeString(envelope.IV)
-	if err != nil {
-		return "", err
-	}
-	tag, err := base64.StdEncoding.DecodeString(envelope.TagV)
-	if err != nil {
-		return "", err
-	}
-	data, err := base64.StdEncoding.DecodeString(envelope.Data)
-	if err != nil {
-		return "", err
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	plain, err := gcm.Open(nil, iv, append(data, tag...), nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
-}
-
-// decodeSettingsKey accepts a 32-byte base64 key or a 64-character hex key.
-func decodeSettingsKey(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, errors.New("newsnowclusteringops: missing settings encryption key")
-	}
-	candidate := strings.TrimPrefix(strings.TrimPrefix(trimmed, "0x"), "0X")
-	if len(candidate) == 64 && isHexString(candidate) {
-		return hex.DecodeString(candidate)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(trimmed)
-	if err != nil || len(decoded) != 32 {
-		return nil, errors.New("newsnowclusteringops: invalid settings encryption key")
-	}
-	return decoded, nil
-}
-
-// isHexString reports whether every rune is a hexadecimal digit.
-func isHexString(value string) bool {
-	for _, r := range value {
-		switch {
-		case r >= '0' && r <= '9':
-		case r >= 'a' && r <= 'f':
-		case r >= 'A' && r <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 // llmBackfillReadiness mirrors LlmGatewaySettingsService.getActiveConfig plus

@@ -134,6 +134,7 @@ func (a staticAuthz) Authorize(_ context.Context, userID, orgID string) (*authz.
 func mintToken(t *testing.T) string {
 	t.Helper()
 	claims := jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   "user-1",
 		"orgId": "org-a",
 		"iss":   testIssuer,
@@ -154,6 +155,7 @@ func newTestHandler(t *testing.T, permissions ...string) (*Handler, *testRig) {
 		authn.NewVerifier(testSecret, testIssuer, testAudience),
 		allowAllBlacklist{},
 		staticAuthz{permissions: permissions},
+		nil,
 	)
 	return NewHandler(chain, openStubDB(t), rig.service), rig
 }

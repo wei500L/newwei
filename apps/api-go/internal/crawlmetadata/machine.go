@@ -2,14 +2,10 @@ package crawlmetadata
 
 import (
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -23,32 +19,11 @@ func (s *Service) authenticateMachine(ctx context.Context, token string) (*authh
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("%w: mysql is not configured", errDatabase)
 	}
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var permissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := s.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:]),
-	).Scan(&id, &orgID, &permissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
+	identity, err := authhttp.NewMachineResolver(s.db, nil).Resolve(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, newStatusError(http.StatusUnauthorized, "Invalid machine token")
 	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errDatabase, err)
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(time.Now())) {
-		return nil, newStatusError(http.StatusUnauthorized, "Invalid machine token")
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`,
-		time.Now().UTC().Truncate(time.Millisecond), id); err != nil {
-		// A failed bookkeeping update must not reject an otherwise valid token.
-		return authhttp.NewIdentity("machine:"+id, orgID, parseMachinePermissions(permissions)), nil
-	}
-	return authhttp.NewIdentity("machine:"+id, orgID, parseMachinePermissions(permissions)), nil
+	return identity, err
 }
 
 // parseMachinePermissions decodes the MachineAccessToken.permissions JSON array
