@@ -55,7 +55,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierllm"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
-	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
 )
 
 const (
