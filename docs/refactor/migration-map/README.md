@@ -1,5 +1,19 @@
 # 后端迁移地图
 
+## 2026-11-04 进入后端重构修复阶段
+
+基线 main `18c41879858d`（最新 main CI 41636414918 success）。对 `apps/api-go` 做了纯静态横向审查，发现的主要问题有：
+
+- 后台 goroutine 缺少 panic 隔离；
+- 机器令牌鉴权约有 22 份副本，设置加密有 16 份副本，并且密钥解析不一致；
+- 没有 `jti` 的 token 无法吊销；
+- MySQL 连接池没有上限，Mongo 连接按“谁先用谁打开”的方式创建；
+- BullMQ 脚本和 worker 有十余份副本；
+- 每个请求都要排序路由表；
+- 迁移开关残骸仍在。
+
+已拆分为 10 个 REFACTOR 任务，分 5 个波次，见 [BACKEND-REFACTOR-PLAN](BACKEND-REFACTOR-PLAN.md) 与 [任务索引](tasks/README.md)。全部为 planned，验证口径不变：静态审查 + 普通 CI，不部署。
+
 ## 2026-11-01 两项功能修复均已合入
 
 当前 main `2e63645d60446d28241ca022ee10caa752a2cb3e`，已核对 GitHub 实际 merge 与两个最终源 head 的祖先关系：
