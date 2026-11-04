@@ -9,7 +9,7 @@
 //   - alg=none 与 HS384（算法混淆拒绝）；
 //   - issuer / audience 错误；
 //   - 过期（exp 过去）与 nbf 未到（两者 NestJS 均拒绝）；
-//   - jti 缺失按 NestJS 当前语义放行（JTI 为空，blacklist 由调用方跳过）；
+//   - jti 缺失或全空白被拒绝（强制 jti：无 jti 的 token 无法撤销）；
 //   - sub / orgId 缺失拒绝；
 //   - exp 早于现在 1 秒即拒绝（leeway 0，与 jsonwebtoken 默认一致）与 iat
 //     在未来仍放行（jsonwebtoken 不校验 iat，golang-jwt 仅在有 WithIssuedAt
@@ -80,7 +80,10 @@ func TestVerifyTable(t *testing.T) {
 		wantJTI string
 	}{
 		{"valid-hs256", valid, false, "jti-authn-1"},
-		{"valid-without-jti", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), nil, "jti"), false, ""},
+		// Forced-jti contract: a token without jti is rejected because it could
+		// never be added to (or looked up in) the revocation blacklist.
+		{"missing-jti", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), nil, "jti"), true, ""},
+		{"blank-jti", signToken(t, jwt.SigningMethodHS256, []byte(testSecret), map[string]any{"jti": "   "}), true, ""},
 		{"wrong-secret", signToken(t, jwt.SigningMethodHS256, []byte(otherSecret), nil), true, ""},
 		{"alg-none", signToken(t, jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType, nil), true, ""},
 		{"alg-hs384", signToken(t, jwt.SigningMethodHS384, []byte(testSecret), nil), true, ""},

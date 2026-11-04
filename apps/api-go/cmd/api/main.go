@@ -334,7 +334,8 @@ func run() error {
 	if needsCredentialedGo {
 		verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
 		blacklist := authn.NewRedisBlacklist(redisClient)
-		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB))
+		machines := authhttp.NewMachineResolver(sharedDB, nil)
+		authenticator = authhttp.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(sharedDB), machines)
 	}
 	// The GDELT snapshot unit is shared by the optional scheduler and the
 	// optional forced-refresh route. It is nil while both switches are legacy.
@@ -651,14 +652,14 @@ func run() error {
 		return err
 	}
 	var archiveReadingService *archivereading.Service
-	archiveReadingService, err = wireArchiveReadingHTTP(gateway, cfg, sharedDB, redisClient, &dashboardMongo)
+	archiveReadingService, err = wireArchiveReadingHTTP(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator)
 	if err != nil {
 		return err
 	}
 	if err := wireAnalysisCollaboration(gateway, cfg, sharedDB, authenticator); err != nil {
 		return err
 	}
-	if err := wireAnalysisExport(gateway, cfg, sharedDB, redisClient, &dashboardMongo); err != nil {
+	if err := wireAnalysisExport(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 	if err := wireSituationMonitors(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -825,10 +826,10 @@ func run() error {
 	if err := wireAuthFactors(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
-	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient); err != nil {
+	if err := wireAccountSecurity(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
 		return err
 	}
-	if err := wireAccountData(gateway, cfg, sharedDB, redisClient, &dashboardMongo); err != nil {
+	if err := wireAccountData(gateway, cfg, sharedDB, redisClient, &dashboardMongo, authenticator); err != nil {
 		return err
 	}
 	if err := wireAuthLogin(gateway, cfg, sharedDB, redisClient, authenticator); err != nil {
@@ -1439,9 +1440,9 @@ func run() error {
 		}
 		runtime, runtimeErr := notificationssocket.New(notificationssocket.Options{
 			DB:                    sharedDB,
-			Verifier:              authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience),
-			Blacklist:             authn.NewRedisBlacklist(redisClient),
-			Authz:                 authz.NewMySQLRepository(sharedDB),
+			Verifier:              authenticator.Verifier(),
+			Blacklist:             authenticator.Blacklist(),
+			Authz:                 authenticator.Authz(),
 			Redis:                 redisClient,
 			CORS:                  cors.New(cfg.CorsOrigin),
 			TrustProxy:            strings.TrimSpace(cfg.TrustProxy) != "",
@@ -1467,7 +1468,7 @@ func run() error {
 		if sharedDB == nil || redisClient == nil || redisOptions == nil {
 			return errRealtimeSocketResources
 		}
-		unit, wireErr := wireRealtimeSocket(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo)
+		unit, wireErr := wireRealtimeSocket(cfg, sharedDB, redisClient, redisOptions, &dashboardMongo, authenticator)
 		if wireErr != nil {
 			return wireErr
 		}

@@ -359,7 +359,7 @@ func (s *fakeStore) query(query string, args []driver.NamedValue) (driver.Rows, 
 				row.requireEmailVerified,
 			}},
 		}, nil
-	case strings.Contains(query, "FROM MachineAccessToken t"):
+	case strings.Contains(query, "MachineAccessToken"):
 		token, found := s.machineToken[argString(args, 0)]
 		if !found {
 			return &fakeRows{columns: []string{"id"}}, nil

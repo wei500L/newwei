@@ -11,7 +11,7 @@ func TestNewsnowClientEventForwardingAndDisconnectCleanup(t *testing.T) {
 	harness := newTestRuntime(t, nil)
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	sid := connectBrowser(t, conn, NamespaceNewsnow, token, "o1", "u1")
 
 	// An event without a gateway handler must be ignored.
@@ -59,7 +59,7 @@ func TestNonNewsnowClientEventsAreIgnored(t *testing.T) {
 	harness := newTestRuntime(t, nil)
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceOps, token, "o1", "u1")
 
 	mustWriteFrame(t, conn, `42/ops,["ops:event",{"n":1}]`)
@@ -75,7 +75,7 @@ func TestNilClientEventsIgnoresBrowserEvents(t *testing.T) {
 	})
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceNewsnow, token, "o1", "u1")
 
 	mustWriteFrame(t, conn, `42/newsnow,["newsnow:set-active-sources",{"sourceIds":["a"]}]`)

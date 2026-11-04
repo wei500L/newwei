@@ -2,15 +2,11 @@ package gdeltsnapshot
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -133,39 +129,11 @@ func (h *Handler) authenticateMachine(ctx context.Context, token string) (*authh
 	if h.db == nil {
 		return nil, errNoDatabase
 	}
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var rawPermissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := h.db.QueryRowContext(ctx, `
-SELECT token.id, token.orgId, token.permissions, token.expiresAt, token.revokedAt, org.isActive
-FROM MachineAccessToken token
-JOIN Org org ON org.id = token.orgId
-WHERE token.tokenHash = ?`, hex.EncodeToString(sum[:]),
-	).Scan(&id, &orgID, &rawPermissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
+	identity, err := authhttp.NewMachineResolver(h.db, nil).Resolve(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, errInvalidMachineToken
 	}
-	if err != nil {
-		return nil, err
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(time.Now())) {
-		return nil, errInvalidMachineToken
-	}
-	// lastUsedAt is best-effort in NestJS too; a failed refresh never fails the
-	// request.
-	_, _ = h.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`,
-		time.Now().UTC().Truncate(time.Millisecond), id)
-
-	permissions := machineTokenPermissions{}
-	if len(rawPermissions) > 0 {
-		if err := json.Unmarshal(rawPermissions, &permissions); err != nil {
-			// A non-array permissions document grants nothing.
-			permissions = nil
-		}
-	}
-	return authhttp.NewIdentity("machine:"+id, orgID, permissions), nil
+	return identity, err
 }
 
 // rawBearer extracts the raw Authorization token. It deliberately does not

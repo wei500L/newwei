@@ -9,8 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
-	"github.com/wei500L/newwei/apps/api-go/internal/authn"
-	"github.com/wei500L/newwei/apps/api-go/internal/authz"
+	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
@@ -27,7 +26,7 @@ import (
 // It reuses the same JWTAudience/JWTIssuer/JWTSecret configuration as the
 // ordinary authhttp chain but keeps its own authenticator because the machine
 // (mtk_) token path and the verified jti/exp metadata are specific to this unit.
-func wireAccountSecurity(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
+func wireAccountSecurity(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, auth *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: account security go takeover requires mysql and redis")
 	}
@@ -51,10 +50,8 @@ func wireAccountSecurity(gateway *legacyproxy.Gateway, cfg config.Config, db *sq
 		EncryptionKeyPresent: cfg.SettingsEncryptionKeyPresent,
 	})
 
-	verifier := authn.NewVerifier(cfg.JWTSecret, cfg.JWTIssuer, cfg.JWTAudience)
-	blacklist := authn.NewRedisBlacklist(redisClient)
 	handler := accountsecurity.NewHandler(
-		accountsecurity.NewAuthenticator(verifier, blacklist, authz.NewMySQLRepository(db), db),
+		accountsecurity.NewAuthenticator(auth),
 		service,
 	)
 

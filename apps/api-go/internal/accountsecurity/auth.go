@@ -2,19 +2,13 @@ package accountsecurity
 
 import (
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
-	"github.com/wei500L/newwei/apps/api-go/internal/authn"
-	"github.com/wei500L/newwei/apps/api-go/internal/authz"
 )
 
 // machineIdentity carries the machine-token row fields the machine profile
@@ -41,8 +35,7 @@ type Identity struct {
 	IsMachine   bool
 	// Machine is set only for mtk_ identities.
 	Machine *machineIdentity
-	// AccessTokenID is the verified jti (empty for machine identities and for
-	// legacy tokens without jti).
+	// AccessTokenID is the verified jti (empty for machine identities).
 	AccessTokenID string
 	// AccessTokenExpiresAt is the verified exp instant (zero when absent).
 	AccessTokenExpiresAt time.Time
@@ -57,34 +50,26 @@ func (id *Identity) HasPermission(name string) bool {
 }
 
 // Authenticator resolves the caller identity for every migrated route. It
-// reproduces the JwtAuthGuard + PermissionsGuard chain and adds the mtk_ machine
-// path, which authn.ExtractBearerToken deliberately rejects for the other
-// domains.
+// reuses the shared authhttp chain for human JWTs (verification, Redis
+// revocation, MySQL membership re-derivation) plus the shared machine resolver
+// for mtk_ tokens, and keeps the verified jti/exp/claim metadata this unit's
+// profile, logout and change-password routes depend on.
 type Authenticator struct {
-	verifier  *authn.Verifier
-	blacklist authn.Blacklist
-	authorize authz.Repository
-	db        *sql.DB
+	chain    *authhttp.Authenticator
+	machines *authhttp.MachineResolver
 }
 
-// NewAuthenticator wires the human chain and the machine-token lookup pool.
-func NewAuthenticator(verifier *authn.Verifier, blacklist authn.Blacklist, repository authz.Repository, db *sql.DB) *Authenticator {
-	return &Authenticator{verifier: verifier, blacklist: blacklist, authorize: repository, db: db}
+// NewAuthenticator wires the shared chain and its machine resolver.
+func NewAuthenticator(chain *authhttp.Authenticator) *Authenticator {
+	return &Authenticator{chain: chain, machines: chain.Machines()}
 }
 
-// authFailure is an authentication/authorization failure with the HTTP status
-// the caller must write.
-type authFailure struct {
-	status  int
-	message string
-}
-
-// writeAuthFailure maps the failure onto the contract error.
-func writeAuthFailure(w http.ResponseWriter, r *http.Request, failure *authFailure) {
+// writeAuthFailure maps a shared auth failure onto the contract error.
+func writeAuthFailure(w http.ResponseWriter, r *http.Request, failure *authhttp.AuthFailure) {
 	switch {
-	case failure.status == http.StatusUnauthorized:
-		authhttp.WriteUnauthorized(w, r, failure.message)
-	case failure.status == http.StatusInternalServerError:
+	case failure.Status == http.StatusUnauthorized:
+		authhttp.WriteUnauthorized(w, r, failure.Message)
+	case failure.Status == http.StatusInternalServerError:
 		authhttp.WriteRedisFailure(w, r)
 	default:
 		authhttp.WriteDatabaseFailure(w, r)
@@ -114,11 +99,11 @@ func (a *Authenticator) Authorize(w http.ResponseWriter, r *http.Request, requir
 		}
 		identity = resolved
 	} else {
-		if a == nil || a.verifier == nil || a.blacklist == nil || a.authorize == nil {
+		if a == nil || a.chain == nil {
 			authhttp.WriteDatabaseFailure(w, r)
 			return nil
 		}
-		resolved, failure := a.authorizeHuman(r, raw)
+		resolved, failure := a.authorizeHuman(r)
 		if failure != nil {
 			writeAuthFailure(w, r, failure)
 			return nil
@@ -133,100 +118,45 @@ func (a *Authenticator) Authorize(w http.ResponseWriter, r *http.Request, requir
 	return identity
 }
 
-// authorizeHuman reproduces authhttp.Authenticate while keeping the verified
-// jti/exp metadata on the identity.
-func (a *Authenticator) authorizeHuman(r *http.Request, raw string) (*Identity, *authFailure) {
-	token, err := a.verifier.Verify(raw)
-	if err != nil {
-		// Only the server-side log sees the reason; the response is the
-		// uniform 401 "Unauthorized" passport produces.
-		log.Printf("accountsecurity: token rejected: %v", err)
-		return nil, &authFailure{status: http.StatusUnauthorized}
+// authorizeHuman runs the shared human chain and copies the verified token
+// metadata (raw claim orgId, jti, exp) the profile/logout routes need.
+func (a *Authenticator) authorizeHuman(r *http.Request) (*Identity, *authhttp.AuthFailure) {
+	human, failure := a.chain.Identify(r)
+	if failure != nil {
+		return nil, failure
 	}
-
-	if token.JTI != "" {
-		revoked, err := a.blacklist.Revoked(r.Context(), token.JTI)
-		if err != nil {
-			log.Printf("accountsecurity: blacklist query failed: %v", err)
-			return nil, &authFailure{status: http.StatusInternalServerError}
-		}
-		if revoked {
-			return nil, &authFailure{status: http.StatusUnauthorized, message: "Access token revoked"}
-		}
-	}
-
-	authorization, err := a.authorize.Authorize(r.Context(), token.Subject, token.OrgID)
-	if err != nil {
-		var rejection *authz.Rejection
-		if errors.As(err, &rejection) {
-			log.Printf("accountsecurity: authz rejected: %s", rejection.Message)
-			return nil, &authFailure{status: http.StatusUnauthorized, message: rejection.Message}
-		}
-		log.Printf("accountsecurity: authz database error: %v", err)
-		return nil, &authFailure{status: http.StatusServiceUnavailable}
-	}
-
 	return &Identity{
-		UserID:               authorization.UserID,
-		OrgID:                authorization.OrgID,
-		ClaimOrgID:           token.OrgID,
-		Permissions:          authorization.Permissions,
-		AccessTokenID:        token.JTI,
-		AccessTokenExpiresAt: token.ExpiresAt,
+		UserID:               human.UserID,
+		OrgID:                human.OrgID,
+		ClaimOrgID:           human.ClaimOrgID(),
+		Permissions:          human.PermissionSet(),
+		AccessTokenID:        human.TokenID(),
+		AccessTokenExpiresAt: human.TokenExpiresAt(),
 	}, nil
 }
 
-// authorizeMachine mirrors MachineTokenService.validate: SHA-256 of the complete
-// token (never the mtk_ prefix), revoked/expired/inactive-org rejection with the
-// exact 401 message, a best-effort lastUsedAt refresh, and permissions taken
-// from the stored row.
+// authorizeMachine resolves an mtk_ token through the shared machine resolver
+// and builds the rich machine identity the profile response needs. It keeps the
+// stored permissions unchanged and the orgId from the token row.
 func (a *Authenticator) authorizeMachine(ctx context.Context, token string) (*Identity, error) {
-	if a == nil || a.db == nil {
+	if a == nil || a.machines == nil {
 		return nil, errNoDatabase
 	}
-	sum := sha256.Sum256([]byte(token))
-	tokenHash := hex.EncodeToString(sum[:])
-
-	var row machineTokenRow
-	var rawPermissions []byte
-	var expiresAt, revokedAt sql.NullTime
-	var planTier, subscriptionStatus sql.NullString
-	err := a.db.QueryRowContext(ctx,
-		"SELECT `t`.`id`, `t`.`orgId`, `t`.`name`, `t`.`permissions`, `t`.`createdById`, "+
-			"`t`.`expiresAt`, `t`.`revokedAt`, `o`.`isActive`, `o`.`planTier`, `o`.`subscriptionStatus` "+
-			"FROM `MachineAccessToken` `t` JOIN `Org` `o` ON `o`.`id` = `t`.`orgId` "+
-			"WHERE `t`.`tokenHash` = ?", tokenHash).
-		Scan(&row.ID, &row.OrgID, &row.Name, &rawPermissions, &row.CreatedByID,
-			&expiresAt, &revokedAt, &row.OrgActive, &planTier, &subscriptionStatus)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := a.machines.Lookup(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, unauthorized("Invalid machine token")
 	}
 	if err != nil {
 		return nil, dbWrap(err)
 	}
-	row.ExpiresAt = nullableTime(expiresAt)
-	row.RevokedAt = nullableTime(revokedAt)
-	row.PlanTier = nullableString(planTier)
-	row.SubscriptionStatus = nullableString(subscriptionStatus)
+	// best-effort lastUsedAt: a failure must not turn a valid request into a 500.
+	a.machines.Touch(ctx, row.ID)
 
-	now := time.Now()
-	if row.RevokedAt != nil || !row.OrgActive || (row.ExpiresAt != nil && !row.ExpiresAt.After(now)) {
-		return nil, unauthorized("Invalid machine token")
-	}
-
-	// best-effort lastUsedAt: a failure must not turn a valid request into a
-	// 500 (NestJS `.catch(() => undefined)`).
-	if _, err := a.db.ExecContext(ctx,
-		"UPDATE `MachineAccessToken` SET `lastUsedAt` = ? WHERE `id` = ?", nowMillis(), row.ID); err != nil {
-		log.Printf("accountsecurity: machine lastUsedAt update failed: %v", err)
-	}
-
-	permissions := machinePermissionStrings(rawPermissions)
+	permissions := machinePermissionStrings(row.PermissionsRaw)
 	permissionSet := make(map[string]bool, len(permissions))
 	for _, permission := range permissions {
 		permissionSet[permission] = true
 	}
-
 	return &Identity{
 		UserID:      machineActorPrefix + row.ID,
 		OrgID:       row.OrgID,

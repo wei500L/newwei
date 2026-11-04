@@ -11,9 +11,9 @@ import (
 
 func TestLocalPublishRoomSelection(t *testing.T) {
 	harness := newTestRuntime(t, nil)
-	tokenU1 := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
-	tokenU2 := signToken(t, "u2", "o1", "", time.Now().Add(time.Hour))
-	tokenU3 := signToken(t, "u3", "o2", "", time.Now().Add(time.Hour))
+	tokenU1 := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
+	tokenU2 := signToken(t, "u2", "o1", "jti-test-1", time.Now().Add(time.Hour))
+	tokenU3 := signToken(t, "u3", "o2", "jti-test-1", time.Now().Add(time.Hour))
 
 	connA := harness.dial(t)
 	readOpen(t, connA)
@@ -114,7 +114,7 @@ func TestSituationMonitorJoinsGlobalRoom(t *testing.T) {
 	harness := newTestRuntime(t, nil)
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceSituationMonitor, token, "o1", "u1")
 
 	harness.runtime.PublishRooms(
@@ -145,7 +145,7 @@ func TestLocalPublishSkipsInvalidPayloadAndUnknownNamespace(t *testing.T) {
 	harness := newTestRuntime(t, nil)
 	conn := harness.dial(t)
 	readOpen(t, conn)
-	token := signToken(t, "u1", "o1", "", time.Now().Add(time.Hour))
+	token := signToken(t, "u1", "o1", "jti-test-1", time.Now().Add(time.Hour))
 	connectBrowser(t, conn, NamespaceNewsnow, token, "o1", "u1")
 
 	harness.runtime.PublishRooms(NamespaceNewsnow, nil, nil, "newsnow:broken", json.RawMessage(`{not-json`))

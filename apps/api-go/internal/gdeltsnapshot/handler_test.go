@@ -57,7 +57,7 @@ type machineTokenRows struct {
 }
 
 func (*machineTokenRows) Columns() []string {
-	return []string{"id", "orgId", "permissions", "expiresAt", "revokedAt", "isActive"}
+	return []string{"id", "orgId", "name", "permissions", "createdById", "expiresAt", "revokedAt", "isActive", "planTier", "subscriptionStatus"}
 }
 
 func (*machineTokenRows) Close() error { return nil }
@@ -69,10 +69,14 @@ func (r *machineTokenRows) Next(destination []driver.Value) error {
 	r.consumed = true
 	destination[0] = "mtk-row-1"
 	destination[1] = "org-a"
-	destination[2] = []byte(`["settings.manage"]`)
-	destination[3] = nil
+	destination[2] = "machine-token"
+	destination[3] = []byte(`["settings.manage"]`)
 	destination[4] = nil
-	destination[5] = int64(1)
+	destination[5] = nil
+	destination[6] = nil
+	destination[7] = int64(1)
+	destination[8] = nil
+	destination[9] = nil
 	return nil
 }
 
@@ -134,6 +138,7 @@ func (a staticAuthz) Authorize(_ context.Context, userID, orgID string) (*authz.
 func mintToken(t *testing.T) string {
 	t.Helper()
 	claims := jwt.MapClaims{
+		"jti":   "jti-test-1",
 		"sub":   "user-1",
 		"orgId": "org-a",
 		"iss":   testIssuer,
@@ -154,6 +159,7 @@ func newTestHandler(t *testing.T, permissions ...string) (*Handler, *testRig) {
 		authn.NewVerifier(testSecret, testIssuer, testAudience),
 		allowAllBlacklist{},
 		staticAuthz{permissions: permissions},
+		nil,
 	)
 	return NewHandler(chain, openStubDB(t), rig.service), rig
 }

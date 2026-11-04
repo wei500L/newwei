@@ -2,9 +2,6 @@ package crawlfrontierruns
 
 import (
 	"context"
-	"crypto/sha256"
-	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -73,28 +70,11 @@ func rawBearer(r *http.Request) string {
 // disabled-org tokens with 401 Invalid machine token, then updating lastUsedAt.
 // Permissions and orgId come from the token row only.
 func (s *Service) AuthenticateMachine(ctx context.Context, token string) (*authhttp.Identity, error) {
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var permissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := s.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:]),
-	).Scan(&id, &orgID, &permissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
+	identity, err := authhttp.NewMachineResolver(s.db, nil).Resolve(ctx, token)
+	if errors.Is(err, authhttp.ErrInvalidMachineToken) {
 		return nil, newStatus(401, "Invalid machine token")
 	}
-	if err != nil {
-		return nil, err
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(time.Now())) {
-		return nil, newStatus(401, "Invalid machine token")
-	}
-	_, _ = s.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`, nowMillis(), id)
-	return authhttp.NewIdentity("machine:"+id, orgID, permissionList(permissions)), nil
+	return identity, err
 }
 
 // nowMillis returns the current UTC time truncated to milliseconds.

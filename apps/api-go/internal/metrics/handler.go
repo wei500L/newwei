@@ -2,10 +2,7 @@ package metrics
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -46,6 +43,7 @@ const (
 type Handler struct {
 	auth     *authhttp.Authenticator
 	db       *sql.DB
+	machines *authhttp.MachineResolver
 	registry *Registry
 	now      func() time.Time
 }
@@ -56,7 +54,16 @@ func NewHandler(auth *authhttp.Authenticator, db *sql.DB, registry *Registry) *H
 	if registry == nil {
 		registry = defaultRegistry
 	}
-	return &Handler{auth: auth, db: db, registry: registry, now: time.Now}
+	machines := (*authhttp.MachineResolver)(nil)
+	if auth != nil {
+		machines = auth.Machines()
+	}
+	if machines == nil {
+		// The scrape handler is also exercised directly with only a DB handle
+		// (integration test), so fall back to a resolver over the same pool.
+		machines = authhttp.NewMachineResolver(db, nil)
+	}
+	return &Handler{auth: auth, db: db, machines: machines, registry: registry, now: time.Now}
 }
 
 // ServeHTTP authenticates, checks metrics.read, resolves the platform-admin
@@ -103,9 +110,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
-// authorize mirrors the other migrated admin routes: Bearer required, mtk_
-// tokens through the machine lookup, everything else through the JWT verifier,
-// then the metrics.read permission.
+// authorize accepts both human JWTs (through the shared chain) and mtk_ machine
+// tokens (through the shared machine resolver), then enforces metrics.read for
+// both. It works with a nil chain as long as a DB pool is present, because the
+// scrape handler is also constructed directly in integration tests.
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
 	raw := rawBearer(r)
 	if raw == "" {
@@ -114,10 +122,10 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Id
 	}
 	var identity *authhttp.Identity
 	if strings.HasPrefix(raw, "mtk_") {
-		resolved, err := h.authenticateMachine(r.Context(), raw)
+		resolved, err := h.machines.Resolve(r.Context(), raw)
 		if err != nil {
-			if status, message, ok := machineStatus(err); ok {
-				authhttp.WriteHTTPException(w, r, status, message)
+			if errors.Is(err, authhttp.ErrInvalidMachineToken) {
+				authhttp.WriteUnauthorized(w, r, "Invalid machine token")
 			} else {
 				log.Printf("metrics: machine token: %v", err)
 				authhttp.WriteDatabaseFailure(w, r)
@@ -142,58 +150,25 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Id
 	return identity
 }
 
-// authenticateMachine mirrors MachineTokenService.validate: SHA-256 tokenHash
-// lookup joined with an active organization, lastUsedAt bump, permissions from
-// the row only.
-func (h *Handler) authenticateMachine(ctx context.Context, token string) (*authhttp.Identity, error) {
-	sum := sha256.Sum256([]byte(token))
-	var id, orgID string
-	var permissions []byte
-	var expires, revoked sql.NullTime
-	var active int
-	err := h.db.QueryRowContext(ctx, `
-SELECT t.id, t.orgId, t.permissions, t.expiresAt, t.revokedAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:])).Scan(
-		&id, &orgID, &permissions, &expires, &revoked, &active)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, &machineError{status: http.StatusUnauthorized, message: "Invalid machine token"}
-	}
-	if err != nil {
-		return nil, err
-	}
-	if revoked.Valid || active == 0 || (expires.Valid && !expires.Time.After(h.now())) {
-		return nil, &machineError{status: http.StatusUnauthorized, message: "Invalid machine token"}
-	}
-	_, _ = h.db.ExecContext(ctx, `UPDATE MachineAccessToken SET lastUsedAt = ? WHERE id = ?`, h.now().UTC().Truncate(time.Millisecond), id)
-	return authhttp.NewIdentity(machineActorPrefix+id, orgID, permissionList(permissions)), nil
-}
-
 // resolvePlatformMetricsAccess mirrors MachineTokenService.resolvePlatformMetricsAccess.
 func (h *Handler) resolvePlatformMetricsAccess(ctx context.Context, bearer string) (platformDecision, error) {
 	if bearer == "" {
 		return decisionAbsent, nil
 	}
-	sum := sha256.Sum256([]byte(bearer))
-	var createdBy sql.NullString
-	var expires, revoked sql.NullTime
-	var active int
-	err := h.db.QueryRowContext(ctx, `
-SELECT t.createdById, t.revokedAt, t.expiresAt, o.isActive
-FROM MachineAccessToken t
-JOIN Org o ON o.id = t.orgId
-WHERE t.tokenHash = ?`, hex.EncodeToString(sum[:])).Scan(&createdBy, &revoked, &expires, &active)
-	if errors.Is(err, sql.ErrNoRows) {
-		return decisionAbsent, nil
+	if h.machines == nil {
+		return decisionAbsent, errors.New("metrics: machine resolver is not configured")
 	}
+	token, found, err := h.machines.LookupRaw(ctx, bearer)
 	if err != nil {
 		return decisionAbsent, err
 	}
-	if revoked.Valid || (expires.Valid && !expires.Time.After(h.now())) || active == 0 || !createdBy.Valid {
+	if !found {
+		return decisionAbsent, nil
+	}
+	if token.RevokedAt != nil || (token.ExpiresAt != nil && !token.ExpiresAt.After(h.now())) || !token.OrgActive || token.CreatedByID == "" {
 		return decisionMachineDenied, nil
 	}
-	allowed, err := h.isPlatformAdmin(ctx, createdBy.String)
+	allowed, err := h.isPlatformAdmin(ctx, token.CreatedByID)
 	if err != nil {
 		return decisionAbsent, err
 	}
@@ -219,41 +194,6 @@ func (h *Handler) isPlatformAdmin(ctx context.Context, userID string) (bool, err
 		return false, err
 	}
 	return true, nil
-}
-
-// machineError carries the machine-token 401 message.
-type machineError struct {
-	status  int
-	message string
-}
-
-func (e *machineError) Error() string { return e.message }
-
-// machineStatus extracts the machine-token status.
-func machineStatus(err error) (int, string, bool) {
-	var target *machineError
-	if errors.As(err, &target) {
-		return target.status, target.message, true
-	}
-	return 0, "", false
-}
-
-// permissionList reads the JSON permissions array; a non-array grants nothing.
-func permissionList(raw []byte) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-	var parsed []any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(parsed))
-	for _, entry := range parsed {
-		if text, ok := entry.(string); ok {
-			out = append(out, text)
-		}
-	}
-	return out
 }
 
 // rawBearer extracts the Bearer token without a fallback.

@@ -18,23 +18,23 @@ const (
 	// ReadyPath 是认证版健康检查的精确路径。公开 live 探针不在这里。
 	ReadyPath = "/api/healthz"
 	// APIVersion 与 apps/api/package.json 的 version 一致。
-	APIVersion     = "0.1.0"
-	readyCacheTTL  = 5 * time.Second
+	APIVersion    = "0.1.0"
+	readyCacheTTL = 5 * time.Second
 )
 
 // Deps 是认证版健康检查的真实依赖。探针只在请求到达时运行。
 type Deps struct {
-	DB         *sql.DB
-	Redis      *redis.Client
-	Mongo      *mongo.Database
-	MongoURI   string
-	CrawlBase  string
-	CrawlKey   string
+	DB           *sql.DB
+	Redis        *redis.Client
+	Mongo        *mongo.Database
+	MongoURI     string
+	CrawlBase    string
+	CrawlKey     string
 	CrawlTimeout time.Duration
-	CrawlTTL   time.Duration
-	ProxyURL   string
-	RerankNeed bool
-	DiskPath   string
+	CrawlTTL     time.Duration
+	ProxyURL     string
+	RerankNeed   bool
+	DiskPath     string
 }
 
 // ReadyHandler 处理 GET /api/healthz。
@@ -73,10 +73,10 @@ func NewReadyHandler(humans *authhttp.Authenticator, deps Deps) *ReadyHandler {
 		diskPath: deps.DiskPath,
 	}
 	return &ReadyHandler{
-		gate: Gate{humans: humans, machines: mysqlMachines{db: deps.DB}, now: time.Now},
-		probes: probes,
-		run:    probes.all,
-		now:    time.Now,
+		gate:    Gate{humans: humans, machines: mysqlMachines{db: deps.DB, resolver: humans.Machines()}, now: time.Now},
+		probes:  probes,
+		run:     probes.all,
+		now:     time.Now,
 		version: APIVersion,
 	}
 }
