@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // Audit retention constants copied from AuditLogRetentionService.
@@ -73,7 +75,7 @@ func (s *AuditRetentionScheduler) runTick(ctx context.Context) error {
 	if s == nil || s.db == nil || s.redis == nil || s.retention == nil {
 		return fmt.Errorf("crawlmaintenance: audit log retention is not fully configured")
 	}
-	acquired, err := withRedisLock(ctx, s.redis, auditRetentionLockKey, auditRetentionLockTTL,
+	acquired, err := cronlock.New(s.redis).WithLease(ctx, "lock:"+auditRetentionLockKey, auditRetentionLockTTL, cronlock.RenewBestEffort,
 		func(runCtx context.Context) error { return s.purgeExpiredAuditLogs(runCtx) })
 	if err != nil {
 		return err

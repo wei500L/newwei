@@ -25,13 +25,12 @@ type Config struct {
 	LockTimeoutSeconds int
 }
 
-// Service owns the shared MySQL pool, the dedicated lock pool, the Redis client
-// and the resolved configuration. All methods are safe for concurrent use.
+// Service owns the shared MySQL pool, the Redis client and the resolved
+// configuration. All methods are safe for concurrent use.
 type Service struct {
-	db     *sql.DB
-	lockDB *sql.DB
-	redis  *redis.Client
-	cfg    Config
+	db    *sql.DB
+	redis *redis.Client
+	cfg   Config
 	// lockFn replaces the MySQL session lock in unit tests. Production code
 	// leaves it nil so withProfilesLock always uses GET_LOCK.
 	lockFn func(ctx context.Context, fn func(context.Context) error) error
@@ -42,14 +41,9 @@ type Service struct {
 	governanceFn func(ctx context.Context) (governanceProjection, error)
 }
 
-// NewService wires the data access. lockDB must be a pool that never retains
-// idle connections; NewService enforces that so a released connection is always
-// closed physically and a failed RELEASE_LOCK cannot survive in a pool.
-func NewService(db *sql.DB, lockDB *sql.DB, redisClient *redis.Client, cfg Config) *Service {
-	if lockDB != nil {
-		lockDB.SetMaxIdleConns(0)
-	}
-	return &Service{db: db, lockDB: lockDB, redis: redisClient, cfg: cfg}
+// NewService wires the data access over the shared MySQL pool and Redis client.
+func NewService(db *sql.DB, redisClient *redis.Client, cfg Config) *Service {
+	return &Service{db: db, redis: redisClient, cfg: cfg}
 }
 
 // Config exposes the resolved configuration (diagnostics and tests).

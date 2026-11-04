@@ -82,12 +82,3 @@ func newJobID() (string, error) {
 	raw[8] = (raw[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16]), nil
 }
-
-// newOwnerToken returns the random lock owner token used by SET NX PX.
-func newOwnerToken() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", raw[:]), nil
-}

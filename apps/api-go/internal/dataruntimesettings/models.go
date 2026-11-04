@@ -79,9 +79,6 @@ const (
 	lockNominatim = "data-runtime-settings:nominatim:v1"
 	// lockWaitSeconds is the GET_LOCK timeout used by both sides.
 	lockWaitSeconds = 10
-	// lockReleaseTimeout bounds the RELEASE_LOCK call, which must not depend on
-	// the (possibly cancelled) request context.
-	lockReleaseTimeout = 5 * time.Second
 )
 
 // machineActorPrefix is the user-id prefix produced by the machine-token path.

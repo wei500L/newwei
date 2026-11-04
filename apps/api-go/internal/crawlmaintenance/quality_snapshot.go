@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -179,7 +180,7 @@ func settleWithConcurrency(ctx context.Context, items []string, concurrency int,
 
 // refreshOrg is refreshRecentSnapshotsForOrgWithLock.
 func (s *QualitySnapshotScheduler) refreshOrg(ctx context.Context, orgID string) (bool, error) {
-	acquired, err := withRedisLock(ctx, s.redis, qualityOrgLockPrefix+orgID, qualityOrgLockTTL,
+	acquired, err := cronlock.New(s.redis).WithLease(ctx, "lock:"+(qualityOrgLockPrefix+orgID), qualityOrgLockTTL, cronlock.RenewBestEffort,
 		func(runCtx context.Context) error {
 			since := s.loop.now().Add(-qualityLookback)
 			taskIDs, err := s.discoverRecentlyChangedTaskIDs(runCtx, orgID, since)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsindicator"
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
@@ -201,27 +202,29 @@ const (
 // makes the six-hour refresh serial with any manual refresh of the same
 // organization, and a lease held elsewhere counts as skipped.
 func (s *AssociationScheduler) refreshOrgWithLock(ctx context.Context, orgID string) associationOrgOutcome {
-	lock, err := acquireRedisLock(ctx, s.redis, associationOrgLockKeyPrefix+orgID, associationOrgLockTTL)
+	outcome := associationOrgCompleted
+	acquired, err := cronlock.New(s.redis).WithLease(ctx, associationOrgLockKeyPrefix+orgID, associationOrgLockTTL, cronlock.RenewBestEffort, func(runCtx context.Context) error {
+		if !s.associations.AssociationIngestionEnabled(runCtx, orgID) {
+			// NestJS returns "completed" here; the organization is not counted as
+			// skipped because no other run held its lease.
+			outcome = associationOrgCompleted
+			return nil
+		}
+		if _, refreshErr := s.associations.RefreshOrg(runCtx, orgID); refreshErr != nil {
+			s.logger("newsbackfilljobs: association refresh failed orgId=%s: %v", orgID, refreshErr)
+			outcome = associationOrgFailed
+		}
+		return nil
+	})
 	if err != nil {
 		s.logger("newsbackfilljobs: association org lock failed orgId=%s: %v", orgID, err)
 		return associationOrgFailed
 	}
-	if lock == nil {
+	if !acquired {
 		s.logger("newsbackfilljobs: skipped association refresh because the previous org run is still in progress orgId=%s", orgID)
 		return associationOrgSkipped
 	}
-	defer lock.Release()
-
-	if !s.associations.AssociationIngestionEnabled(ctx, orgID) {
-		// NestJS returns "completed" here; the organization is not counted as
-		// skipped because no other run held its lease.
-		return associationOrgCompleted
-	}
-	if _, err := s.associations.RefreshOrg(ctx, orgID); err != nil {
-		s.logger("newsbackfilljobs: association refresh failed orgId=%s: %v", orgID, err)
-		return associationOrgFailed
-	}
-	return associationOrgCompleted
+	return outcome
 }
 
 // nextSixHourTick returns the next wall clock minute 0 of hours 0, 6, 12 and

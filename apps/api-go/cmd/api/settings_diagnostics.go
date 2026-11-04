@@ -117,7 +117,7 @@ func wireRuntimeDiagnostics(
 	}
 	mongoDatabase := (*mongoConn).Database()
 
-	profiles := newLLMGatewayProfilesService(cfg, db, redisClient, nil)
+	profiles := newLLMGatewayProfilesService(cfg, db, redisClient)
 	ops := llmgatewayops.NewService(db, redisClient, profiles, nil, llmgatewayops.Config{
 		MasterKey: cfg.LiteLLMMasterKey,
 	})

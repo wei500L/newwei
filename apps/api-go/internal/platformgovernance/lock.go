@@ -2,55 +2,34 @@ package platformgovernance
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqllock"
 )
 
-// errLockNotAcquired reports that GET_LOCK returned something other than 1
-// within the wait window (0 = timeout, NULL = error), which maps to the 409 the
-// NestJS SituationMonitorLockError path produces.
+// errLockNotAcquired reports that GET_LOCK returned 0 within the wait window,
+// which maps to the 409 the NestJS SituationMonitorLockError path produces.
 var errLockNotAcquired = errors.New("platformgovernance: settings lock not acquired")
 
-// withSettingsLock runs fn while holding the named MySQL session lock on a
-// dedicated connection, mirroring apps/api withMysqlSessionLock:
+// withSettingsLock runs fn while holding the named MySQL session lock through
+// the shared mysqllock helper.
 //
-//	SELECT GET_LOCK(name, 10) -- must return 1
-//	... fn ...
-//	SELECT RELEASE_LOCK(name) -- independent 2s context, best effort
+// The helper pins a dedicated connection, releases on an independent short
+// timeout and evicts the physical connection when RELEASE_LOCK does not confirm.
+// Previously this package returned the connection to the pool after a failed
+// release, which leaked the session lock to the next request; the eviction is
+// the fix.
 //
-// The lock is a session lock, so it must NOT be taken inside a Prisma/Go
-// transaction and must not be acquired twice in one request (the second
-// acquisition would wait on the first until GET_LOCK times out).
+// The lock is a session lock, so it must NOT be taken inside a transaction and
+// must not be acquired twice in one request (the second acquisition would wait
+// on the first until GET_LOCK times out).
 func (s *Service) withSettingsLock(ctx context.Context, name string, fn func(context.Context) error) error {
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = conn.Close()
-	}()
-
-	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, llmLogSettingsLockWaitSeconds).Scan(&acquired); err != nil {
-		return err
-	}
-	if !acquired.Valid || acquired.Int64 != 1 {
+	err := mysqllock.WithLock(ctx, s.db, name, llmLogSettingsLockWaitSeconds, fn)
+	if errors.Is(err, mysqllock.ErrNotAcquired) {
 		return errLockNotAcquired
 	}
-	defer releaseSettingsLock(conn, name)
-
-	return fn(ctx)
-}
-
-// releaseSettingsLock releases the session lock on its own short context so a
-// cancelled request context cannot leave the lock held until the connection
-// closes.
-func releaseSettingsLock(conn *sql.Conn, name string) {
-	releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = conn.ExecContext(releaseCtx, "SELECT RELEASE_LOCK(?)", name)
+	return err
 }
