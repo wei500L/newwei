@@ -20,9 +20,9 @@ type fakeStore struct {
 	renewals  int
 	releases  int
 
-	// renewResult overrides the token-checked renewal answer when non-zero.
-	renewResult int64
-	setnxErr    error
+	// renewFail forces the token-checked renewal to answer 0 (lease lost).
+	renewFail bool
+	setnxErr  error
 }
 
 func newFakeStore() *fakeStore {
@@ -49,8 +49,8 @@ func (s *fakeStore) Eval(_ context.Context, script string, keys []string, args .
 	defer s.mu.Unlock()
 	if strings.Contains(script, "pexpire") {
 		s.renewals++
-		if s.renewResult != 0 {
-			return s.renewResult, nil
+		if s.renewFail {
+			return 0, nil
 		}
 		if len(keys) > 0 && len(args) > 0 {
 			if current, ok := s.values[keys[0]]; ok && current == args[0] {
@@ -144,7 +144,6 @@ func TestRenewNoneDoesNotRenew(t *testing.T) {
 
 func TestBestEffortRenews(t *testing.T) {
 	store := newFakeStore()
-	store.renewResult = 1
 	lock := NewStore(store)
 	lease, acquired, err := lock.Acquire(context.Background(), "lock:renew", 1500*time.Millisecond, RenewBestEffort)
 	if err != nil || !acquired {
@@ -184,7 +183,7 @@ func TestReleaseIsTokenChecked(t *testing.T) {
 // runner context when the lease can no longer be extended.
 func TestWithRenewableLockCancelsOnLost(t *testing.T) {
 	store := newFakeStore()
-	store.renewResult = 0
+	store.renewFail = true
 	lock := NewStore(store)
 	acquired, err := lock.WithRenewableLock(context.Background(), "renewable", 1200*time.Millisecond, func(ctx context.Context) error {
 		select {
