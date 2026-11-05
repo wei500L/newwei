@@ -54,15 +54,16 @@ func NewWorker(client, blocking *redis.Client, opts WorkerOptions) (*Worker, err
 		}
 		return nil, nil
 	}, bullmq.WorkerOptions{
-		Prefix:          opts.Prefix,
-		Concurrency:     opts.Concurrency,
-		LockDuration:    opts.LockDuration,
-		LockRenewTime:   opts.LockRenewTime,
-		StalledInterval: opts.StalledInterval,
-		MaxStalledCount: opts.MaxStalledCount,
-		DrainDelay:      opts.DrainDelay,
-		Logger:          opts.Logger,
-		Stacktrace:      stacktraceJSON,
+		Prefix:                 opts.Prefix,
+		Concurrency:            opts.Concurrency,
+		LockDuration:           opts.LockDuration,
+		LockRenewTime:          opts.LockRenewTime,
+		StalledInterval:        opts.StalledInterval,
+		MaxStalledCount:        opts.MaxStalledCount,
+		DrainDelay:             opts.DrainDelay,
+		Logger:                 opts.Logger,
+		Stacktrace:             stacktraceJSON,
+		ProcessDeferredFailure: true,
 		IsLeaseLost: func(err error) bool {
 			var leaseLost *LeaseLostError
 			return errors.As(err, &leaseLost)

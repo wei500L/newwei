@@ -117,6 +117,11 @@ type WorkerOptions struct {
 	// OnClaim runs once per claimed job before the processor, for queue-specific
 	// bookkeeping that must happen before processing (repeat scheduling).
 	OnClaim func(ctx context.Context, job *Job)
+	// ProcessDeferredFailure runs the processor for a job carrying BullMQ's defa
+	// marker. Queues whose handler advances the terminal state on defa (analysis,
+	// clustering) must set this; queues that must not repeat side effects leave it
+	// false and the job fails unrecoverably without running the processor.
+	ProcessDeferredFailure bool
 	// OnFailure runs once for every failed attempt after the BullMQ transition.
 	OnFailure func(ctx context.Context, job *Job, failure FailureInfo)
 	// Logger is the diagnostic sink (log.Printf when nil).
@@ -563,7 +568,7 @@ func (w *Worker) ProcessOne(ctx context.Context, job *Job) {
 	if w.opts.OnClaim != nil {
 		w.opts.OnClaim(jobCtx, job)
 	}
-	if job.DeferredFailure != "" {
+	if job.DeferredFailure != "" && !w.opts.ProcessDeferredFailure {
 		// The stalled checker already decided this job is terminal. Run nothing:
 		// the pipeline must not repeat side effects for an attempt BullMQ has
 		// already failed.
@@ -574,6 +579,11 @@ func (w *Worker) ProcessOne(ctx context.Context, job *Job) {
 			result, processErr = w.processor(jobCtx, job)
 			return processErr
 		})
+		if job.DeferredFailure != "" && err == nil {
+			// The handler advanced the terminal state successfully; the BullMQ
+			// acknowledgement must still be a failure, never completed.
+			err = errors.New(job.DeferredFailure)
+		}
 	}
 	close(renewDone)
 	cancelJob(nil)
