@@ -258,17 +258,14 @@ func NewWorker(commands redis.Cmdable, blocking *redis.Client, queue string, pro
 		return nil, fmt.Errorf("bullmq: worker requires a processor")
 	}
 	normalized := opts.normalized()
-	jobCtx, cancelJobs := context.WithCancel(context.Background())
 	return &Worker{
-		commands:   commands,
-		blocking:   blocking,
-		keys:       NewKeys(normalized.Prefix, queue),
-		opts:       normalized,
-		processor:  processor,
-		tokens:     newTokenSource(),
-		slots:      make(chan struct{}, normalized.Concurrency),
-		jobCtx:     jobCtx,
-		cancelJobs: cancelJobs,
+		commands:  commands,
+		blocking:  blocking,
+		keys:      NewKeys(normalized.Prefix, queue),
+		opts:      normalized,
+		processor: processor,
+		tokens:    newTokenSource(),
+		slots:     make(chan struct{}, normalized.Concurrency),
 	}, nil
 }
 
@@ -299,9 +296,7 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 	}
 	w.fetchCtx, w.cancelFetch = context.WithCancel(context.Background())
-	if w.jobCtx == nil {
-		w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
-	}
+	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
 	w.fetchDone = make(chan struct{})
 	w.stalledDone = make(chan struct{})
 	safego.Go("bullmq.worker.stalledLoop", func() {
@@ -564,7 +559,11 @@ func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
 // job according to the failure policy.
 func (w *Worker) ProcessOne(ctx context.Context, job *Job) {
 	_ = ctx
-	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
+	parent := w.jobCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	jobCtx, cancelJob := context.WithCancelCause(parent)
 	var leaseLost atomic.Bool
 	renewDone := make(chan struct{})
 	safego.Go("bullmq.worker.renewLock", func() {
@@ -598,7 +597,7 @@ func (w *Worker) ProcessOne(ctx context.Context, job *Job) {
 	close(renewDone)
 	cancelJob(nil)
 
-	if w.jobCtx.Err() != nil {
+	if w.jobCtx != nil && w.jobCtx.Err() != nil {
 		// Shutdown deadline: leave the job active. Its lock expires and stalled
 		// recovery hands it to the next owner.
 		return
