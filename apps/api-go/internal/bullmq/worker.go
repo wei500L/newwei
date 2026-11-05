@@ -540,11 +540,6 @@ func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
 	if err != nil {
 		return nil, delayUntil, err
 	}
-	if w.opts.Name == "api-go" || w.opts.Name == "" {
-		if ttl, terr := w.commands.PTTL(ctx, w.keys.Job(job.ID)+":lock").Result(); terr == nil {
-			w.opts.Logger("bullmq-debug: claim job=%s lockMs=%d ttl=%s", job.ID, w.opts.LockDuration.Milliseconds(), ttl)
-		}
-	}
 	if job.ID == "" {
 		// The wait entry outlived its job hash; drop our active entry and release
 		// the lock so the stale id does not linger.
@@ -954,11 +949,6 @@ func (w *Worker) checkStalled(ctx context.Context) {
 	}
 	if values, ok := result.([]any); ok && len(values) > 0 {
 		w.opts.Logger("bullmq: recovered %d stalled job(s)", len(values))
-	}
-	if scard, serr := w.commands.SCard(ctx, w.keys.Stalled).Result(); serr == nil {
-		lact, _ := w.commands.LLen(ctx, w.keys.Active).Result()
-		lwait, _ := w.commands.LLen(ctx, w.keys.Wait).Result()
-		w.opts.Logger("bullmq-debug: stalled pass interval=%dms max=%d active=%d wait=%d stalledSet=%d", w.opts.StalledInterval.Milliseconds(), w.opts.MaxStalledCount, lact, lwait, scard)
 	}
 }
 
