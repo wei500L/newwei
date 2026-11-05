@@ -12,7 +12,9 @@
 - 每个请求都要排序路由表；
 - 迁移开关残骸仍在。
 
-已拆分为 10 个 REFACTOR 任务，分 5 个波次，见 [BACKEND-REFACTOR-PLAN](BACKEND-REFACTOR-PLAN.md) 与 [任务索引](tasks/README.md)。全部为 planned，验证口径不变：静态审查 + 普通 CI，不部署。
+已拆分为 10 个 REFACTOR 任务，分 5 个波次，见 [BACKEND-REFACTOR-PLAN](BACKEND-REFACTOR-PLAN.md) 与 [任务索引](tasks/README.md)。验证口径不变：静态审查 + 普通 CI，不部署。
+
+2026-11-05 更新：第一轮全部合入 main（#162–#174，main `6ab26a54` CI success），其中 BULLMQ-WORKER、OUTBOUND-CLIENTS 为部分完成；剩余项汇总为第二轮候选，见总计划。
 
 ## 2026-11-01 下一批：经济队列可靠性与组织审批恢复
 

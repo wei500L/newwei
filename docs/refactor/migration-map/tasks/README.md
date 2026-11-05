@@ -1,6 +1,6 @@
 # 任务认领与历史恢复索引
 
-## 2026-11-04 后端重构修复系列（REFACTOR，planned）
+## 2026-11-04 后端重构修复系列（REFACTOR，第一轮已合入）
 
 基线 `18c41879858d70d5d1b335b4bdab81e68ccdb693`。来源是 2026-11-04 api-go 纯静态横向审查。总计划、波次与文件冲突说明见 [BACKEND-REFACTOR-PLAN](../BACKEND-REFACTOR-PLAN.md)，所有执行窗口先读 [通用纪律](REFACTOR-COMMON.md)。
 
@@ -17,7 +17,7 @@
 | 4 | [REFACTOR-HTTP-KIT-001](REFACTOR-HTTP-KIT-001.md) | HTTP-ROUTER | [提示词](REFACTOR-HTTP-KIT-001.prompt.md) |
 | 5 | [REFACTOR-OUTBOUND-CLIENTS-001](REFACTOR-OUTBOUND-CLIENTS-001.md) | HTTP-KIT、SETTINGS-CRYPTO | [提示词](REFACTOR-OUTBOUND-CLIENTS-001.prompt.md) |
 
-全部处于 planned 状态：提示词已保存，但尚未发出，也没有认领。同一波次内的任务可以并行；前置是指“实际合入 main 且普通 CI 成功”。
+2026-11-05 核实：全部已合入 main（#162–#174），最新 main `6ab26a54` 普通 CI success。BULLMQ-WORKER（crawlworker 未迁）与 OUTBOUND-CLIENTS（只完成 -a 的传输层）为部分完成，剩余项见总计划“[第一轮结果与第二轮候选](../BACKEND-REFACTOR-PLAN.md#第一轮结果与第二轮候选)”。各任务状态以任务记录为准；已执行的提示词不再重派。
 
 ## 2026-11-01 经济队列与组织审批提示词
 

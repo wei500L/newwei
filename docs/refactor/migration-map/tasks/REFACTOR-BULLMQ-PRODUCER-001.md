@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**pr_open**（Ready PR #170，待规划窗口合并）。
+- 状态：**merged**（PR #170，`a2a3b4c9`；2026-11-05 规划窗口核实合入 main，最新 main `6ab26a54` 普通 CI success）。
 - 规划基线：`origin/main = 18c41879858d70d5d1b335b4bdab81e68ccdb693`；规划时间：2026-11-04。
 - 来源：2026-11-04 api-go 纯静态横向审查（见总计划“背景与目标”）。
 - 前置：REFACTOR-RUNTIME-WIRING-001 合入且 CI 成功；可与 HTTP-ROUTER 并行。

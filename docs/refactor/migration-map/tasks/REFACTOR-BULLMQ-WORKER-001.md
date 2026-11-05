@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**planned**（提示词已写好，尚未发出或认领）。
+- 状态：**部分合入**（-a #172 → `4f7e155c`；-b #174 → `6ab26a54`；剩余：crawlworker 未迁移，见交付记录“剩余问题”与 [REFACTOR 第二轮候选](../BACKEND-REFACTOR-PLAN.md#第一轮结果与第二轮候选)）。
 - 规划基线：`origin/main = 18c41879858d70d5d1b335b4bdab81e68ccdb693`；规划时间：2026-11-04。
 - 来源：2026-11-04 api-go 纯静态横向审查（见总计划“背景与目标”）。
 - 前置：REFACTOR-BULLMQ-PRODUCER-001 与 REFACTOR-SAFE-GOROUTINE-001 合入且 CI 成功。

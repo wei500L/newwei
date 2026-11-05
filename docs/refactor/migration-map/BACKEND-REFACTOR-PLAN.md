@@ -29,6 +29,21 @@ Go 迁移以“与 NestJS 契约等价”为目标，并由多批窗口并行完
 
 “合入”指 GitHub 实际 merge 进 main 且该 head 的普通 CI 三主 job success；Ready PR 不算。
 
+## 第一轮结果与第二轮候选
+
+2026-11-05 规划窗口核实：10 个任务全部有 PR 合入 main（#162–#174，含整合 PR #165、#168），最新 main `6ab26a54` 普通 CI success（#169、#171 合并时的 push run 被后续 push 取消，二者 PR head 的 CI 均为 success）。8 个任务完整完成，2 个部分完成。各执行窗口交付记录中的“剩余问题”汇总如下，作为第二轮候选（尚未写提示词）：
+
+| 候选 | 来源 | 内容 |
+|---|---|---|
+| BULLMQ-WORKER 收尾 | [BULLMQ-WORKER-001](tasks/REFACTOR-BULLMQ-WORKER-001.md) -b | `crawlworker` 未迁移：处理器内自行迁移状态、C2 动态并发、跨队列内存压力限速、stalled 业务副作用；需先给 `bullmq.Worker` 增加可调并发与 stalled 回调 |
+| OUTBOUND 收尾 | [OUTBOUND-CLIENTS-001](tasks/REFACTOR-OUTBOUND-CLIENTS-001.md) -a | 只做了 `litellmcompat.PostOnce` 传输收敛；publicportal 各 completion 的 profile/请求体/响应解析/guardrail/fallback 上收到 `Completion`，`analysis_stream`/`assistant_stream` 上收到新增 `CompletionStream`，crawlfrontierllm/llmembed 的 complete/embed/rerank 上收，探针改调 `PostOnce`；-b（43 处 `&http.Client{` 与共享 Transport）未开始 |
+| HTTP-KIT 收尾 | [HTTP-KIT-001](tasks/REFACTOR-HTTP-KIT-001.md) | `readJSON` 8 份、`writeError` 5 份、`authorize` 约 45 份（AUTH-CHAIN 后仅约 6 份是纯转发）、其余时间格式与 `toInt64`/`asFloat`/`asBool` 未收敛 |
+| LOCKS 收尾 | [LOCKS-001](tasks/REFACTOR-LOCKS-001.md) | `contentsubscriptions`/`situationmonitors`/`newsindicator` 三份 `fn(ctx,*sql.Conn)` 式 GET_LOCK，`newsnowhottest`/`crawlreadtelemetry`/`qualityoverview`/`classificationrssops` 的缓存重建锁 |
+| 迁移期注释 | [HTTP-ROUTER-001](tasks/REFACTOR-HTTP-ROUTER-001.md)、[RUNTIME-WIRING-001](tasks/REFACTOR-RUNTIME-WIRING-001.md) | `*_routes.go` 少量 “legacy /api/” 措辞、`cmd/api` wire 文件 “legacy default” 等注释；纯注释批次 |
+| SAFE-GOROUTINE 取舍 | [SAFE-GOROUTINE-001](tasks/REFACTOR-SAFE-GOROUTINE-001.md) | 少数 channel 会合式扇出在发送前 panic 时单接收者可能阻塞（进程不崩），未改扇出结构 |
+
+全部验证仍只有静态审查 + 普通 CI，没有连接真实 Redis/MySQL/Mongo/LiteLLM，也没有部署。
+
 ## 不进入本轮的候选（只记 BACKLOG，不派发）
 
 - 自研 GraphQL 执行器（`internal/graphqlread/exec`，反射投影）换代码生成方案：风险最高，等上面全部落地后再评估。

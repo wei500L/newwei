@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**planned**（提示词已写好，尚未发出或认领）。
+- 状态：**merged**（PR #166，整合 #168 → `51525856`；2026-11-05 规划窗口核实合入 main，最新 main `6ab26a54` 普通 CI success）。
 - 规划基线：`origin/main = 18c41879858d70d5d1b335b4bdab81e68ccdb693`；规划时间：2026-11-04。
 - 来源：2026-11-04 api-go 纯静态横向审查（见总计划“背景与目标”）。
 - 前置：REFACTOR-SAFE-GOROUTINE-001 合入且 CI 成功；可与 RUNTIME-WIRING 并行。
