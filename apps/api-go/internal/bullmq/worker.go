@@ -258,14 +258,17 @@ func NewWorker(commands redis.Cmdable, blocking *redis.Client, queue string, pro
 		return nil, fmt.Errorf("bullmq: worker requires a processor")
 	}
 	normalized := opts.normalized()
+	jobCtx, cancelJobs := context.WithCancel(context.Background())
 	return &Worker{
-		commands:  commands,
-		blocking:  blocking,
-		keys:      NewKeys(normalized.Prefix, queue),
-		opts:      normalized,
-		processor: processor,
-		tokens:    newTokenSource(),
-		slots:     make(chan struct{}, normalized.Concurrency),
+		commands:   commands,
+		blocking:   blocking,
+		keys:       NewKeys(normalized.Prefix, queue),
+		opts:       normalized,
+		processor:  processor,
+		tokens:     newTokenSource(),
+		slots:      make(chan struct{}, normalized.Concurrency),
+		jobCtx:     jobCtx,
+		cancelJobs: cancelJobs,
 	}, nil
 }
 
@@ -296,7 +299,9 @@ func (w *Worker) Start(ctx context.Context) error {
 		}
 	}
 	w.fetchCtx, w.cancelFetch = context.WithCancel(context.Background())
-	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
+	if w.jobCtx == nil {
+		w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
+	}
 	w.fetchDone = make(chan struct{})
 	w.stalledDone = make(chan struct{})
 	safego.Go("bullmq.worker.stalledLoop", func() {
@@ -539,6 +544,11 @@ func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
 	job, err := jobFromFlat(flat, token, jobID, w.keys)
 	if err != nil {
 		return nil, delayUntil, err
+	}
+	if w.opts.Name == "api-go" || w.opts.Name == "" {
+		if ttl, terr := w.commands.PTTL(ctx, w.keys.Job(job.ID)+":lock").Result(); terr == nil {
+			w.opts.Logger("bullmq-debug: claim job=%s lockMs=%d ttl=%s", job.ID, w.opts.LockDuration.Milliseconds(), ttl)
+		}
 	}
 	if job.ID == "" {
 		// The wait entry outlived its job hash; drop our active entry and release
@@ -945,6 +955,11 @@ func (w *Worker) checkStalled(ctx context.Context) {
 	}
 	if values, ok := result.([]any); ok && len(values) > 0 {
 		w.opts.Logger("bullmq: recovered %d stalled job(s)", len(values))
+	}
+	if scard, serr := w.commands.SCard(ctx, w.keys.Stalled).Result(); serr == nil {
+		lact, _ := w.commands.LLen(ctx, w.keys.Active).Result()
+		lwait, _ := w.commands.LLen(ctx, w.keys.Wait).Result()
+		w.opts.Logger("bullmq-debug: stalled pass interval=%dms max=%d active=%d wait=%d stalledSet=%d", w.opts.StalledInterval.Milliseconds(), w.opts.MaxStalledCount, lact, lwait, scard)
 	}
 }
 
