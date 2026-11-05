@@ -21,7 +21,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
 // The worker uses BullMQ's Worker defaults; the NestJS processor only overrides
@@ -387,40 +386,27 @@ func queueSleep(ctx context.Context, duration time.Duration) bool {
 	}
 }
 
-// QueueWorker consumes the situationMonitorSignals BullMQ queue with the
-// official BullMQ 5.63.2 state machine and concurrency 1, exactly like the
-// NestJS processor it replaces.
-//
-// It owns a dedicated blocking Redis connection for the marker wait and uses
-// the shared client for every other command; the caller keeps ownership of the
-// shared client. Run blocks until its context is canceled and then drains the
-// in-flight job. Close releases the blocking connection and is idempotent.
+// QueueWorker consumes the situationMonitorSignals BullMQ queue on the shared
+// bullmq.Worker state machine (concurrency 1, BullMQ Worker defaults). The loop,
+// lock renewal, finish, retry and stalled recovery live in internal/bullmq; this
+// type keeps only the queue wiring, the repeat rescheduling hook and the retry
+// backoff table the queue configures.
 type QueueWorker struct {
 	client   *redis.Client
 	blocking *redis.Client
 	keys     queueKeys
 	scripts  queueScripts
-	tokens   *queueTokenSource
 	now      func() time.Time
 
-	mu          sync.Mutex
-	started     bool
-	closing     bool
-	process     func(ctx context.Context, source PollSource) error
-	fetchCtx    context.Context
-	cancelFetch context.CancelFunc
-	jobCtx      context.Context
-	cancelJobs  context.CancelFunc
-	fetchDone   chan struct{}
-	stalledDone chan struct{}
-	closed      chan struct{}
-	wg          sync.WaitGroup
-	slots       chan struct{}
-	closeOnce   sync.Once
+	mu        sync.Mutex
+	started   bool
+	closed    bool
+	inner     *bullmq.Worker
+	closeOnce sync.Once
 }
 
-// NewQueueWorker wires the consumer to the shared Redis client and loads the
-// vendored Lua scripts. It does not open a connection or claim a job: Run does.
+// NewQueueWorker wires the consumer to the shared Redis client and opens the
+// dedicated blocking connection. It does not claim a job: Run does.
 func NewQueueWorker(client *redis.Client) (*QueueWorker, error) {
 	if client == nil {
 		return nil, errors.New("situationsignalsworker: queue worker requires a redis client")
@@ -438,10 +424,7 @@ func NewQueueWorker(client *redis.Client) (*QueueWorker, error) {
 		blocking: blocking,
 		keys:     newQueueKeys(QueuePrefix, QueueName),
 		scripts:  scripts,
-		tokens:   newQueueTokenSource(),
 		now:      time.Now,
-		closed:   make(chan struct{}),
-		slots:    make(chan struct{}, workerConcurrency),
 	}, nil
 }
 
@@ -461,10 +444,7 @@ func newBlockingClient(shared *redis.Client) (*redis.Client, error) {
 }
 
 // Run claims and processes jobs until ctx is canceled, then drains the in-flight
-// job and returns. Failures of the processor are logged and reported to BullMQ
-// (which retries per the job options); they never stop the loop.
-//
-// Run must be called at most once per worker.
+// job and returns. Run must be called at most once per worker.
 func (w *QueueWorker) Run(ctx context.Context, process func(ctx context.Context, source PollSource) error) {
 	if w == nil {
 		return
@@ -476,270 +456,155 @@ func (w *QueueWorker) Run(ctx context.Context, process func(ctx context.Context,
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !w.begin(process) {
+	w.mu.Lock()
+	if w.started || w.closed {
+		w.mu.Unlock()
+		log.Print(logPrefix + "queue worker is already started or closed")
 		return
 	}
-	select {
-	case <-ctx.Done():
-	case <-w.closed:
+	w.started = true
+	w.mu.Unlock()
+
+	inner, err := bullmq.NewWorker(w.client, w.blocking, QueueName, w.processor(process), bullmq.WorkerOptions{
+		Prefix:          QueuePrefix,
+		Concurrency:     workerConcurrency,
+		LockDuration:    lockDuration,
+		LockRenewTime:   lockRenewTime,
+		StalledInterval: stalledInterval,
+		MaxStalledCount: maxStalledCount,
+		DrainDelay:      drainDelay,
+		Stacktrace:      queueStacktraceJSON,
+		FailurePolicy:   w.failurePolicy(),
+	})
+	if err != nil {
+		log.Printf(logPrefix+"build worker: %v", err)
+		return
 	}
-	w.shutdown()
+
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		closeCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		_ = inner.Close(closeCtx)
+		cancel()
+		return
+	}
+	w.inner = inner
+	w.mu.Unlock()
+
+	if err := inner.Start(ctx); err != nil {
+		log.Printf(logPrefix+"worker start: %v", err)
+	}
+	<-ctx.Done()
+	closeCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	defer cancel()
+	if err := inner.Close(closeCtx); err != nil {
+		log.Printf(logPrefix+"worker close: %v", err)
+	}
 }
 
-// Close stops the consumer, releases the in-flight job deadline, closes the
-// dedicated blocking connection and unblocks Run. It is idempotent and safe to
-// call before or after Run returns.
+// Close stops the consumer, releases the in-flight job deadline and closes the
+// dedicated blocking connection. It is idempotent and safe before or after Run.
 func (w *QueueWorker) Close() {
 	if w == nil {
 		return
 	}
-	w.shutdown()
-}
-
-// begin starts the fetch and stalled loops. It reports false when the worker
-// was already started or already closed.
-func (w *QueueWorker) begin(process func(ctx context.Context, source PollSource) error) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.started || w.closing {
-		log.Print(logPrefix + "queue worker is already started or closed")
-		return false
-	}
-	w.started = true
-	w.process = process
-	w.fetchCtx, w.cancelFetch = context.WithCancel(context.Background())
-	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
-	w.fetchDone = make(chan struct{})
-	w.stalledDone = make(chan struct{})
-	safego.Go("situationsignalsworker.queue.stalledLoop", func() {
-		defer close(w.stalledDone)
-		w.stalledLoop(w.fetchCtx)
-	})
-	safego.Go("situationsignalsworker.queue.fetchLoop", func() {
-		defer close(w.fetchDone)
-		w.fetchLoop(w.fetchCtx)
-	})
-	return true
-}
-
-// shutdown stops new claims, aborts the marker wait, drains the in-flight job
-// while its lock keeps renewing, and closes the blocking connection. A job that
-// does not stop before the shutdown deadline is left in the active list; its
-// lock expires and BullMQ stalled recovery hands it to the next owner.
-func (w *QueueWorker) shutdown() {
 	w.closeOnce.Do(func() {
 		w.mu.Lock()
-		w.closing = true
-		cancelFetch := w.cancelFetch
-		cancelJobs := w.cancelJobs
-		fetchDone := w.fetchDone
-		stalledDone := w.stalledDone
+		w.closed = true
+		inner := w.inner
 		w.mu.Unlock()
-
-		if cancelFetch != nil {
-			cancelFetch()
+		if inner != nil {
+			closeCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+			defer cancel()
+			if err := inner.Close(closeCtx); err != nil {
+				log.Printf(logPrefix+"close worker: %v", err)
+			}
+			return
 		}
-		// Closing the dedicated connection unblocks a pending BZPOPMIN at once:
-		// connection contexts do not cancel in-flight commands by default.
 		if w.blocking != nil {
 			if err := w.blocking.Close(); err != nil && !errors.Is(err, redis.ErrClosed) {
 				log.Printf(logPrefix+"close blocking redis client: %v", err)
 			}
 		}
-		if fetchDone != nil {
-			<-fetchDone
-		}
-		if stalledDone != nil {
-			<-stalledDone
-		}
-
-		drained := make(chan struct{})
-		go func() {
-			w.wg.Wait()
-			close(drained)
-		}()
-		select {
-		case <-drained:
-		case <-time.After(shutdownGrace):
-			if cancelJobs != nil {
-				cancelJobs()
-			}
-			log.Print(logPrefix + "in-flight job did not finish before the shutdown deadline; leaving it to stalled recovery")
-			select {
-			case <-drained:
-			case <-time.After(shutdownCancelGrace):
-			}
-		}
-		if cancelJobs != nil {
-			cancelJobs()
-		}
-		if w.closed != nil {
-			close(w.closed)
-		}
 	})
 }
 
-func (w *QueueWorker) fetchLoop(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
+// processor adapts the business handler into a bullmq.Processor: it reschedules
+// the next repeat iteration first (Worker.nextJobFromJobData), resolves the poll
+// source, and runs the handler. A failed repeat reschedule leaves the job active
+// for stalled recovery instead of processing it.
+func (w *QueueWorker) processor(process func(ctx context.Context, source PollSource) error) bullmq.Processor {
+	return func(ctx context.Context, job *bullmq.Job) (json.RawMessage, error) {
+		claimed := queuedJobFromBullmq(job)
+		if err := w.rescheduleRepeat(ctx, claimed); err != nil {
+			log.Printf(logPrefix+"reschedule repeat for job %s: %v", job.ID, err)
+			return nil, bullmq.Handled(nil)
 		}
-		if w.isPaused(ctx) {
-			if !queueSleep(ctx, pausedQueuePollInterval) {
-				return
-			}
-			continue
+		source, ok := queueJobSource(claimed)
+		if !ok {
+			log.Printf(logPrefix+"job %s (%s) carries no poll source; completing without work", job.ID, job.Name)
+			return nil, nil
 		}
-		select {
-		case w.slots <- struct{}{}:
-		case <-ctx.Done():
-			return
-		}
-
-		var next queueNextJob
-		err := safego.Call("situationsignalsworker.queue.moveToActive", func() error {
-			var claimErr error
-			next, claimErr = w.moveToActive(ctx)
-			return claimErr
-		})
-		if err != nil {
-			<-w.slots
-			if ctx.Err() != nil {
-				return
-			}
-			log.Printf(logPrefix+"fetch job: %v", err)
-			if !queueSleep(ctx, fetchErrorRetryInterval) {
-				return
-			}
-			continue
-		}
-		job := next.job
-		if job == nil {
-			<-w.slots
-			if next.delayUntil > w.now().UnixMilli() {
-				wait := time.Until(time.UnixMilli(next.delayUntil))
-				if wait > drainDelay {
-					wait = drainDelay
+		if err := process(ctx, source); err != nil {
+			// An unknown backoff strategy is a configuration error in BullMQ; the
+			// original worker left the job active for stalled recovery rather than
+			// failing it. Only a final attempt still fails.
+			if !claimed.finalFailure() {
+				if _, ok := w.retryDelay(claimed); !ok {
+					log.Printf(logPrefix+"unknown backoff strategy for job %s; leaving it active", job.ID)
+					return nil, bullmq.Handled(nil)
 				}
-				if !queueSleep(ctx, wait) {
-					return
-				}
-				continue
 			}
-			w.waitForMarker(ctx)
-			continue
+			return nil, err
 		}
+		return nil, nil
+	}
+}
 
-		w.mu.Lock()
-		if w.closing {
-			w.mu.Unlock()
-			<-w.slots
-			return
+// failurePolicy reproduces retryDelay (fixed/exponential with optional jitter)
+// for the shared worker's retry decision.
+func (w *QueueWorker) failurePolicy() bullmq.FailurePolicy {
+	return func(job *bullmq.Job, err error) bullmq.FailureDecision {
+		var unrecoverable *bullmq.UnrecoverableError
+		if errors.As(err, &unrecoverable) {
+			return bullmq.FailureDecision{Final: true, Permanent: true}
 		}
-		w.wg.Add(1)
-		w.mu.Unlock()
-		claimed := *job
-		safego.Go("situationsignalsworker.queue.job", func() {
-			defer w.wg.Done()
-			defer func() { <-w.slots }()
-			w.processJob(claimed)
-		})
-	}
-}
-
-// isPaused checks the queue meta hash; a paused queue must not be claimed. The
-// check is best effort: moveToActive has its own paused check.
-func (w *QueueWorker) isPaused(ctx context.Context) bool {
-	paused, err := w.client.HExists(ctx, w.keys.Meta, "paused").Result()
-	return err == nil && paused
-}
-
-// waitForMarker blocks on the BullMQ marker until a waiting or delayed job is
-// announced, the drain delay elapses or the context is canceled.
-func (w *QueueWorker) waitForMarker(ctx context.Context) {
-	timeout := drainDelay
-	if timeout <= 0 {
-		timeout = drainDelay
-	}
-	_, err := w.blocking.BZPopMin(ctx, timeout, w.keys.Marker).Result()
-	if err != nil && !errors.Is(err, redis.Nil) && ctx.Err() == nil && !errors.Is(err, redis.ErrClosed) {
-		log.Printf(logPrefix+"wait for marker: %v", err)
-		queueSleep(ctx, fetchErrorRetryInterval)
-	}
-}
-
-// queueNextJob is the decoded moveToActive reply.
-type queueNextJob struct {
-	job        *queuedJob
-	delayUntil int64
-}
-
-func (w *QueueWorker) moveToActive(ctx context.Context) (queueNextJob, error) {
-	token := w.tokens.next()
-	opts, err := queuePack(map[string]any{
-		"token":        token,
-		"lockDuration": int64(lockDuration / time.Millisecond),
-		"limiter":      nil,
-		"name":         nil,
-	})
-	if err != nil {
-		return queueNextJob{}, err
-	}
-	result, err := w.scripts.moveToActive.Run(ctx, w.client,
-		[]string{
-			w.keys.Wait,
-			w.keys.Active,
-			w.keys.Prioritized,
-			w.keys.Events,
-			w.keys.Stalled,
-			w.keys.Limiter,
-			w.keys.Delayed,
-			w.keys.Paused,
-			w.keys.Meta,
-			w.keys.PC,
-			w.keys.Marker,
-		},
-		w.keys.Base,
-		w.now().UnixMilli(),
-		opts,
-	).Result()
-	if err != nil {
-		return queueNextJob{}, err
-	}
-	return queueNextJobFromResult(result, token)
-}
-
-// queueNextJobFromResult decodes the [jobData, jobId, rateLimitDelay,
-// delayUntil] tuple the scripts return.
-func queueNextJobFromResult(result any, token string) (queueNextJob, error) {
-	values, ok := result.([]any)
-	if !ok {
-		if result == nil {
-			return queueNextJob{}, nil
+		if job.FinalFailure() {
+			return bullmq.FailureDecision{Final: true}
 		}
-		return queueNextJob{}, fmt.Errorf("situationsignalsworker: unexpected moveToActive result %T", result)
+		delay, ok := w.retryDelay(queuedJobFromBullmq(job))
+		if !ok {
+			return bullmq.FailureDecision{Final: true}
+		}
+		return bullmq.FailureDecision{Final: false, DelayMillis: delay}
 	}
-	if len(values) == 0 {
-		return queueNextJob{}, nil
+}
+
+// queuedJobFromBullmq adapts the shared job into the business job view.
+func queuedJobFromBullmq(job *bullmq.Job) queuedJob {
+	if job == nil {
+		return queuedJob{}
 	}
-	next := queueNextJob{}
-	if len(values) > 3 {
-		next.delayUntil = queueToInt64(values[3])
+	adapted := queuedJob{
+		ID:              job.ID,
+		Name:            job.Name,
+		Token:           job.Token,
+		Data:            job.Data,
+		RepeatJobKey:    job.RepeatJobKey,
+		AttemptsMade:    int(job.AttemptsMade),
+		AttemptsStarted: int(job.AttemptsStarted),
+		StalledCounter:  int(job.StalledCount),
+		DeferredFailure: job.DeferredFailure,
+		Timestamp:       job.Timestamp,
 	}
-	flat, ok := values[0].([]any)
-	if !ok || len(flat) == 0 {
-		return next, nil
+	if job.ProcessedOn != nil {
+		adapted.ProcessedOn = *job.ProcessedOn
 	}
-	jobID := ""
-	if len(values) > 1 {
-		jobID = queueToText(values[1])
+	if len(job.Opts) > 0 {
+		_ = json.Unmarshal(job.Opts, &adapted.Opts)
 	}
-	job, err := queueQueuedJobFromFlat(flat, token, jobID)
-	if err != nil {
-		return next, err
-	}
-	next.job = &job
-	return next, nil
+	return adapted
 }
 
 // queueQueuedJobFromFlat decodes the flat HGETALL array moveToActive returns.
@@ -781,79 +646,6 @@ func queueQueuedJobFromFlat(flat []any, token, jobID string) (queuedJob, error) 
 	return job, nil
 }
 
-// processJob runs one claimed job: it reschedules the next repeat iteration
-// first (exactly like BullMQ's Worker.nextJobFromJobData), then keeps the lock
-// fresh while the processor runs, and finally acks the job as completed, moves
-// it to the delayed set for a retry, or fails it.
-func (w *QueueWorker) processJob(job queuedJob) {
-	// The repeat iteration is scheduled before the processor runs, exactly like
-	// Worker.nextJobFromJobData. jobCtx keeps it alive during a graceful
-	// shutdown drain (only the shutdown deadline cancels jobCtx).
-	if err := w.rescheduleRepeat(w.jobCtx, job); err != nil {
-		log.Printf(logPrefix+"reschedule repeat for job %s: %v", job.ID, err)
-		return
-	}
-
-	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
-	var leaseLost atomic.Bool
-	renewDone := make(chan struct{})
-	safego.Go("situationsignalsworker.queue.renewLock", func() {
-		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
-	})
-
-	source, ok := queueJobSource(job)
-	var processErr error
-	if !ok {
-		log.Printf(logPrefix+"job %s (%s) carries no poll source; completing without work", job.ID, job.Name)
-	} else {
-		processErr = safego.Call("situationsignalsworker.queue.process", func() error {
-			return w.process(jobCtx, source)
-		})
-	}
-	close(renewDone)
-	cancelJob(nil)
-
-	if w.jobCtx.Err() != nil {
-		// Worker shutdown deadline: leave the job active; its lock expires and
-		// stalled recovery hands it to the next owner.
-		return
-	}
-	if leaseLost.Load() {
-		log.Printf(logPrefix+"lease lost for job %s; leaving it to stalled recovery", job.ID)
-		return
-	}
-	// Acknowledging must not inherit the fetch-loop context: shutdown cancels it
-	// to stop new claims while in-flight jobs still drain.
-	finishCtx, cancelFinish := context.WithTimeout(context.Background(), finishTimeout)
-	defer cancelFinish()
-
-	if processErr == nil {
-		w.finishCompleted(finishCtx, job)
-		return
-	}
-	// The NestJS processor logs every worker 'failed' event and lets BullMQ
-	// decide the retry, so the error is logged here and reported to BullMQ.
-	log.Printf(logPrefix+"job %s (%s) failed: %v", job.ID, job.Name, processErr)
-	if job.finalFailure() {
-		w.finishFailed(finishCtx, job, processErr)
-		return
-	}
-	delayMs, ok := w.retryDelay(job)
-	if !ok {
-		backoffType := ""
-		if job.Opts.Backoff != nil {
-			backoffType = job.Opts.Backoff.Type
-		}
-		log.Printf(logPrefix+"unknown backoff strategy %q for job %s; leaving it active", backoffType, job.ID)
-		return
-	}
-	if delayMs > 0 {
-		w.moveToDelayed(finishCtx, job, w.now().UnixMilli()+delayMs, false, queueFailureFields(processErr.Error()))
-		return
-	}
-	w.retryJob(finishCtx, job, processErr)
-}
-
 // queueJobSource decodes data.source and falls back to the job name prefix.
 // A payload that is not valid JSON is treated like BullMQ's undefined
 // job.data.source: the name prefix still decides.
@@ -869,44 +661,7 @@ func queueJobSource(job queuedJob) (PollSource, bool) {
 
 // renewLock extends the job lock every lockDuration/2. A failed renewal or a
 // lock owned by another token cancels the handler, so the attempt stops and
-// cannot write a terminal state for a job it no longer owns.
-func (w *QueueWorker) renewLock(ctx context.Context, job queuedJob, cancel context.CancelCauseFunc, lost *atomic.Bool, done <-chan struct{}) {
-	ticker := time.NewTicker(lockRenewTime)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			extended, err := w.scripts.extendLock.Run(ctx, w.client,
-				[]string{w.keys.jobKey(job.ID) + ":lock", w.keys.Stalled},
-				job.Token,
-				int64(lockDuration/time.Millisecond),
-				job.ID,
-			).Int64()
-			if err != nil {
-				if ctx.Err() == nil {
-					log.Printf(logPrefix+"renew lock %s: %v", job.ID, err)
-				}
-				lost.Store(true)
-				cancel(errors.New("situationsignalsworker: lock renewal failed"))
-				return
-			}
-			if extended == 0 {
-				lost.Store(true)
-				cancel(errors.New("situationsignalsworker: lock is owned by another worker"))
-				return
-			}
-		}
-	}
-}
 
-// retryDelay mirrors Backoffs.calculate for the built-in fixed and exponential
-// strategies (NestJS configures exponential/1000 for this queue). It reports
-// false for an unknown strategy, which BullMQ treats as an error: the job is
-// left active for stalled recovery instead of being failed.
 func (w *QueueWorker) retryDelay(job queuedJob) (int64, bool) {
 	backoff := job.Opts.Backoff
 	if backoff == nil {
@@ -966,230 +721,6 @@ func queueFinishOptions(job queuedJob, token string, keep queueKeepJobs) map[str
 	}
 }
 
-func (w *QueueWorker) finishCompleted(ctx context.Context, job queuedJob) {
-	opts, err := queuePack(queueFinishOptions(job, job.Token, job.keepOnComplete()))
-	if err != nil {
-		log.Printf(logPrefix+"pack completion options for %s: %v", job.ID, err)
-		return
-	}
-	result, err := w.scripts.moveToFinished.Run(ctx, w.client,
-		w.finishKeys(job.ID, w.keys.Completed, "metrics:completed"),
-		job.ID,
-		w.now().UnixMilli(),
-		"returnvalue",
-		"null",
-		"completed",
-		0,
-		w.keys.Base,
-		opts,
-	).Result()
-	if err != nil {
-		log.Printf(logPrefix+"finish completed %s: %v", job.ID, err)
-		return
-	}
-	if code := queueNegativeCode(result); code < 0 {
-		log.Printf(logPrefix+"finish completed %s rejected with BullMQ code %d", job.ID, code)
-	}
-}
-
-func (w *QueueWorker) finishFailed(ctx context.Context, job queuedJob, cause error) {
-	reason := cause.Error()
-	fields, err := queuePack(queueFailureFields(reason))
-	if err != nil {
-		log.Printf(logPrefix+"pack failure fields for %s: %v", job.ID, err)
-		return
-	}
-	opts, err := queuePack(queueFinishOptions(job, job.Token, job.keepOnFail()))
-	if err != nil {
-		log.Printf(logPrefix+"pack failure options for %s: %v", job.ID, err)
-		return
-	}
-	result, err := w.scripts.moveToFinished.Run(ctx, w.client,
-		w.finishKeys(job.ID, w.keys.Failed, "metrics:failed"),
-		job.ID,
-		w.now().UnixMilli(),
-		"failedReason",
-		reason,
-		"failed",
-		0,
-		w.keys.Base,
-		opts,
-		fields,
-	).Result()
-	if err != nil {
-		log.Printf(logPrefix+"finish failed %s: %v", job.ID, err)
-		return
-	}
-	if code := queueNegativeCode(result); code < 0 {
-		log.Printf(logPrefix+"finish failed %s rejected with BullMQ code %d", job.ID, code)
-	}
-}
-
-// moveToDelayed moves the job to the delayed set. skipAttempt is false for the
-// retry path so the attempt counter is incremented exactly once.
-func (w *QueueWorker) moveToDelayed(ctx context.Context, job queuedJob, untilMs int64, skipAttempt bool, fields []any) {
-	nowMs := w.now().UnixMilli()
-	delay := untilMs - nowMs
-	if delay < 0 {
-		delay = 0
-	}
-	skipAttemptArg := "0"
-	if skipAttempt {
-		skipAttemptArg = "1"
-	}
-	var encodedFields any
-	if fields != nil {
-		packed, err := queuePack(fields)
-		if err != nil {
-			log.Printf(logPrefix+"pack delayed fields for %s: %v", job.ID, err)
-			return
-		}
-		encodedFields = packed
-	}
-	result, err := w.scripts.moveToDelayed.Run(ctx, w.client,
-		[]string{
-			w.keys.Marker,
-			w.keys.Active,
-			w.keys.Prioritized,
-			w.keys.Delayed,
-			w.keys.jobKey(job.ID),
-			w.keys.Events,
-			w.keys.Meta,
-			w.keys.Stalled,
-		},
-		w.keys.Base,
-		nowMs,
-		job.ID,
-		job.Token,
-		delay,
-		skipAttemptArg,
-		encodedFields,
-	).Result()
-	if err != nil {
-		log.Printf(logPrefix+"move to delayed %s: %v", job.ID, err)
-		return
-	}
-	if code := queueNegativeCode(result); code < 0 {
-		log.Printf(logPrefix+"move to delayed %s rejected with BullMQ code %d", job.ID, code)
-	}
-}
-
-// retryJob moves the job back to the wait list when a retry has no delay.
-func (w *QueueWorker) retryJob(ctx context.Context, job queuedJob, cause error) {
-	fields, err := queuePack(queueFailureFields(cause.Error()))
-	if err != nil {
-		log.Printf(logPrefix+"pack retry fields for %s: %v", job.ID, err)
-		return
-	}
-	pushCommand := "LPUSH"
-	if job.Opts.LIFO {
-		pushCommand = "RPUSH"
-	}
-	result, err := w.scripts.retryJob.Run(ctx, w.client,
-		[]string{
-			w.keys.Active,
-			w.keys.Wait,
-			w.keys.Paused,
-			w.keys.jobKey(job.ID),
-			w.keys.Meta,
-			w.keys.Events,
-			w.keys.Delayed,
-			w.keys.Prioritized,
-			w.keys.PC,
-			w.keys.Marker,
-			w.keys.Stalled,
-		},
-		w.keys.Base,
-		w.now().UnixMilli(),
-		pushCommand,
-		job.ID,
-		job.Token,
-		fields,
-	).Result()
-	if err != nil {
-		log.Printf(logPrefix+"retry %s: %v", job.ID, err)
-		return
-	}
-	if code := queueNegativeCode(result); code < 0 {
-		log.Printf(logPrefix+"retry %s rejected with BullMQ code %d", job.ID, code)
-	}
-}
-
-func (w *QueueWorker) finishKeys(jobID, target, metricsSuffix string) []string {
-	return []string{
-		w.keys.Wait,
-		w.keys.Active,
-		w.keys.Prioritized,
-		w.keys.Events,
-		w.keys.Stalled,
-		w.keys.Limiter,
-		w.keys.Delayed,
-		w.keys.Paused,
-		w.keys.Meta,
-		w.keys.PC,
-		target,
-		w.keys.jobKey(jobID),
-		w.keys.Base + metricsSuffix,
-		w.keys.Marker,
-	}
-}
-
-func (w *QueueWorker) stalledLoop(ctx context.Context) {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			_ = safego.Call("situationsignalsworker.queue.checkStalled", func() error {
-				w.checkStalled(ctx)
-				return nil
-			})
-			timer.Reset(stalledInterval)
-		}
-	}
-}
-
-func (w *QueueWorker) checkStalled(ctx context.Context) {
-	result, err := w.scripts.moveStalledJobsToWait.Run(ctx, w.client,
-		[]string{
-			w.keys.Stalled,
-			w.keys.Wait,
-			w.keys.Active,
-			w.keys.Base + "stalled-check",
-			w.keys.Meta,
-			w.keys.Paused,
-			w.keys.Marker,
-			w.keys.Events,
-		},
-		maxStalledCount,
-		w.keys.Base,
-		w.now().UnixMilli(),
-		int64(stalledInterval/time.Millisecond),
-	).Result()
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Printf(logPrefix+"stalled recovery: %v", err)
-		}
-		return
-	}
-	if values, ok := result.([]any); ok && len(values) > 0 {
-		log.Printf(logPrefix+"recovered %d stalled job(s)", len(values))
-	}
-}
-
-// rescheduleRepeat mirrors Worker.nextJobFromJobData: a fetched job that belongs
-// to a repeat schedule schedules the next iteration before it is processed.
-//
-// Both schedules of this queue are produced by BullMQ 5.63.2 with hashed
-// (md5) repeat keys: the legacy Oref repeat (rjk = md5) and the Telegram
-// JobScheduler (rjk = "telegram-poll:scheduler"). A repeat key with fewer than
-// five colon-separated segments therefore goes through
-// JobScheduler.upsertJobScheduler({override: false}), i.e. the
-// updateJobScheduler script, which computes the next millis from the repeat
-// hash. A pre-5 colon-bearing key is not produced by this repository and is
-// left untouched (the job is still processed, like the alerts runner).
 func (w *QueueWorker) rescheduleRepeat(ctx context.Context, job queuedJob) error {
 	if job.RepeatJobKey == "" || job.Opts.Repeat == nil {
 		return nil

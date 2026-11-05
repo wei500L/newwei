@@ -413,10 +413,10 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		}
 
 		var job *Job
-		var delayUntil int64
+		var limiterDelay, delayUntil int64
 		err := safego.Call("bullmq.worker.moveToActive", func() error {
 			var claimErr error
-			job, delayUntil, claimErr = w.Claim(ctx)
+			job, limiterDelay, delayUntil, claimErr = w.claim(ctx)
 			return claimErr
 		})
 		if err != nil {
@@ -432,6 +432,19 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		}
 		if job == nil {
 			<-w.slots
+			if limiterDelay > 0 {
+				// A rate-limited queue reports the remaining limiter TTL in
+				// moveToActive reply[2]; wait it out (capped by DrainDelay) instead
+				// of spinning on the marker, matching BullMQ's worker.
+				wait := time.Duration(limiterDelay) * time.Millisecond
+				if wait > w.opts.DrainDelay {
+					wait = w.opts.DrainDelay
+				}
+				if !sleepContext(ctx, wait) {
+					return
+				}
+				continue
+			}
 			if delayUntil > time.Now().UnixMilli() {
 				wait := time.Until(time.UnixMilli(delayUntil))
 				if wait > w.opts.DrainDelay {
@@ -495,6 +508,13 @@ func (w *Worker) waitForMarker(ctx context.Context) {
 // job with a non-zero delayUntil means the queue is empty but a delayed job is
 // due at that time; both zero means empty or paused.
 func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
+	job, _, delayUntil, err := w.claim(ctx)
+	return job, delayUntil, err
+}
+
+// claim is Claim plus the rate-limiter TTL moveToActive reports in reply[2]
+// (milliseconds), which the fetch loop waits out before asking for another job.
+func (w *Worker) claim(ctx context.Context) (*Job, int64, int64, error) {
 	token := w.tokens.Next()
 	opts, err := pack(moveToActiveOptions{
 		Token:        token,
@@ -503,7 +523,7 @@ func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
 		Limiter:      w.opts.Limiter,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	result, err := ScriptMoveToActive.Run(ctx, w.commands,
 		[]string{
@@ -524,30 +544,31 @@ func (w *Worker) Claim(ctx context.Context) (*Job, int64, error) {
 		opts,
 	).Result()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
 	}
 	values, ok := result.([]any)
 	if !ok || len(values) < 4 {
-		return nil, 0, fmt.Errorf("bullmq: unexpected moveToActive result %T", result)
+		return nil, 0, 0, fmt.Errorf("bullmq: unexpected moveToActive result %T", result)
 	}
+	limiterDelay := toInt64(values[2])
 	delayUntil := toInt64(values[3])
 	flat, ok := values[0].([]any)
 	if !ok || len(flat) == 0 {
-		return nil, delayUntil, nil
+		return nil, limiterDelay, delayUntil, nil
 	}
 	jobID := toText(values[1])
 	job, err := jobFromFlat(flat, token, jobID, w.keys)
 	if err != nil {
-		return nil, delayUntil, err
+		return nil, limiterDelay, delayUntil, err
 	}
 	if job.ID == "" {
 		// The wait entry outlived its job hash; drop our active entry and release
 		// the lock so the stale id does not linger.
 		_ = w.commands.LRem(ctx, w.keys.Active, 1, jobID).Err()
 		w.release(ctx, jobID, token)
-		return nil, delayUntil, fmt.Errorf("bullmq: job hash missing")
+		return nil, limiterDelay, delayUntil, fmt.Errorf("bullmq: job hash missing")
 	}
-	return job, delayUntil, nil
+	return job, limiterDelay, delayUntil, nil
 }
 
 // ProcessOne runs the processor while keeping the lock fresh, then finalizes the
@@ -599,6 +620,12 @@ func (w *Worker) ProcessOne(ctx context.Context, job *Job) {
 	}
 	if leaseLost.Load() || (w.opts.IsLeaseLost != nil && w.opts.IsLeaseLost(err)) {
 		w.opts.Logger("bullmq: lease lost for job %s; leaving it to stalled recovery", job.ID)
+		return
+	}
+	// A processor that already performed the BullMQ transition (or requeued the
+	// job) returns Handled; the worker must not acknowledge it a second time.
+	var handled *HandledError
+	if errors.As(err, &handled) {
 		return
 	}
 	finishCtx, cancelFinish := context.WithTimeout(context.Background(), 10*time.Second)
@@ -719,6 +746,33 @@ func (w *Worker) renewLock(ctx context.Context, job *Job, cancel context.CancelC
 // ErrLeaseLost is the cancel cause used when lock renewal fails or the lock
 // belongs to another token.
 var ErrLeaseLost = errors.New("bullmq: job lock was lost")
+
+// HandledError tells the worker that the processor has already performed the
+// job's BullMQ transition itself (completed, failed, retried, delayed or
+// requeued). The worker then skips its own finalization so the job is not
+// acknowledged twice. It is the escape hatch for a queue whose business
+// classification drives the transition (for example a rate-limit requeue that
+// must not consume an attempt).
+type HandledError struct{ err error }
+
+func (e *HandledError) Error() string {
+	if e == nil || e.err == nil {
+		return "bullmq: job already handled"
+	}
+	return e.err.Error()
+}
+
+func (e *HandledError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+// Handled wraps err so the worker leaves the job's state to the processor. A nil
+// err still yields a non-nil sentinel (it must be returned from the processor to
+// reach the worker).
+func Handled(err error) error { return &HandledError{err: err} }
 
 // FinishCompleted acknowledges a job as completed. Exported for the historical
 // low-level tests; the fetch loop uses it internally.
