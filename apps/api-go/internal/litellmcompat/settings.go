@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 var (
@@ -236,12 +236,12 @@ func (c *Client) resolveSecret(raw json.RawMessage) string {
 	if trimmed[0] == '"' {
 		var value string
 		if json.Unmarshal(trimmed, &value) == nil {
-			return llmembed.NormalizeGatewaySecret(value)
+			return settingscrypto.NormalizeGatewaySecret(value)
 		}
 		return ""
 	}
-	if plain, ok := llmembed.DecryptSettingsSecret(trimmed, c.cfg.EncryptionKey); ok {
-		return llmembed.NormalizeGatewaySecret(plain)
+	if plain, ok := settingscrypto.DecryptSettingsSecret(trimmed, c.cfg.EncryptionKey); ok {
+		return settingscrypto.NormalizeGatewaySecret(plain)
 	}
 	return ""
 }
@@ -399,13 +399,13 @@ func (c *Client) resolveGovernanceKey(raw json.RawMessage) (string, string) {
 		}
 		return value, "available"
 	}
-	if !llmembed.IsEncryptedSettingsSecret(trimmed) {
+	if !settingscrypto.IsEncryptedSettingsSecret(trimmed) {
 		return "", "missing"
 	}
 	if strings.TrimSpace(c.cfg.EncryptionKey) == "" {
 		return "", "unreadable"
 	}
-	plain, ok := llmembed.DecryptSettingsSecret(trimmed, c.cfg.EncryptionKey)
+	plain, ok := settingscrypto.DecryptSettingsSecret(trimmed, c.cfg.EncryptionKey)
 	if !ok {
 		return "", "unreadable"
 	}
@@ -428,8 +428,8 @@ func (c *Client) applyGovernance(ctx context.Context, profiles []gatewayProfile,
 	if target == nil || !target.Enabled {
 		return profile, nil
 	}
-	candidateBase := llmembed.NormalizeGatewayAPIBase(profile.APIBase)
-	targetBase := llmembed.NormalizeGatewayAPIBase(target.APIBase)
+	candidateBase := settingscrypto.NormalizeGatewayAPIBase(profile.APIBase)
+	targetBase := settingscrypto.NormalizeGatewayAPIBase(target.APIBase)
 	if candidateBase == "" || targetBase == "" || profile.ID != target.ID || candidateBase != targetBase {
 		return profile, nil
 	}

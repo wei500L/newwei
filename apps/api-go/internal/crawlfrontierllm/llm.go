@@ -1,19 +1,19 @@
 package crawlfrontierllm
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // llm.go is the LiteLLM gateway client for the two Frontier LLM chains. It
@@ -341,24 +341,7 @@ func (c *LLMClient) post(ctx context.Context, profile gatewayProfile, path strin
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
-	httpRequest, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	if profile.APIKey != "" {
-		httpRequest.Header.Set("Authorization", "Bearer "+profile.APIKey)
-	}
-	response, err := c.http.Do(httpRequest)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	defer response.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes))
-	return response.StatusCode, raw, response.Header.Clone(), err
+	return litellmcompat.PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, maxResponseBytes)
 }
 
 // rerankResult is one rerank hit.
