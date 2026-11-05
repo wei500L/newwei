@@ -426,23 +426,44 @@ func (c *Client) post(ctx context.Context, profile gatewayProfile, primary, fall
 }
 
 func (c *Client) postOnce(ctx context.Context, profile gatewayProfile, path string, body []byte, timeout time.Duration) (int, []byte, http.Header, error) {
+	return PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, responseLimit)
+}
+
+// PostOnce performs one outbound JSON POST against a LiteLLM-compatible gateway
+// and returns the raw status, body and headers. It is the shared transport the
+// LLM gateway clients use so request construction, the per-call deadline, the
+// bearer credential and the response size cap live in exactly one place.
+//
+// timeout <= 0 means a 60 second deadline and maxBody <= 0 means the package
+// responseLimit. The caller keeps ownership of the request path, retry loop and
+// response parsing; this helper only performs the exchange.
+func PostOnce(ctx context.Context, httpClient *http.Client, apiBase, apiKey, path string, body []byte, timeout time.Duration, maxBody int64) (int, []byte, http.Header, error) {
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	if maxBody <= 0 {
+		maxBody = responseLimit
+	}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
+	endpoint := strings.TrimRight(apiBase, "/") + path
 	request, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	if profile.APIKey != "" {
-		request.Header.Set("Authorization", "Bearer "+profile.APIKey)
+	if apiKey != "" {
+		request.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	response, err := c.http.Do(request)
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return 0, nil, nil, err
 	}
 	defer response.Body.Close()
-	raw, readErr := io.ReadAll(io.LimitReader(response.Body, responseLimit))
+	raw, readErr := io.ReadAll(io.LimitReader(response.Body, maxBody))
 	return response.StatusCode, raw, response.Header.Clone(), readErr
 }
 

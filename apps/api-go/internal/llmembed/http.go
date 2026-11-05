@@ -1,13 +1,13 @@
 package llmembed
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 const (
@@ -82,27 +82,8 @@ func (c *Client) postWithTimeout(ctx context.Context, profile runtimeProfile, pa
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
-	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if profile.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.APIKey)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return 0, nil, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
-	if err != nil {
-		return resp.StatusCode, nil, err
-	}
-	return resp.StatusCode, raw, nil
+	status, raw, _, err := litellmcompat.PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, 8<<20)
+	return status, raw, err
 }
 
 func retryable(status int, callErr error) bool {

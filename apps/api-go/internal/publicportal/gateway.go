@@ -1,17 +1,16 @@
 package publicportal
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
@@ -297,27 +296,7 @@ func (g *gatewayClient) post(ctx context.Context, profile completionProfile, pat
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
-	httpReq, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if profile.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+profile.APIKey)
-	}
-	resp, err := g.http.Do(httpReq)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return resp.StatusCode, nil, resp.Header, err
-	}
-	return resp.StatusCode, raw, resp.Header, nil
+	return litellmcompat.PostOnce(ctx, g.http, profile.APIBase, profile.APIKey, path, body, timeout, 2<<20)
 }
 
 // isGuardrailBlockedResponse mirrors Nest's extractGuardrailBlockedMessage:

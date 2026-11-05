@@ -1,17 +1,17 @@
 package llmembed
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // Archive model-call port.
@@ -364,24 +364,8 @@ func (c *Client) postRaw(ctx context.Context, profile runtimeProfile, primary, f
 }
 
 func (c *Client) postRawOnce(ctx context.Context, profile runtimeProfile, path string, body []byte, timeout time.Duration) (int, http.Header, []byte, error) {
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
-	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if profile.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+profile.APIKey)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, archiveResponseLimit))
-	return resp.StatusCode, resp.Header.Clone(), raw, err
+	status, raw, header, err := litellmcompat.PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, archiveResponseLimit)
+	return status, header, raw, err
 }
 
 func archiveAttempt(profile runtimeProfile, surface, model string, latency time.Duration, callErr error, usage ArchiveUsage) ArchiveAttempt {
