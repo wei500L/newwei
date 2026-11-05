@@ -178,11 +178,3 @@ func querySingle(r *http.Request, name string) (string, bool) {
 	}
 	return values[0], true
 }
-
-// writeJSONBody writes an already-marshaled JSON payload without a trailing
-// newline, matching Express res.json byte shape.
-func writeJSONBody(w http.ResponseWriter, status int, body []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
-}

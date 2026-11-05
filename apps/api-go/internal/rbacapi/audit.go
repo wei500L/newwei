@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 )
 
@@ -47,7 +48,7 @@ func writeAuditLogBestEffort[T any](ctx context.Context, db *sql.DB, orgID, acto
 	if err != nil {
 		metaRaw = []byte("null")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if id, idErr := newRowID(); idErr == nil {
 		_, err = db.ExecContext(ctx,
 			"INSERT INTO AuditLog (id, orgId, actorId, resource, action, metadata, ipAddress, createdAt) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",

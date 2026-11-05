@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"net"
@@ -154,7 +155,7 @@ func (h *AdminHandler) serveStatus(w http.ResponseWriter, r *http.Request) {
 		writeUpstreamError(w, r, status, body)
 		return
 	}
-	writeRawJSON(w, status, body)
+	httpx.WriteRawJSON(w, status, body)
 }
 
 func (h *AdminHandler) serveUpgrade(w http.ResponseWriter, r *http.Request, identity *authhttp.Identity) {
@@ -317,7 +318,7 @@ func (a *adminClient) request(ctx context.Context, method, path string, headers 
 
 func writeUpstreamError(w http.ResponseWriter, r *http.Request, status int, body []byte) {
 	if json.Valid(body) && len(body) > 0 {
-		writeRawJSON(w, status, body)
+		httpx.WriteRawJSON(w, status, body)
 		return
 	}
 	message := strings.TrimSpace(string(body))
@@ -327,19 +328,13 @@ func writeUpstreamError(w http.ResponseWriter, r *http.Request, status int, body
 	authhttp.WriteHTTPException(w, r, status, message)
 }
 
-func writeRawJSON(w http.ResponseWriter, status int, body []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
-}
-
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	body, err := json.Marshal(value)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	writeRawJSON(w, status, body)
+	httpx.WriteRawJSON(w, status, body)
 }
 
 func truncateLongText(value *string) string {

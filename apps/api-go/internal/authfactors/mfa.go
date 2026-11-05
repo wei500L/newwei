@@ -2,6 +2,7 @@ package authfactors
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/http"
 )
 
@@ -145,7 +146,7 @@ func (s *Service) VerifyEnrollment(ctx context.Context, userID, code string) (mf
 			return &httpError{status: http.StatusBadRequest, message: mfaInvalidCodeMessage}
 		}
 
-		verifiedAt := nowMillis()
+		verifiedAt := timefmt.NowMillis()
 		// NestJS rewrites enrolledAt only when an already active factor's
 		// pending replacement is promoted; every other completion keeps the
 		// original enrollment timestamp.

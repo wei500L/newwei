@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"io"
 	"log"
 	"math"
@@ -40,10 +41,6 @@ type Service struct {
 
 func NewService(db *sql.DB, mongoDatabase *mongo.Database) *Service {
 	return &Service{db: db, mongo: mongoDatabase}
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入；
@@ -564,7 +561,7 @@ func writeAuditLogBestEffort(ctx context.Context, db *sql.DB, orgID string, acto
 	if err != nil {
 		metaRaw = []byte("null")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if id, idErr := newRowID(); idErr == nil {
 		_, err = db.ExecContext(ctx,
 			"INSERT INTO AuditLog (id, orgId, actorId, resource, action, metadata, ipAddress, createdAt) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",

@@ -8,6 +8,7 @@ package dataruntimesettings
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"testing"
 	"time"
 )
@@ -80,7 +81,7 @@ func TestEffectiveRealtimeCronRuntimeIntegration(t *testing.T) {
 		"openskyClientSecret": "client-secret",
 		"polymarketProxyUrl": "http://polymarket.test/"
 	}`
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := db.ExecContext(ctx,
 		"INSERT INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt) "+
 			"VALUES ('realtime_signals_settings', ?, 0, NULL, ?, ?) AS new_row "+

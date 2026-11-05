@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
@@ -28,7 +29,7 @@ func (s *service) markNotificationRead(ctx context.Context, orgID, userID, id st
 	if s == nil || s.db == nil {
 		return nil, errDatabaseUnavailable
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `Notification` SET `readAt` = ?, `updatedAt` = ? "+
 			"WHERE `id` = ? AND `orgId` = ? AND `userId` = ? AND `readAt` IS NULL",
@@ -46,7 +47,7 @@ func (s *service) markAllNotificationsRead(ctx context.Context, orgID, userID st
 	if s == nil || s.db == nil {
 		return false, errDatabaseUnavailable
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	result, err := s.db.ExecContext(ctx,
 		"UPDATE `Notification` SET `readAt` = ?, `updatedAt` = ? "+
 			"WHERE `orgId` = ? AND `userId` = ? AND `readAt` IS NULL",

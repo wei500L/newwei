@@ -1,8 +1,8 @@
 package newsindicator
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"net/http"
 	"strings"
 
@@ -52,7 +52,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDetail(w http.ResponseWriter, r *http.Request, id string) {
@@ -71,7 +71,7 @@ func (h *Handler) serveDetail(w http.ResponseWriter, r *http.Request, id string)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveRefresh(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (h *Handler) serveRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// NestJS 的 POST 默认成功码是 201（控制器没有 @HttpCode 覆盖）。
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 // singleSegment 要求 prefix 之后恰好一个非空路径段。
@@ -120,15 +120,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

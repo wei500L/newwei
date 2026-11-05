@@ -22,11 +22,6 @@ func formatJSTime(value time.Time) string {
 	return value.UTC().Format(jsISOLayout)
 }
 
-// nowMillis is the millisecond-truncated UTC clock used for row timestamps.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // newRowID builds an id for Prisma cuid columns written from Go. MySQL has no
 // client-side default, so every insert must supply one; the shape matches the
 // other Go batches (c + 24 hex characters).

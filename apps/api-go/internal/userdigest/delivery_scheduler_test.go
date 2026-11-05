@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"sort"
 	"strings"
 	"sync"
@@ -235,7 +236,7 @@ func TestBuildDigestEmailFallbacksAndEscaping(t *testing.T) {
 	unsafe := "javascript:alert(1)"
 	digest := Digest{
 		Version:     1,
-		GeneratedAt: isoTime(now),
+		GeneratedAt: timefmt.FormatDateTime(now),
 		Preference:  defaultPreference(),
 		Events: []Event{
 			{
@@ -243,7 +244,7 @@ func TestBuildDigestEmailFallbacksAndEscaping(t *testing.T) {
 				Title:             &title,
 				Summary:           &summary,
 				PrimaryEntity:     &entity,
-				LastAt:            isoTime(now),
+				LastAt:            timefmt.FormatDateTime(now),
 				ItemCount:         2,
 				RepresentativeURL: &unsafe,
 			},
@@ -578,15 +579,15 @@ func testDigest(now time.Time, eventCount int) Digest {
 	for index := 0; index < eventCount; index++ {
 		events = append(events, Event{
 			EventID:   "event-" + string(rune('a'+index)),
-			LastAt:    isoTime(now),
+			LastAt:    timefmt.FormatDateTime(now),
 			ItemCount: 1,
 		})
 	}
 	return Digest{
 		Version:     1,
-		GeneratedAt: isoTime(now),
-		WindowStart: isoTime(now.Add(-72 * time.Hour)),
-		WindowEnd:   isoTime(now),
+		GeneratedAt: timefmt.FormatDateTime(now),
+		WindowStart: timefmt.FormatDateTime(now.Add(-72 * time.Hour)),
+		WindowEnd:   timefmt.FormatDateTime(now),
 		Preference:  defaultPreference(),
 		Events:      events,
 	}

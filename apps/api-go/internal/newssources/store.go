@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 
@@ -55,10 +56,6 @@ func NewServiceWithRedis(db *sql.DB, client *redis.Client) *Service {
 // current page's missing NewsSourceOpsSnapshot rows.
 func NewServiceWithSnapshots(db *sql.DB, client *redis.Client, snapshots SnapshotRefresher) *Service {
 	return &Service{db: db, redis: client, snapshots: snapshots}
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 func newRowID() (string, error) {
@@ -287,7 +284,7 @@ func (s *Service) Create(ctx context.Context, orgID string, input createInput) (
 	if err != nil {
 		return sourceDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	var next any
 	if input.IsActive {
 		next = now
@@ -368,7 +365,7 @@ func (s *Service) Update(ctx context.Context, orgID, id string, input updateInpu
 	if input.GroupSet {
 		add("`group`", nullableString(input.Group))
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	activating := input.ActiveSet && input.IsActive && !existing.IsActive
 	frequencyChanged := input.FrequencySet && input.FrequencySeconds != existing.FrequencySeconds
 	if input.ActiveSet && !input.IsActive {
@@ -407,7 +404,7 @@ func (s *Service) Delete(ctx context.Context, orgID, id string) error {
 }
 
 func (s *Service) RunNow(ctx context.Context, orgID, id string) (sourceDocument, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	row, err := s.writeWhere(ctx, orgID, id, []string{
 		"isActive = 1",
 		"nextRunAt = ?",
@@ -424,7 +421,7 @@ func (s *Service) Schedule(ctx context.Context, orgID, id string, next time.Time
 	if _, err := s.find(ctx, orgID, id); err != nil {
 		return sourceDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	row, err := s.writeWhere(ctx, orgID, id, []string{
 		"isActive = 1",
 		"nextRunAt = ?",
@@ -461,7 +458,7 @@ func (s *Service) UpdateFrequency(ctx context.Context, orgID string, frequency i
 	if frequency > 2_592_000 {
 		frequency = 2_592_000
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	next := now.Add(time.Duration(frequency) * time.Second)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -491,7 +488,7 @@ func (s *Service) UpdateFrequency(ctx context.Context, orgID string, frequency i
 }
 
 func (s *Service) UpdateGroup(ctx context.Context, orgID string, ids []string, group *string) (map[string]int, error) {
-	n, err := s.execIDs(ctx, `UPDATE NewsSource SET `+"`group`"+` = ?, updatedAt = ? WHERE orgId = ? AND id IN (`, append([]any{nullableString(group), nowMillis(), orgID}, stringsToArgs(ids)...), len(ids))
+	n, err := s.execIDs(ctx, `UPDATE NewsSource SET `+"`group`"+` = ?, updatedAt = ? WHERE orgId = ? AND id IN (`, append([]any{nullableString(group), timefmt.NowMillis(), orgID}, stringsToArgs(ids)...), len(ids))
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +496,7 @@ func (s *Service) UpdateGroup(ctx context.Context, orgID string, ids []string, g
 }
 
 func (s *Service) UpdateActive(ctx context.Context, orgID string, ids []string, active bool) (map[string]int, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	var query string
 	var args []any
 	if active {

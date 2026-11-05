@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"io"
 	"log"
 	"net/http"
@@ -454,7 +455,7 @@ func (s *Service) persistAcledAuthState(ctx context.Context, state *parsedAcledA
 	if s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx, upsertRealtimeSQL, settingKeyAcledAuthState, payload,
 		descriptionAcledAuthState, now, now); err != nil {
 		return err

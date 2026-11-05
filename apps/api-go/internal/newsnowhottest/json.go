@@ -192,13 +192,6 @@ func (n *nullableInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// isoTime formats an instant like Date.prototype.toISOString: UTC, millisecond
-// precision, trailing Z. Every cached timestamp uses this shape because the
-// NestJS side parses it with Date.parse.
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
-}
-
 // parseISOTime is the Date.parse equivalent used for freshness. It accepts the
 // ISO-8601 shapes the writers produce; anything else reports false, which the
 // caller turns into the twelve-hour fallback age.

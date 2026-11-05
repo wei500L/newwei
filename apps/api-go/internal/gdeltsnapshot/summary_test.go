@@ -2,6 +2,7 @@ package gdeltsnapshot
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestNextScheduledAtMatchesComputeNextScheduledAt(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %q: %v", testCase.now, err)
 		}
-		if got := isoTime(nextScheduledAt(now)); got != testCase.want {
+		if got := timefmt.FormatDateTime(nextScheduledAt(now)); got != testCase.want {
 			t.Errorf("nextScheduledAt(%s) = %s, want %s", testCase.now, got, testCase.want)
 		}
 	}

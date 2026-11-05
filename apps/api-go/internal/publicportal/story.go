@@ -3,6 +3,7 @@ package publicportal
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -132,7 +133,7 @@ func (s *Service) Story(ctx context.Context, raw string) (*StoryDetailResponse, 
 	for _, entry := range entries {
 		timeline = append(timeline, timelineView{
 			ID:          entry.ID,
-			BucketStart: isoTime(entry.BucketStart),
+			BucketStart: timefmt.FormatDateTime(entry.BucketStart),
 			Title:       optionalString(entry.Title),
 			Summary:     optionalString(entry.Summary),
 		})
@@ -146,13 +147,13 @@ func (s *Service) Story(ctx context.Context, raw string) (*StoryDetailResponse, 
 			Title:       optionalString(article.Title),
 		}
 		if article.HasPublished {
-			text := isoTime(article.PublishedAt)
+			text := timefmt.FormatDateTime(article.PublishedAt)
 			view.PublishedAt = &text
 		}
 		articleViews = append(articleViews, view)
 	}
 	return &StoryDetailResponse{
-		GeneratedAt: isoTime(now),
+		GeneratedAt: timefmt.FormatDateTime(now),
 		Org:         *org,
 		Story: StoryDetail{
 			Story:              *card,
@@ -170,7 +171,7 @@ func (s *Service) brief(ctx context.Context, orgID string, event *EventDetail, i
 		return nil, nil
 	}
 	language := normalizeBriefLanguage(event.Language)
-	fingerprint := briefFingerprint(language, isoTime(event.LastAt), sources)
+	fingerprint := briefFingerprint(language, timefmt.FormatDateTime(event.LastAt), sources)
 	if cached := readCachedBrief(event.Metadata, language, fingerprint, s.now()); cached != nil {
 		return cached, nil
 	}
@@ -207,7 +208,7 @@ func (s *Service) brief(ctx context.Context, orgID string, event *EventDetail, i
 	}
 	generatedAt := s.now().UTC()
 	view := &briefView{
-		GeneratedAt: isoTime(generatedAt),
+		GeneratedAt: timefmt.FormatDateTime(generatedAt),
 		Language:    language,
 		Payload:     sanitized,
 		Sources:     viewsFromSources(sources),
@@ -247,7 +248,7 @@ func cacheSources(sources []briefSource) []briefCacheSource {
 	for _, source := range sources {
 		var published *string
 		if source.PublishedAt != nil {
-			text := isoTime(*source.PublishedAt)
+			text := timefmt.FormatDateTime(*source.PublishedAt)
 			published = &text
 		}
 		out = append(out, briefCacheSource{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"sort"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -105,11 +106,11 @@ func (s *Service) GetRuns(ctx context.Context, orgID, itemMetaID string, limit *
 		if rawItemID != "" {
 			jobID = itemMetaID + "-" + rawItemID
 		}
-		createdAt := nowMillis()
+		createdAt := timefmt.NowMillis()
 		if value := rawTime(record.CreatedAt); value != nil {
 			createdAt = *value
 		}
-		updatedAt := nowMillis()
+		updatedAt := timefmt.NowMillis()
 		if value := rawTime(record.UpdatedAt); value != nil {
 			updatedAt = *value
 		}
@@ -224,7 +225,7 @@ func buildStages(logs []taskLogRow) []RunStage {
 	}
 	stages := make([]RunStage, 0, len(latestByStage))
 	for stage, log := range latestByStage {
-		at := nowMillis()
+		at := timefmt.NowMillis()
 		if value := rawTime(log.CreatedAt); value != nil {
 			at = *value
 		}

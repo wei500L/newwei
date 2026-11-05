@@ -528,6 +528,3 @@ func parseTimestampPtr(value *string) *int64 {
 	}
 	return &parsed
 }
-
-// formatISO is used by tests and error paths that need Nest's timestamp shape.
-func formatISO(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }

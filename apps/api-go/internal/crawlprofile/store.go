@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"regexp"
 	"strings"
 	"time"
@@ -28,10 +29,6 @@ type dbtx interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入;
@@ -154,7 +151,7 @@ func (s *Service) CreateProfile(ctx context.Context, orgID, actorID string, inpu
 	if err != nil {
 		return profileDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -305,7 +302,7 @@ func (s *Service) UpdateProfile(ctx context.Context, orgID, actorID, id string, 
 		args = append(args, []byte(configJSON))
 		versionConfig = config
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	sets = append(sets, "version = version + 1", "updatedById = ?", "publishedAt = ?", "updatedAt = ?")
 	args = append(args, actorID, now, now)
 	query := "UPDATE CrawlSiteProfile SET " + strings.Join(sets, ", ") + " WHERE id = ? AND orgId = ?"
@@ -405,7 +402,7 @@ func (s *Service) RollbackProfile(ctx context.Context, orgID, actorID, profileID
 	if err != nil {
 		return profileDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err = tx.ExecContext(ctx, `
 UPDATE CrawlSiteProfile SET name = ?, description = ?, matchHost = ?, isActive = ?, executionMode = ?, workflowId = ?, workflowVersionId = ?, workflowBindingMode = ?, config = ?, version = version + 1, updatedById = ?, publishedAt = ?, updatedAt = ? WHERE id = ? AND orgId = ?`,
 		snapshot.Name, nullStringArg(snapshot.Description), snapshot.MatchHost, boolArg(snapshot.IsActive),

@@ -44,10 +44,6 @@ func (s *Service) AuthenticateMachine(ctx context.Context, token string) (*authh
 	return identity, err
 }
 
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 func permissionList(raw []byte) []string {
 	var parsed []any
 	if json.Unmarshal(raw, &parsed) != nil {

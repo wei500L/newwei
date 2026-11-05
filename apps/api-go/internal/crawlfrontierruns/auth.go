@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -75,11 +74,6 @@ func (s *Service) AuthenticateMachine(ctx context.Context, token string) (*authh
 		return nil, newStatus(401, "Invalid machine token")
 	}
 	return identity, err
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // permissionList parses the permissions JSON array of a machine token. Only

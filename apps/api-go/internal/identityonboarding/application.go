@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func (s *Service) SubmitNewOrgApplication(ctx context.Context, input submitNewOr
 	if err != nil {
 		return applicationScalar{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	record := applicationRecord{
 		ID:                   applicationID,
 		Type:                 applicationTypeNewOrg,
@@ -96,7 +97,7 @@ func (s *Service) SubmitJoinOrgApplication(ctx context.Context, input submitJoin
 	if err != nil {
 		return applicationWithOrg{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	record := applicationRecord{
 		ID:        applicationID,
 		Type:      applicationTypeJoinOrg,
@@ -172,7 +173,7 @@ func (s *Service) ApproveJoin(ctx context.Context, actorID, orgID, applicationID
 		return applicationWithOrgAndReviewer{}, notFound("Registration application not found")
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	claimed, err := claimApplication(ctx, s.db, application.ID, actorID, now)
 	if err != nil {
 		return applicationWithOrgAndReviewer{}, err
@@ -192,11 +193,11 @@ func (s *Service) ApproveJoin(ctx context.Context, actorID, orgID, applicationID
 		// Compensation: release the claim so the administrator can retry. This is
 		// not a generic retry platform; it is the single conditional update the
 		// source performs.
-		releaseApplicationClaim(ctx, s.db, application.ID, nowMillis())
+		releaseApplicationClaim(ctx, s.db, application.ID, timefmt.NowMillis())
 		return applicationWithOrgAndReviewer{}, err
 	}
 
-	if err := linkGeneratedInvite(ctx, s.db, application.ID, invite.ID, nowMillis()); err != nil {
+	if err := linkGeneratedInvite(ctx, s.db, application.ID, invite.ID, timefmt.NowMillis()); err != nil {
 		return applicationWithOrgAndReviewer{}, err
 	}
 	writeAuditBestEffort(ctx, s.db, orgID, actorID, "registration_application", "approve_join", approveJoinAudit{
@@ -255,7 +256,7 @@ func (s *Service) RejectJoin(ctx context.Context, actorID, orgID, applicationID 
 		return applicationWithOrg{}, notFound("Registration application not found")
 	}
 	decisionReason := trimmedName(reason)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if err := rejectApplication(ctx, s.db, application.ID, actorID, decisionReason, now); err != nil {
 		return applicationWithOrg{}, err
 	}
@@ -329,7 +330,7 @@ func (s *Service) ApproveNewOrg(ctx context.Context, actorID, applicationID stri
 
 // approvePendingNewOrg performs the first approval atomically.
 func (s *Service) approvePendingNewOrg(ctx context.Context, actorID string, application applicationRecord) (applicationScalar, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return applicationScalar{}, err
@@ -469,7 +470,7 @@ func (s *Service) createMissingInviteForApproved(ctx context.Context, actorID st
 	if !found {
 		return applicationScalar{}, notFound("Admin role not found for approved organization")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	inviteInput := createInviteInput{
 		Email:         normalizeEmailAddress(application.Email),
 		FirstName:     stringPtr(application.FirstName),
@@ -552,7 +553,7 @@ func (s *Service) healOrgFromInvite(ctx context.Context, actorID string, applica
 		return applicationScalar{}, conflict("Generated invitation organization is missing; cannot recover automatically")
 	}
 	progress := &applicationApprovalProgress{OrgCreated: true, InviteSaved: true, DeliveryStatus: deliveryStatusUnknown}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if err := setApplicationOrgAssociation(ctx, s.db, application.ID, org.ID, encodeApprovalMetadata(progress), now); err != nil {
 		return applicationScalar{}, err
 	}
@@ -660,7 +661,7 @@ func (s *Service) bindExistingOrphanOrg(ctx context.Context, actorID string, app
 // was never created (or was rolled back) by creating it now, in one transaction
 // with the invitation and the association.
 func (s *Service) createOrgForRecoveredApplication(ctx context.Context, actorID string, application applicationRecord, request recoverOrgRequest) (applicationScalar, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return applicationScalar{}, err
@@ -688,7 +689,7 @@ func (s *Service) createOrgForRecoveredApplication(ctx context.Context, actorID 
 // saveInviteAndAssociate creates the invitation row and records the association
 // with an already existing organization in one transaction.
 func (s *Service) saveInviteAndAssociate(ctx context.Context, actorID string, application applicationRecord, orgID, adminRoleID string) (inviteRecord, string, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	inviteInput := createInviteInput{
 		Email:         normalizeEmailAddress(application.Email),
 		FirstName:     stringPtr(application.FirstName),
@@ -771,7 +772,7 @@ func (s *Service) rotateAndDeliver(ctx context.Context, applicationID string, in
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	expiresAt := now.Add(inviteTTLDays * 24 * time.Hour)
 	result, err := s.db.ExecContext(ctx,
 		"UPDATE `OrgInvite` SET `tokenHash` = ?, `expiresAt` = ?, `updatedAt` = ? WHERE `id` = ? AND `status` = 'pending'",
@@ -824,7 +825,7 @@ func (s *Service) recordDeliveryResult(ctx context.Context, applicationID string
 		progress = &applicationApprovalProgress{OrgCreated: true, InviteSaved: true}
 	}
 	progress.DeliveryAttempts++
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	stamp := now.UTC().Format("2006-01-02T15:04:05.000Z")
 	progress.LastDeliveryAt = &stamp
 	if sendErr != nil {
@@ -908,7 +909,7 @@ func (s *Service) RejectNewOrg(ctx context.Context, actorID, applicationID strin
 		return applicationScalar{}, notFound("Registration application not found")
 	}
 	decisionReason := trimmedName(reason)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if err := rejectApplication(ctx, s.db, application.ID, actorID, decisionReason, now); err != nil {
 		return applicationScalar{}, err
 	}

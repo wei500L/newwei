@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 
@@ -124,7 +125,7 @@ func (s *Service) upsertSetting(ctx context.Context, key string, value json.RawM
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingSQL,
 		key, []byte(value), description, now, now, updatedByID)
 	return err
@@ -138,7 +139,7 @@ func (s *Service) upsertSettingForceDescription(ctx context.Context, key string,
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingForceDescriptionSQL,
 		key, []byte(value), description, now, now, updatedByID)
 	return err
@@ -156,7 +157,7 @@ const upsertSettingForceDescriptionSQL = "INSERT INTO SystemSetting " +
 // purpose: database/sql only accepts a spread []any, and this package avoids
 // untyped containers entirely.
 func upsertSettingTx(ctx context.Context, tx *sql.Tx, key string, value json.RawMessage, description string, updatedByID *string) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := tx.ExecContext(ctx, upsertSettingSQL,
 		key, []byte(value), description, now, now, updatedByID)
 	return err
@@ -166,12 +167,6 @@ func upsertSettingTx(ctx context.Context, tx *sql.Tx, key string, value json.Raw
 // warning and continues (read tolerance, best-effort eviction).
 func logCacheFailure(kind, key string, err error) {
 	log.Printf("runtimesettings: %s cache operation failed for %q: %v", kind, key, err)
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID generates a client-side identifier in the same shape Prisma's cuid()
@@ -214,7 +209,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, a
 	}
 	const resource = "system_settings"
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if id, idErr := newRowID(); idErr == nil {
 		_, err := s.db.ExecContext(ctx,

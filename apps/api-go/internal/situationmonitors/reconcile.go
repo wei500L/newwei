@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 )
 
 type desiredSubscription struct {
@@ -72,7 +73,7 @@ WHERE orgId = ? AND userId = ?`, orgID, userID)
 	if err := existingRows.Err(); err != nil {
 		return err
 	}
-	at := nowMillis()
+	at := timefmt.NowMillis()
 	managed, err := json.Marshal(map[string]bool{"managedBySituationMonitor": true})
 	if err != nil {
 		return err
@@ -202,7 +203,7 @@ WHERE orgId = ? AND userId = ? AND kind = 'manual'`, orgID, userID)
 	lexicalInput := append(append(append([]string{}, orphanTopics...), orphanEntities...), keywords...)
 	approvedLexical := normalizeStringList(lexicalInput, maxApprovedTerms)
 	embedding := s.buildQueryEmbedding(ctx, orgID, buildQueryText(systemSyncName, rawKeywords, approvedTopics, approvedEntities, approvedSources, approvedGeos, approvedLexical, nil), "monitor-query-embedding")
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	payload := persistedFromParts(systemSyncName, true, sql.NullString{String: systemSyncColor, Valid: true}, rawKeywords, approvedTopics, approvedEntities, approvedSources, approvedGeos, approvedLexical, emptyRejected(), nil, embedding, now)
 	var existingID string
 	err = q.QueryRowContext(ctx, `

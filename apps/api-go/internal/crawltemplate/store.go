@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -20,10 +20,6 @@ type Service struct {
 
 func NewService(db *sql.DB) *Service {
 	return &Service{db: db}
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入;
@@ -99,7 +95,7 @@ func (s *Service) CreateTemplate(ctx context.Context, orgID string, input create
 	if err != nil {
 		return templateDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO CrawlTemplate (id, orgId, name, description, isActive, crawlOptions, createdAt, updatedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -169,7 +165,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, orgID, id string, input up
 		sets = append(sets, "crawlOptions = ?")
 		args = append(args, optionsArg)
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	// Prisma 的 @updatedAt 在每次 update 都写新时间。
 	sets = append(sets, "updatedAt = ?")
 	args = append(args, now)

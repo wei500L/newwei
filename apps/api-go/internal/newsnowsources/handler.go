@@ -70,7 +70,7 @@ func (h *Handler) getSource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, fetchErr)
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	httpx.WriteJSON(w, http.StatusOK, response)
 }
 
 // getBatch decodes {sources:[...]}, filters invalid members without failing the
@@ -119,7 +119,7 @@ func (h *Handler) getBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := h.service.FetchBatch(r.Context(), valid, latest)
-	writeJSON(w, http.StatusCreated, response)
+	httpx.WriteJSON(w, http.StatusCreated, response)
 }
 
 // parseLatestFlag mirrors parseBooleanFlag. The caller passes the raw query
@@ -143,18 +143,6 @@ func parseLatestFlag(values []string) (bool, *APIError) {
 	default:
 		return false, BadRequestError("latest must be one of true/false, 1/0, yes/no, y/n, on/off")
 	}
-}
-
-// writeJSON writes a success payload like Express res.json.
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }
 
 // writeAPIError writes one typed contract error.

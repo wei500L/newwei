@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"sync"
 	"time"
@@ -231,7 +232,7 @@ func (s *DeliveryScheduler) runTick(ctx context.Context) error {
 // claimTick writes the typed tick payload with SET NX EX 55. It never deletes
 // the key while the interval is held.
 func (s *DeliveryScheduler) claimTick(ctx context.Context) (bool, error) {
-	payload, err := marshalJSON(tickGatePayload{ClaimedAt: isoTime(s.clock())})
+	payload, err := marshalJSON(tickGatePayload{ClaimedAt: timefmt.FormatDateTime(s.clock())})
 	if err != nil {
 		return false, err
 	}

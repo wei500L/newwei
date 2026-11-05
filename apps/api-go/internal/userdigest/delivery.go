@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -286,7 +287,7 @@ func nullTimeISO(value sql.NullTime) *string {
 	if !value.Valid {
 		return nil
 	}
-	text := isoTime(value.Time)
+	text := timefmt.FormatDateTime(value.Time)
 	return &text
 }
 

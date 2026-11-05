@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 
@@ -200,7 +201,7 @@ func (h *Handler) Handle(ctx context.Context, job analysisqueue.Job) error {
 	if record.CreatedAt.IsZero() {
 		// Historical documents without timestamps use the current time for the
 		// event/chunk createdAt, exactly like the NestJS fallback.
-		record.CreatedAt = nowMillis()
+		record.CreatedAt = timefmt.NowMillis()
 	}
 
 	h.publishRunning(ctx, record)

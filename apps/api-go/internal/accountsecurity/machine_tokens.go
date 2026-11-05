@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 )
@@ -68,7 +69,7 @@ func (s *Service) createMachineToken(ctx context.Context, identity *Identity, va
 	if err != nil {
 		return machineTokenCreateResult{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"INSERT INTO `MachineAccessToken` (`id`, `orgId`, `name`, `tokenHash`, `permissions`, "+
 			"`createdById`, `expiresAt`, `lastUsedAt`, `revokedAt`, `createdAt`, `updatedAt`) "+
@@ -132,7 +133,7 @@ func (s *Service) revokeMachineToken(ctx context.Context, orgID, tokenID string)
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	result, err := s.db.ExecContext(ctx,
 		"UPDATE `MachineAccessToken` SET `revokedAt` = ?, `updatedAt` = ? "+
 			"WHERE `id` = ? AND `orgId` = ? AND `revokedAt` IS NULL",
@@ -200,7 +201,7 @@ func (s *Service) rotateMachineToken(ctx context.Context, identity *Identity, to
 		return machineTokenCreateResult{}, badRequest("Machine token name cannot be empty")
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	result, err := tx.ExecContext(ctx,
 		"UPDATE `MachineAccessToken` SET `revokedAt` = ?, `updatedAt` = ? "+
 			"WHERE `id` = ? AND `orgId` = ? AND `revokedAt` IS NULL",

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 )
 
@@ -433,7 +434,7 @@ func (s *Service) updateProfile(ctx context.Context, userID, claimOrgID string, 
 		"UPDATE `User` SET `firstName` = COALESCE(?, `firstName`), "+
 			"`lastName` = COALESCE(?, `lastName`), `avatarUrl` = COALESCE(?, `avatarUrl`), "+
 			"`updatedAt` = ? WHERE `id` = ?",
-		firstName, lastName, avatarURL, nowMillis(), userID)
+		firstName, lastName, avatarURL, timefmt.NowMillis(), userID)
 	if err != nil {
 		return profileResponse{}, dbWrap(err)
 	}

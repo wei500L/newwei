@@ -2,6 +2,7 @@ package pipelinerecovery
 
 import (
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"log"
 	"net/http"
 	"strconv"
@@ -66,7 +67,7 @@ func (h *Handler) serveRuns(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 // parseRunsQuery mirrors the controller's query handling: itemMetaId is
@@ -156,12 +157,6 @@ func querySingleValue(r *http.Request, name string) string {
 // trimmedItemMetaID mirrors the controller's trim of the itemMetaId query.
 func trimmedItemMetaID(raw string) string {
 	return strings.TrimSpace(raw)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload json.RawMessage) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(payload)
 }
 
 // writeServiceError renders the GlobalExceptionFilter shape for typed errors and

@@ -66,12 +66,6 @@ func (s *Service) Config() Config {
 
 // ---- identifiers and time ----
 
-// nowMillis returns the current UTC instant truncated to milliseconds, because
-// every DATETIME(3) column Prisma writes has millisecond precision.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // newRowID generates a client-side identifier in the shape Prisma's cuid()
 // produces ('c' plus 24 hex characters) for the tables whose id has no database
 // default.

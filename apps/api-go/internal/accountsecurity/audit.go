@@ -3,6 +3,7 @@ package accountsecurity
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 )
 
@@ -34,7 +35,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, r
 		return
 	}
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if id, idErr := newRowID(); idErr == nil {
 		var rawMetadata []byte

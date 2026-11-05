@@ -7,13 +7,8 @@ import (
 	"encoding/json"
 	"math"
 	"strings"
-	"time"
 	"unicode/utf16"
 )
-
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
-}
 
 // marshalJSON 对齐 JSON.stringify：不转义 & < >，也不追加换行。
 func marshalJSON(value any) ([]byte, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 )
@@ -51,7 +52,7 @@ func (s *Service) writeAuditLogBestEffort(
 		return errNoDatabase
 	}
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	id, idErr := newRowID()
 	if idErr != nil {

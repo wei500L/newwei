@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
@@ -206,7 +207,7 @@ func (s *Service) finalizeLogin(ctx context.Context, userID string, profile auth
 		return sessionResult{}, err
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `User` SET `lastLoginAt` = ?, `updatedAt` = ? WHERE `id` = ?", now, now, userID); err != nil {
 		return sessionResult{}, dbWrap(err)

@@ -2,6 +2,7 @@ package newsnowhottest
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"sort"
 	"strings"
@@ -232,7 +233,7 @@ func (s *Service) buildAnalysisFromGlobalSnapshot(
 	}
 	emptyReason := resolveEmptyReason(responseCandidates, snapshot.Diagnostics, len(normalizedSignals))
 	response := AnalysisResponse{
-		GeneratedAt:     isoTime(generatedAt),
+		GeneratedAt:     timefmt.FormatDateTime(generatedAt),
 		Cached:          false,
 		DataState:       DataStateEmpty,
 		Diagnostics:     snapshot.Diagnostics,

@@ -2,6 +2,7 @@ package publicportal
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -108,7 +109,7 @@ func (s *Service) Home(ctx context.Context) (HomeResponse, error) {
 	}
 	if org == nil {
 		return HomeResponse{
-			GeneratedAt:   isoTime(s.now()),
+			GeneratedAt:   timefmt.FormatDateTime(s.now()),
 			LatestStories: []Story{},
 			Channels:      []TopicSummary{},
 		}, nil
@@ -126,7 +127,7 @@ func (s *Service) Home(ctx context.Context) (HomeResponse, error) {
 		}
 	}
 	return HomeResponse{
-		GeneratedAt:   isoTime(s.now()),
+		GeneratedAt:   timefmt.FormatDateTime(s.now()),
 		Org:           org,
 		FeaturedStory: featured,
 		LatestStories: latest,
@@ -157,7 +158,7 @@ func (s *Service) Channel(ctx context.Context, topic string) (*ChannelResponse, 
 		stories = []Story{}
 	}
 	return &ChannelResponse{
-		GeneratedAt: isoTime(s.now()),
+		GeneratedAt: timefmt.FormatDateTime(s.now()),
 		Org:         *org,
 		Topic:       label,
 		TopicSlug:   topicSlug,
@@ -357,8 +358,8 @@ func toStory(row EventRow, itemCount int, heat heatProfile, authority authorityP
 		TopicSlug:        sanitizeSlugSegment(topic),
 		PrimaryEntity:    optionalString(row.PrimaryEntity),
 		Language:         optionalString(row.Language),
-		LastAt:           isoTime(row.LastAt),
-		StartAt:          isoTime(row.StartAt),
+		LastAt:           timefmt.FormatDateTime(row.LastAt),
+		StartAt:          timefmt.FormatDateTime(row.StartAt),
 		ItemCount:        itemCount,
 		Breaking:         heat.Breaking,
 		HeatScore:        heat.HeatScore,
@@ -417,8 +418,4 @@ func topicSummaries(stories []Story) []TopicSummary {
 		out[j] = current
 	}
 	return out
-}
-
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
 }

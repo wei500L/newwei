@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/http"
 	"strings"
 
@@ -93,7 +94,7 @@ func (b *OrgBootstrap) CreateOrgInTx(ctx context.Context, tx *sql.Tx, params Cre
 	if !slugPattern.MatchString(slug) {
 		return CreatedOrg{}, badRequest("Invalid organization slug")
 	}
-	orgID, adminRoleID, _, err := insertOrgTx(ctx, tx, params.ActorID, name, slug, description, nowMillis())
+	orgID, adminRoleID, _, err := insertOrgTx(ctx, tx, params.ActorID, name, slug, description, timefmt.NowMillis())
 	if err != nil {
 		return CreatedOrg{}, err
 	}

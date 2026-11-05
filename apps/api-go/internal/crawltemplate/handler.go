@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -85,7 +86,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +114,7 @@ func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// NestJS 的 POST 默认成功码是 201（控制器没有 @HttpCode 覆盖）。
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveUpdate(w http.ResponseWriter, r *http.Request, id string) {
@@ -140,7 +141,7 @@ func (h *Handler) serveUpdate(w http.ResponseWriter, r *http.Request, id string)
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDelete(w http.ResponseWriter, r *http.Request, id string) {
@@ -152,7 +153,7 @@ func (h *Handler) serveDelete(w http.ResponseWriter, r *http.Request, id string)
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // ---- 请求体与响应写出（与 crawlprofile/crawlworkflow 同一套契约） ----
@@ -221,15 +222,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

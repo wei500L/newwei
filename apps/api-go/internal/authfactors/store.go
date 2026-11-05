@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 )
 
@@ -132,7 +133,7 @@ func (s *Service) upsertFactorSecret(ctx context.Context, q dbtx, userID string,
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err = q.ExecContext(ctx, upsertFactorSecretSQL, id, userID, []byte(secret), label, now, now)
 	return err
 }
@@ -145,7 +146,7 @@ const startPendingReplacementSQL = "UPDATE `UserTotpFactor` " +
 
 // startPendingReplacement writes a pending replacement for an active factor.
 func (s *Service) startPendingReplacement(ctx context.Context, q dbtx, userID string, secret json.RawMessage, label string) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := q.ExecContext(ctx, startPendingReplacementSQL, []byte(secret), label, now, now, userID)
 	return err
 }
@@ -172,14 +173,14 @@ func (s *Service) promotePendingFactor(ctx context.Context, q dbtx, userID strin
 func (s *Service) touchFactorLastUsed(ctx context.Context, q dbtx, userID string) error {
 	_, err := q.ExecContext(ctx,
 		"UPDATE `UserTotpFactor` SET `lastUsedAt` = ?, `updatedAt` = ? WHERE `userId` = ?",
-		nowMillis(), nowMillis(), userID)
+		timefmt.NowMillis(), timefmt.NowMillis(), userID)
 	return err
 }
 
 // disableFactor sets disabledAt with updateMany semantics: the factor row is
 // kept (never deleted) and no other column is cleared.
 func (s *Service) disableFactor(ctx context.Context, q dbtx, userID string) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := q.ExecContext(ctx,
 		"UPDATE `UserTotpFactor` SET `disabledAt` = ?, `updatedAt` = ? WHERE `userId` = ?",
 		now, now, userID)
@@ -226,7 +227,7 @@ func (s *Service) findUnusedRecoveryCodeID(ctx context.Context, q dbtx, userID, 
 func (s *Service) claimRecoveryCode(ctx context.Context, q dbtx, id string) (int64, error) {
 	result, err := q.ExecContext(ctx,
 		"UPDATE `UserRecoveryCode` SET `usedAt` = ? WHERE `id` = ? AND `usedAt` IS NULL",
-		nowMillis(), id)
+		timefmt.NowMillis(), id)
 	if err != nil {
 		return 0, err
 	}
@@ -241,7 +242,7 @@ func (s *Service) deleteRecoveryCodes(ctx context.Context, q dbtx, userID string
 
 // insertRecoveryCodes stores the hashes of one freshly generated set.
 func (s *Service) insertRecoveryCodes(ctx context.Context, q dbtx, userID string, codeHashes []string) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	for _, codeHash := range codeHashes {
 		id, err := newRowID()
 		if err != nil {
@@ -333,7 +334,7 @@ func (s *Service) upsertOidcConfig(ctx context.Context, q dbtx, params oidcUpser
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if params.ClientSecret == nil {
 		_, err = q.ExecContext(ctx, upsertOidcConfigKeepSecretSQL,
 			id, params.OrgID, params.Enabled, params.IssuerURL, params.DiscoveryURL, params.ClientID,

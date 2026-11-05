@@ -3,6 +3,7 @@ package identityonboarding
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 )
@@ -87,7 +88,7 @@ func writeAuditBestEffort[T any](ctx context.Context, exec dbtx, orgID, actorID,
 	if err != nil {
 		metaRaw = []byte("null")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if id, idErr := newRowID(); idErr == nil {
 		_, err = exec.ExecContext(ctx,
 			"INSERT INTO `AuditLog` (`id`, `orgId`, `actorId`, `resource`, `action`, `metadata`, `ipAddress`, `createdAt`) "+

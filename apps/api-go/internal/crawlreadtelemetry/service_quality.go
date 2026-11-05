@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"math"
 	"net/http"
 	"regexp"
@@ -135,7 +136,7 @@ func (h *Handler) serveQualityOverview(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSONBody(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 // serveQualitySource serves GET /api/admin/crawl4ai/quality/sources/:sourceId.
@@ -162,7 +163,7 @@ func (h *Handler) serveQualitySource(w http.ResponseWriter, r *http.Request, sou
 		writeServiceError(w, r, fmt.Errorf("crawl read telemetry: encoding crawl quality source snapshot: %w", err))
 		return
 	}
-	writeJSONBody(w, http.StatusOK, projected)
+	httpx.WriteRawJSON(w, http.StatusOK, projected)
 }
 
 // qualityLookbackHours mirrors the controller: Number.parseInt(raw ?? "24", 10)

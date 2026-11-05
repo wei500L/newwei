@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 
@@ -107,10 +106,6 @@ func newRowID() (string, error) {
 		return "", err
 	}
 	return "c" + hex.EncodeToString(buf[:]), nil
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // jsTrim mirrors String.prototype.trim: ASCII whitespace plus the Unicode

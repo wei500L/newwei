@@ -1,8 +1,8 @@
 package llmlogs
 
 import (
-	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"log"
 	"net/http"
 	"strings"
@@ -82,7 +82,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 // serveSummary 与控制器 summary 同参（没有 model/requestType/status）。
@@ -101,7 +101,7 @@ func (h *Handler) serveSummary(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 // serveExport 与 exportLogsCsvStream 同序：校验日期窗口 → 探测行数 →
@@ -230,17 +230,6 @@ func rawBearer(r *http.Request) string {
 		return ""
 	}
 	return strings.TrimSpace(header[7:])
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }
 
 func writeInputError(w http.ResponseWriter, r *http.Request, err error) {

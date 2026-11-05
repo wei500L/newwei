@@ -2,7 +2,7 @@ package newssourcescheduler
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"net/http"
 	"strings"
 
@@ -74,28 +74,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			authhttp.WriteHTTPException(w, r, http.StatusConflict, "News source is already being dispatched")
 			return
 		}
-		writeJSON(w, http.StatusCreated, outcome)
+		httpx.WriteJSON(w, http.StatusCreated, outcome)
 	case "cancel-queued":
 		outcome, err := h.svc.CancelQueued(ctx, identity.OrgID, sourceID, identity.UserID)
 		if err != nil {
 			writeStatusError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, outcome)
+		httpx.WriteJSON(w, http.StatusCreated, outcome)
 	case "clear-inflight":
 		outcome, err := h.svc.ClearInFlight(ctx, identity.OrgID, sourceID)
 		if err != nil {
 			writeStatusError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, outcome)
+		httpx.WriteJSON(w, http.StatusCreated, outcome)
 	case "retry-latest":
 		outcome, err := h.svc.RetryLatest(ctx, identity, sourceID, h.clientIP(r))
 		if err != nil {
 			writeStatusError(w, r, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, outcome)
+		httpx.WriteJSON(w, http.StatusCreated, outcome)
 	default:
 		http.NotFound(w, r)
 	}
@@ -175,16 +175,4 @@ func (h *Handler) clientIP(r *http.Request) *string {
 		return nil
 	}
 	return authlogin.ClientIP(r, h.svc.trustProxy)
-}
-
-// writeJSON writes one JSON body with the NestJS content type.
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

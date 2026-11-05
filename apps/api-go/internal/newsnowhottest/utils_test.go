@@ -1,6 +1,7 @@
 package newsnowhottest
 
 import (
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"testing"
 	"time"
@@ -67,8 +68,8 @@ func TestComputeFreshness(t *testing.T) {
 	}
 
 	state := &SignalState{
-		FirstSeenAt: isoTime(now.Add(-2 * time.Hour)),
-		LastSeenAt:  isoTime(now.Add(-time.Minute)),
+		FirstSeenAt: timefmt.FormatDateTime(now.Add(-2 * time.Hour)),
+		LastSeenAt:  timefmt.FormatDateTime(now.Add(-time.Minute)),
 		LastRank:    intOrNull(5),
 	}
 	score, isNew, isRising = computeFreshness(nowMillis, state, 2)

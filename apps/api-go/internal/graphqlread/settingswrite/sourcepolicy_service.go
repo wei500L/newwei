@@ -3,6 +3,7 @@ package settingswrite
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -127,7 +128,7 @@ func (s *service) updateNewsEventSourcePolicy(
 	if err := checkSourcePolicyExpectedRevision(input.ExpectedRevisionPresent, input.ExpectedRevision, previous.ActiveRevision); err != nil {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, err
 	}
-	next := nextSourcePolicyUpdate(previous, input.Lists, identity.UserID, input.Note, nowMillis())
+	next := nextSourcePolicyUpdate(previous, input.Lists, identity.UserID, input.Note, timefmt.NowMillis())
 	warnings, err := s.persistSourcePolicyState(ctx, identity, next, sourcePolicyActionUpdate)
 	if err != nil {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, err
@@ -176,7 +177,7 @@ func (s *service) rollbackNewsEventSourcePolicy(
 	if !found {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, badRequest(sourcePolicyRevisionNotFoundMessage(input.Revision))
 	}
-	next := nextSourcePolicyRollback(previous, target, identity.UserID, input.Note, nowMillis())
+	next := nextSourcePolicyRollback(previous, target, identity.UserID, input.Note, timefmt.NowMillis())
 	warnings, err := s.persistSourcePolicyState(ctx, identity, next, sourcePolicyActionRollback)
 	if err != nil {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, err
@@ -210,7 +211,7 @@ func (s *service) resetNewsEventSourcePolicy(
 	if err := checkSourcePolicyExpectedRevision(input.ExpectedRevisionPresent, input.ExpectedRevision, previous.ActiveRevision); err != nil {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, err
 	}
-	next := nextSourcePolicyReset(previous, identity.UserID, input.Note, nowMillis())
+	next := nextSourcePolicyReset(previous, identity.UserID, input.Note, timefmt.NowMillis())
 	warnings, err := s.persistSourcePolicyState(ctx, identity, next, sourcePolicyActionReset)
 	if err != nil {
 		return settingscrawl.NewsEventSourcePolicySettingsModel{}, err

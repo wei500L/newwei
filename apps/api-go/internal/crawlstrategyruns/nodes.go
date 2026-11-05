@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"net/url"
 	"regexp"
@@ -710,7 +711,7 @@ func applyMetadataResult(candidate *crawlfrontierruns.StrategyRunCandidate, resu
 		candidate.RelevanceScore = result.RelevanceScore
 	}
 	if result.FetchedAt != nil {
-		fetchedAt := isoTime(*result.FetchedAt)
+		fetchedAt := timefmt.FormatDateTime(*result.FetchedAt)
 		candidate.CrawledAt = &fetchedAt
 		if candidate.EffectiveAt == nil {
 			candidate.EffectiveAt = &fetchedAt
@@ -1102,10 +1103,6 @@ func firstISOTimestamp(first, second *int64) *string {
 		return value
 	}
 	return isoFromMillis(second)
-}
-
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
 func isoNow(value time.Time) string {

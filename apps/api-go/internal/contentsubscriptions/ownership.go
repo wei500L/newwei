@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/jsvalue"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"strings"
 	"time"
@@ -139,13 +141,13 @@ func (s *Service) ensureLegacyMonitorMigration(ctx context.Context, q queryer, o
 	if len(entries) > maxManualMonitors {
 		entries = entries[:maxManualMonitors]
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	for _, entry := range entries {
 		record, ok := entry.(map[string]any)
 		if !ok {
 			continue
 		}
-		name := normalizeName(asString(record["name"]))
+		name := normalizeName(jsvalue.String(record["name"]))
 		keywords := normalizeKeywordList(asStrings(record["keywords"]))
 		if name == "" || len(keywords) == 0 {
 			continue
@@ -208,7 +210,7 @@ func legacyLocation(value any) (name string, lat, lng float64, country string, o
 	if !isObject {
 		return "", 0, 0, "", false
 	}
-	name = normalizeName(asString(record["name"]))
+	name = normalizeName(jsvalue.String(record["name"]))
 	lat, latOK := asFinite(record["lat"])
 	lng, lngOK := asFinite(record["lng"])
 	if name == "" || !latOK || !lngOK {
@@ -222,7 +224,7 @@ func legacyLocation(value any) (name string, lat, lng float64, country string, o
 
 func storedEmbedding(record map[string]any) (sql.NullString, any) {
 	var model sql.NullString
-	if text := strings.TrimSpace(asString(record["queryEmbeddingModel"])); text != "" {
+	if text := strings.TrimSpace(jsvalue.String(record["queryEmbeddingModel"])); text != "" {
 		model = sql.NullString{String: text, Valid: true}
 	}
 	numbers := finiteNumbers(record["queryEmbeddingVector"])
@@ -285,7 +287,7 @@ WHERE orgId = ? AND userId = ?`, orgID, userID)
 	if err := existingRows.Err(); err != nil {
 		return err
 	}
-	at := nowMillis()
+	at := timefmt.NowMillis()
 	managed, err := json.Marshal(managedMetadata{ManagedBySituationMonitor: true})
 	if err != nil {
 		return err
@@ -396,7 +398,7 @@ WHERE orgId = ? AND userId = ? AND kind = 'manual'`, orgID, userID)
 	lexicalInput = append(lexicalInput, orphanEntities...)
 	lexicalInput = append(lexicalInput, keywords...)
 	approvedLexical := normalizeStringList(lexicalInput, maxApprovedTerms)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	var existingID string
 	err = q.QueryRowContext(ctx, `
 SELECT id FROM SituationMonitorMonitor
@@ -501,11 +503,6 @@ func emptyRejected() []byte {
 		Entities:     []string{},
 		LexicalTerms: []string{},
 	})
-}
-
-func asString(value any) string {
-	text, _ := value.(string)
-	return text
 }
 
 func asStrings(value any) []string {

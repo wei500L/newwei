@@ -14,11 +14,6 @@ func formatJSTime(value time.Time) string {
 	return value.UTC().Format(jsISOLayout)
 }
 
-// nowMillis is the millisecond-truncated UTC clock used for fallbacks.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // rawStored reports whether a BSON field exists at all.
 func rawStored(value bson.RawValue) bool {
 	return value.Type != 0 && value.Type != bson.TypeUndefined

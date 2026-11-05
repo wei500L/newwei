@@ -3,6 +3,7 @@ package newssources
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"strconv"
 	"time"
@@ -176,7 +177,7 @@ func (s *Service) hydrateLegacyRuntimeStates(ctx context.Context, sourceIDs []st
 		}
 		if index < len(countValues) {
 			if count, ok := parseIntValue(countValues[index]); ok && count > 0 {
-				now := nowMillis().Format("2006-01-02T15:04:05.000Z")
+				now := timefmt.NowMillis().Format("2006-01-02T15:04:05.000Z")
 				for i := 0; i < count; i++ {
 					state.BackpressureHitTimes = append(state.BackpressureHitTimes, now)
 				}
@@ -325,7 +326,7 @@ func normalizeRuntimeSnapshot(raw string) runtimeSnapshot {
 }
 
 func pruneBackpressureHitTimestamps(values []any) []string {
-	cutoff := nowMillis().UnixMilli() - backpressureLookbackMs
+	cutoff := timefmt.NowMillis().UnixMilli() - backpressureLookbackMs
 	out := []string{}
 	for _, entry := range values {
 		text, ok := entry.(string)

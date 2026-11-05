@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"sort"
 	"sync"
@@ -271,7 +272,7 @@ func (s *Scheduler) refreshOrg(ctx context.Context, orgID string, snapshot *Glob
 func (s *Scheduler) claimTick(ctx context.Context) (bool, error) {
 	payload, err := marshalJSON(struct {
 		ClaimedAt string `json:"claimedAt"`
-	}{ClaimedAt: isoTime(s.now())})
+	}{ClaimedAt: timefmt.FormatDateTime(s.now())})
 	if err != nil {
 		return false, err
 	}

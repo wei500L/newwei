@@ -23,7 +23,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
 )
@@ -98,13 +97,6 @@ func newRowID() (string, error) {
 		return "", err
 	}
 	return "c" + hex.EncodeToString(buf[:]), nil
-}
-
-// nowMillis is the timestamp written to a DATETIME(3) column. The connection
-// pool is pinned to UTC with millisecond precision, so truncating to the
-// millisecond matches Prisma's own updatedAt/createdAt values.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // callContext guards against a nil call context.

@@ -174,7 +174,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBytes(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 // serveDetail handles GET /api/items/:id.
@@ -193,7 +193,7 @@ func (h *Handler) serveDetail(w http.ResponseWriter, r *http.Request, itemID str
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBytes(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 // sortStrings orders the validation failure messages deterministically.
@@ -321,7 +321,7 @@ func writeValidationError(w http.ResponseWriter, r *http.Request, messages []str
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBytes(w, http.StatusBadRequest, encoded)
+	httpx.WriteRawJSON(w, http.StatusBadRequest, encoded)
 }
 
 // validationErrorBody is the ValidationPipe failure envelope.
@@ -362,14 +362,7 @@ func writeCodedServiceUnavailable(w http.ResponseWriter, r *http.Request, code, 
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBytes(w, http.StatusServiceUnavailable, encoded)
-}
-
-// writeJSONBytes writes an already encoded JSON response body byte-for-byte.
-func writeJSONBytes(w http.ResponseWriter, status int, encoded []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
+	httpx.WriteRawJSON(w, http.StatusServiceUnavailable, encoded)
 }
 
 // AuthenticateMachineToken exposes the machine-token lookup used by the items

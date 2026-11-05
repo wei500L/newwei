@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 )
@@ -54,7 +55,7 @@ func (s *Service) writeAuditLogBestEffort(
 	if s.db == nil {
 		return
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	var actor *string
 	if trimmed := strings.TrimSpace(actorID); trimmed != "" {
 		value := trimmed

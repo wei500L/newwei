@@ -3,6 +3,7 @@ package newsevents
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/jsvalue"
 	"net/http"
 	"time"
 
@@ -188,7 +189,7 @@ func (s *service) queryTopicGroups(ctx context.Context, orgID string, limit, ite
 		}
 		out = append(out, TopicGroupModel{
 			Topic:    stringifyID(doc["_id"]),
-			Count:    asInt(doc["count"]),
+			Count:    jsvalue.Int(doc["count"]),
 			LatestAt: latest,
 			Items:    mapTopicItems(doc["items"]),
 		})
@@ -215,7 +216,7 @@ func (s *service) queryEventGroups(ctx context.Context, orgID string, limit, ite
 		}
 		out = append(out, EventGroupModel{
 			EventID:     stringifyID(doc["_id"]),
-			Count:       asInt(doc["count"]),
+			Count:       jsvalue.Int(doc["count"]),
 			LatestAt:    latest,
 			Title:       stringPtr(doc["title"]),
 			Summary:     stringPtr(doc["summary"]),
@@ -470,21 +471,6 @@ func asTime(value any) (time.Time, bool) {
 		return typed.Time(), true
 	default:
 		return time.Time{}, false
-	}
-}
-
-func asInt(value any) int {
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case int32:
-		return int(typed)
-	case int64:
-		return int(typed)
-	case float64:
-		return int(typed)
-	default:
-		return 0
 	}
 }
 

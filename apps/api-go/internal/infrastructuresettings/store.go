@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -66,7 +67,7 @@ func (s *Service) upsertSetting(ctx context.Context, key string, value json.RawM
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingSQL, key, []byte(value), isPublic, description, now, now, updatedByID)
 	return err
 }
@@ -76,7 +77,7 @@ func (s *Service) upsertSettingForceDescription(ctx context.Context, key string,
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingForceDescriptionSQL, key, []byte(value), isPublic, description, now, now, updatedByID)
 	return err
 }
@@ -100,7 +101,7 @@ func (s *Service) applyStorageOps(ctx context.Context, ops []storageWriteOp, upd
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	for _, op := range ops {
 		if _, err := tx.ExecContext(ctx, upsertSettingSQL,
 			op.Key, []byte(op.Value), op.IsPublic, op.Description, now, now, updatedByID); err != nil {

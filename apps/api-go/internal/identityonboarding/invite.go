@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 )
 
@@ -33,7 +34,7 @@ func (s *Service) CreateInvite(ctx context.Context, orgID, actorID string, input
 	if err := s.assertRolesAssignable(ctx, actorID, orgID, roleIDs); err != nil {
 		return inviteWithOrgAndPrimaryRole{}, err
 	}
-	return s.insertAndDeliverInvite(ctx, orgID, actorID, input, roleIDs, nowMillis())
+	return s.insertAndDeliverInvite(ctx, orgID, actorID, input, roleIDs, timefmt.NowMillis())
 }
 
 // insertAndDeliverInvite is the shared create tail: row, real email, audit. The
@@ -90,7 +91,7 @@ func (s *Service) ResendInvite(ctx context.Context, orgID, actorID, inviteID str
 	if err != nil {
 		return inviteWithOrgAndPrimaryRole{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	expiresAt := now.Add(inviteTTLDays * 24 * time.Hour)
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `OrgInvite` SET `tokenHash` = ?, `expiresAt` = ?, `updatedAt` = ? WHERE `id` = ?",
@@ -133,7 +134,7 @@ func (s *Service) RevokeInvite(ctx context.Context, orgID, actorID, inviteID str
 	if !found {
 		return inviteScalar{}, notFound("Invite not found")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `OrgInvite` SET `status` = 'revoked', `revokedAt` = ?, `updatedAt` = ? WHERE `id` = ?",
 		now, now, invite.ID); err != nil {
@@ -296,7 +297,7 @@ func (s *Service) resolveAcceptUser(ctx context.Context, invite inviteRecord, pa
 	if err != nil {
 		return "", err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	// emailVerified stays NULL: the invite link may have been forwarded, so it
 	// cannot prove ownership of the address.
 	if _, err := s.db.ExecContext(ctx,
@@ -319,7 +320,7 @@ func (s *Service) acceptInTransaction(ctx context.Context, invite inviteRecord, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	claimed, err := claimInvite(ctx, tx, invite.ID, userID, now)
 	if err != nil {
 		return membershipWithOrg{}, err

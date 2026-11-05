@@ -3,6 +3,7 @@ package accountdata
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 
@@ -52,7 +53,7 @@ func (s *Service) writeExportAuditLog(ctx context.Context, identity *accountsecu
 		return
 	}
 	actor := nullableActorID(identity)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if id, idErr := s.newID(); idErr == nil {
 		_, err := s.db.ExecContext(ctx,
 			"INSERT INTO AuditLog (id, orgId, actorId, resource, action, metadata, ipAddress, createdAt) "+

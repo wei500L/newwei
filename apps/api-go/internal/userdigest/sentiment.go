@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 )
 
@@ -67,7 +68,7 @@ ORDER BY topic ASC, bucketStart DESC`
 			continue
 		}
 		if bucket.Valid {
-			sentiment.BucketStart = isoTime(bucket.Time)
+			sentiment.BucketStart = timefmt.FormatDateTime(bucket.Time)
 		}
 		out[topic] = sentiment
 	}
@@ -110,7 +111,7 @@ ORDER BY entityName ASC, bucketStart DESC, entityType ASC`
 			continue
 		}
 		if bucket.Valid {
-			sentiment.BucketStart = isoTime(bucket.Time)
+			sentiment.BucketStart = timefmt.FormatDateTime(bucket.Time)
 		}
 		out[name] = sentiment
 	}
@@ -269,7 +270,7 @@ ORDER BY createdAt DESC`
 		}
 		backtest := Backtest{Metrics: json.RawMessage("null")}
 		if created.Valid {
-			backtest.CreatedAt = isoTime(created.Time)
+			backtest.CreatedAt = timefmt.FormatDateTime(created.Time)
 		}
 		if json.Valid(metrics) {
 			backtest.Metrics = append(json.RawMessage(nil), metrics...)

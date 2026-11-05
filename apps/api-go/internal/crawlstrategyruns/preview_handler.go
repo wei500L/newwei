@@ -2,6 +2,7 @@ package crawlstrategyruns
 
 import (
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"log"
 	"net/http"
 	"strings"
@@ -51,7 +52,7 @@ func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writePreviewError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func previewTarget(path string) (string, bool) {

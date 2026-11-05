@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/jsvalue"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 )
 
@@ -31,13 +33,13 @@ func (s *Service) ensureLegacyMigration(ctx context.Context, q queryer, orgID, u
 	if len(entries) > maxManualMonitors {
 		entries = entries[:maxManualMonitors]
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	for _, entry := range entries {
 		record, ok := entry.(map[string]any)
 		if !ok {
 			continue
 		}
-		name := normalizeName(asString(record["name"]))
+		name := normalizeName(jsvalue.String(record["name"]))
 		keywords := normalizeKeywordList(asStringList(record["keywords"]))
 		if name == "" || len(keywords) == 0 {
 			continue

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -131,7 +132,7 @@ func (h *Handler) serveNodeSchemas(w http.ResponseWriter, r *http.Request) {
 	if h.authorize(w, r, permRead) == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, CRAWL_STRATEGY_NODE_SCHEMAS)
+	httpx.WriteJSON(w, http.StatusOK, CRAWL_STRATEGY_NODE_SCHEMAS)
 }
 
 func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +150,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDetail(w http.ResponseWriter, r *http.Request, id string) {
@@ -162,7 +163,7 @@ func (h *Handler) serveDetail(w http.ResponseWriter, r *http.Request, id string)
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveVersions(w http.ResponseWriter, r *http.Request, id string) {
@@ -175,7 +176,7 @@ func (h *Handler) serveVersions(w http.ResponseWriter, r *http.Request, id strin
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveVersion(w http.ResponseWriter, r *http.Request, versionID string) {
@@ -188,7 +189,7 @@ func (h *Handler) serveVersion(w http.ResponseWriter, r *http.Request, versionID
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveCompare(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +217,7 @@ func (h *Handler) serveCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// NestJS 的 POST 默认成功码是 201（compare 没有 @HttpCode 覆盖）。
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +244,7 @@ func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveUpdateDraft(w http.ResponseWriter, r *http.Request, id string) {
@@ -270,7 +271,7 @@ func (h *Handler) serveUpdateDraft(w http.ResponseWriter, r *http.Request, id st
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) servePublish(w http.ResponseWriter, r *http.Request, id string) {
@@ -297,7 +298,7 @@ func (h *Handler) servePublish(w http.ResponseWriter, r *http.Request, id string
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveProfileBridge(w http.ResponseWriter, r *http.Request, id string) {
@@ -311,7 +312,7 @@ func (h *Handler) serveProfileBridge(w http.ResponseWriter, r *http.Request, id 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveNewsSourceBridge(w http.ResponseWriter, r *http.Request, id string) {
@@ -324,7 +325,7 @@ func (h *Handler) serveNewsSourceBridge(w http.ResponseWriter, r *http.Request, 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 // ---- 请求体与响应写出（与 news-sources 同一套契约） ----
@@ -393,15 +394,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

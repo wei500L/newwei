@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -109,12 +110,6 @@ func nullableActorID(actorID string) *string {
 	return &actorID
 }
 
-// nowMillis returns the current UTC time truncated to milliseconds, matching the
-// DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // newRowID generates a client-side identifier in the same shape Prisma's cuid()
 // produces ('c' plus 24 hex characters); MySQL has no column default because
 // Prisma fills it in before the INSERT.
@@ -173,7 +168,7 @@ func (m *mysqlSettings) Upsert(ctx context.Context, key string, value json.RawMe
 	if m == nil || m.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := m.db.ExecContext(ctx, upsertSettingSQL,
 		key, []byte(value), description, now, now, updatedByID)
 	return err

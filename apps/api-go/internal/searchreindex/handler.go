@@ -2,6 +2,7 @@ package searchreindex
 
 import (
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"net/http"
 	"strings"
 
@@ -66,7 +67,7 @@ func (h *Handler) serveStart(w http.ResponseWriter, r *http.Request) {
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBody(w, http.StatusCreated, body)
+	httpx.WriteRawJSON(w, http.StatusCreated, body)
 }
 
 // serveJob handles GET /api/admin/search/reindex/:jobId. A missing, expired or
@@ -91,7 +92,7 @@ func (h *Handler) serveJob(w http.ResponseWriter, r *http.Request, jobID string)
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBody(w, http.StatusOK, body)
+	httpx.WriteRawJSON(w, http.StatusOK, body)
 }
 
 // authorize runs the shared authentication chain and enforces settings.manage:
@@ -156,12 +157,4 @@ func segmentAfter(path, prefix string) string {
 		return ""
 	}
 	return rest
-}
-
-// writeJSONBody writes an already-marshaled JSON payload without a trailing
-// newline, matching the Express res.json byte shape.
-func writeJSONBody(w http.ResponseWriter, status int, body []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
 }

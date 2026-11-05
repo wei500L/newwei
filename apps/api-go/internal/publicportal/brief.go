@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/url"
 	"strings"
 	"time"
@@ -289,7 +290,7 @@ func readCachedBrief(metadata []byte, language, fingerprint string, now time.Tim
 		generatedAt = parsed.UTC()
 	}
 	return &briefView{
-		GeneratedAt: isoTime(generatedAt),
+		GeneratedAt: timefmt.FormatDateTime(generatedAt),
 		Language:    language,
 		Payload:     sanitized,
 		Sources:     sourceViews(sources),
@@ -357,7 +358,7 @@ func sourceViews(sources []cachedSource) []briefSourceView {
 			Title:       optionalString(source.Title),
 		}
 		if source.PublishedAt != nil {
-			text := isoTime(*source.PublishedAt)
+			text := timefmt.FormatDateTime(*source.PublishedAt)
 			view.PublishedAt = &text
 		}
 		out = append(out, view)
@@ -571,8 +572,8 @@ func buildBriefUserPrompt(title, summary, language string, startAt, lastAt time.
 	lines := []string{
 		"Event:",
 		"title: " + title,
-		"startAt: " + isoTime(startAt),
-		"lastAt: " + isoTime(lastAt),
+		"startAt: " + timefmt.FormatDateTime(startAt),
+		"lastAt: " + timefmt.FormatDateTime(lastAt),
 	}
 	if strings.TrimSpace(language) != "" {
 		lines = append(lines, "sourceLanguage: "+strings.TrimSpace(language))
@@ -585,7 +586,7 @@ func buildBriefUserPrompt(title, summary, language string, startAt, lastAt time.
 	for _, source := range sources {
 		when := "unknown"
 		if source.PublishedAt != nil {
-			when = isoTime(*source.PublishedAt)
+			when = timefmt.FormatDateTime(*source.PublishedAt)
 		}
 		bits := []string{
 			"[" + itoa(source.Index) + "] " + nonEmpty(source.SourceLabel, "Unknown source"),

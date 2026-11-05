@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 
@@ -33,10 +34,6 @@ type dbtx interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入;
@@ -375,7 +372,7 @@ func (s *Service) AssignRole(ctx context.Context, orgID, actorID string, actorPe
 		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO Membership (id, userId, orgId, roleId, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?) "+
 				"ON DUPLICATE KEY UPDATE roleId = VALUES(roleId)",
-			newID, userID, orgID, roleID, nowMillis()); err != nil {
+			newID, userID, orgID, roleID, timefmt.NowMillis()); err != nil {
 			return membershipJSON{}, err
 		}
 		if err := tx.QueryRowContext(ctx,
@@ -395,7 +392,7 @@ func (s *Service) AssignRole(ctx context.Context, orgID, actorID string, actorPe
 	}
 	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO MembershipRole (membershipId, orgId, roleId, createdAt) VALUES (?, ?, ?, ?)",
-		membershipID, orgID, roleID, nowMillis()); err != nil {
+		membershipID, orgID, roleID, timefmt.NowMillis()); err != nil {
 		return membershipJSON{}, err
 	}
 

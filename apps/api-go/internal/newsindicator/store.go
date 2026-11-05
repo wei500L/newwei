@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"sort"
 	"strconv"
@@ -51,10 +52,6 @@ type Service struct {
 
 func NewService(db *sql.DB, redis *redis.Client) *Service {
 	return &Service{db: db, redis: redis}
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 无客户端默认值，形状与既有批次一致）。
@@ -482,7 +479,7 @@ func (s *Service) refreshOrgLocked(ctx context.Context, conn *sql.Conn, orgID st
 		return refreshResponse{}, err
 	}
 
-	evaluatedAt := nowMillis()
+	evaluatedAt := timefmt.NowMillis()
 	pending := []pendingWrite{}
 
 	for _, indicator := range indicators {
@@ -680,7 +677,7 @@ func writeChunk(ctx context.Context, conn *sql.Conn, chunk []pendingWrite) (int,
 		ids = append(ids, id)
 	}
 
-	retentionCutoff := nowMillis().Add(-backtestRetentionDays * 24 * time.Hour)
+	retentionCutoff := timefmt.NowMillis().Add(-backtestRetentionDays * 24 * time.Hour)
 	deleteArgs := make([]any, 0, len(ids)+2)
 	deleteArgs = append(deleteArgs, chunk[0].key.orgID)
 	for _, id := range ids {
@@ -698,7 +695,7 @@ func writeChunk(ctx context.Context, conn *sql.Conn, chunk []pendingWrite) (int,
 		if err != nil {
 			return 0, 0, err
 		}
-		now := nowMillis()
+		now := timefmt.NowMillis()
 		write := chunk[index]
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO NewsIndicatorAssociationBacktestRun (id, orgId, associationId, status, windowStart, windowEnd, config, metrics, createdAt, updatedAt)
@@ -729,7 +726,7 @@ func upsertAssociation(ctx context.Context, tx *sql.Tx, write pendingWrite) (str
 		if err != nil {
 			return "", err
 		}
-		now := nowMillis()
+		now := timefmt.NowMillis()
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO NewsIndicatorAssociation (id, orgId, scopeType, scopeKey, scopeKeyType, featureMetric, indicatorItemId, windowDays, lagDays, correlation, pValue, sampleSize, analyzedStartAt, analyzedEndAt, metadata, lastEvaluatedAt, createdAt, updatedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -750,7 +747,7 @@ SET windowDays = ?, lagDays = ?, correlation = ?, pValue = ?, sampleSize = ?, an
 WHERE id = ?`,
 		write.values.windowDays, write.values.lagDays, write.values.correlation, write.values.pValue,
 		write.values.sampleSize, write.values.analyzedStartAt, write.values.analyzedEndAt,
-		write.values.lastEvaluatedAt, write.values.metadata, nowMillis(), id); err != nil {
+		write.values.lastEvaluatedAt, write.values.metadata, timefmt.NowMillis(), id); err != nil {
 		return "", err
 	}
 	return id, nil
