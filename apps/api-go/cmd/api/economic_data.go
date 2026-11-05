@@ -18,7 +18,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicqueue"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
@@ -81,7 +81,7 @@ func (r *economicRuntime) Close(ctx context.Context) error {
 // worker without starting it. The caller starts the runtime after installing
 // its ordered shutdown defer.
 func wireEconomicData(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -122,7 +122,7 @@ func wireEconomicData(
 	if requestGo {
 		handler := economicdata.NewAdminHandler(authenticator, service)
 		policy := cors.New(cfg.CorsOrigin)
-		gateway.RegisterGoHandler(legacyproxy.EconomicDataKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.EconomicDataKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}

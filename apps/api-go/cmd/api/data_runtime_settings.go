@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireDataRuntimeSettings registers the nine data runtime settings and archive
@@ -25,7 +25,7 @@ import (
 // ordinary JWT authenticator. It deliberately creates no OAuth, signal-collector,
 // geocoding, embedding or model client and performs no startup network probe: the
 // routes only read and write configuration and the derived archive status index.
-func wireDataRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireDataRuntimeSettings(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: data runtime settings go takeover requires mysql, redis, and jwt")
 	}
@@ -83,7 +83,7 @@ func wireDataRuntimeSettings(gateway *legacyproxy.Gateway, cfg config.Config, db
 	})
 	handler := dataruntimesettings.NewHandler(dataruntimesettings.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.DataRuntimeSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.DataRuntimeSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

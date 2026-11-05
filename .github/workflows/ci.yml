@@ -129,7 +129,7 @@ jobs:
       - name: Go contract gate (OpenAPI/auth-matrix vs Go registration)
         run: |
           cd apps/api-go
-          go test ./internal/legacyproxy/ -run 'TestEveryDocumentedHTTPOperationIsOwnedByGo|TestHTTPContractArtifactsAgree|TestAuthMatrixPermissionStructure' -v
+          go test ./internal/httproute/ -run 'TestEveryDocumentedHTTPOperationIsOwnedByGo|TestHTTPContractArtifactsAgree|TestAuthMatrixPermissionStructure' -v
 
       - name: Go tests (api-go gateway + vector-go)
         run: pnpm --filter @modular/api-go --filter @modular/vector-go test

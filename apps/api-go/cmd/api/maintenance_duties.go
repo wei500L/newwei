@@ -16,7 +16,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlsubscriptions"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelinerecovery"
@@ -64,7 +64,7 @@ func (r *residualDutiesRuntime) Close(ctx context.Context) error {
 // and starts the three background units. Legacy (or empty) switches register and
 // start nothing.
 func startResidualDuties(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -178,7 +178,7 @@ func startClassificationReviewSeed(
 // wirePipelineRecoveryWrites registers the two pipeline recovery writes when
 // API_GO_PIPELINE_RECOVERY_WRITE_MODE=go. The runs read keeps its own switch.
 func wirePipelineRecoveryWrites(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -196,7 +196,7 @@ func wirePipelineRecoveryWrites(
 	service := pipelinerecovery.NewServiceWithProducer(db, database, producer)
 	handler := pipelinerecovery.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.PipelineRecoveryWriteKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.PipelineRecoveryWriteKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}
@@ -212,7 +212,7 @@ func wirePipelineRecoveryWrites(
 
 // wireMetricsTakeover registers GET /api/metrics when API_GO_METRICS_MODE=go.
 func wireMetricsTakeover(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -223,7 +223,7 @@ func wireMetricsTakeover(
 	}
 	handler := metrics.NewHandler(authenticator, db, metrics.Default())
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.MetricsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.MetricsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

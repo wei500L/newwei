@@ -18,8 +18,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
@@ -32,7 +32,7 @@ import (
 // The three GraphQL roots themselves are registered in main.go because they
 // share the single GraphQL handler.
 func wireArchiveReadingHTTP(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -70,7 +70,7 @@ func wireArchiveReadingHTTP(
 
 	policy := cors.New(cfg.CorsOrigin)
 	handler := analysisexport.NewSearchHandler(authenticator, searchService)
-	gateway.RegisterGoHandler(legacyproxy.ArchiveReadingSearchKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.ArchiveReadingSearchKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

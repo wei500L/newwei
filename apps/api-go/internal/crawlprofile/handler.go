@@ -21,7 +21,8 @@ const (
 	permWrite    = "crawl.write"
 )
 
-// Handler 只服务开关为 go 时接管的画像编辑接口。身份只来自鉴权链。
+// Handler serves the crawl-site profile editing routes. Identity comes only from
+// the auth chain.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service
@@ -31,10 +32,11 @@ func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
 }
 
-// ServeHTTP 的路由顺序与注册的路由规则一致：先精确路径 profiles、
-// profiles/match、profiles/preview，再 :id 的 versions/rollback，
-// 最后是恰好一段的 :id。runs、nodes、workflows、workflow-bridge、
-// trial-run 不在这里（路由层已回落 NestJS）。
+// ServeHTTP dispatches in the same order as the registered rules: the exact
+// profiles, profiles/match and profiles/preview paths, then the :id
+// versions/rollback shapes, then the one-segment :id. runs, nodes, workflows,
+// workflow-bridge and trial-run are not owned here and fall through to the
+// router's 404 contract.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {

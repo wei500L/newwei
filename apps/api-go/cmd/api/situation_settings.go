@@ -15,7 +15,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/economicdata"
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsettings"
@@ -32,7 +32,7 @@ import (
 // starts no worker and never connects to Telegram or OREF: the Telegram
 // authorization start/complete routes stay on NestJS.
 func wireSituationSettings(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -90,7 +90,7 @@ func wireSituationSettings(
 		Economic: economic,
 	})
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.SituationSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.SituationSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

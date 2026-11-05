@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
 )
 
@@ -31,7 +31,7 @@ import (
 //   - any model upstream client: there is no outbound model HTTP call, no startup
 //     probe and no model API request in this batch.
 func wireModelAccessSettings(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -60,7 +60,7 @@ func wireModelAccessSettings(
 		service,
 	)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.ModelAccessSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.ModelAccessSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

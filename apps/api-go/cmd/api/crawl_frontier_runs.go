@@ -12,20 +12,20 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlfrontierruns"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireCrawlFrontierRuns registers the eleven crawl frontier run monitoring and
 // cancellation handlers only when API_GO_CRAWL_FRONTIER_RUNS_MODE=go. In
 // legacy mode (including unset) nothing is registered and every path keeps
 // proxying to NestJS.
-func wireCrawlFrontierRuns(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireCrawlFrontierRuns(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: crawl frontier runs go takeover requires mysql, jwt, and redis")
 	}
 	handler := crawlfrontierruns.NewHandler(authenticator, crawlfrontierruns.NewService(db))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.CrawlFrontierRunsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.CrawlFrontierRunsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -28,7 +28,7 @@
 // JSON_CONTAINS) and Mongo documents are decoded into typed structs.
 //
 // The 13 route rules migrated here are declared in
-// internal/legacyproxy/classification_rss_ops_routes.go. POST
+// internal/httproute/classification_rss_ops_routes.go. POST
 // /api/admin/quality/classification/reports is deliberately not part of the
 // takeover: it enqueues a BullMQ job and stays on NestJS.
 //

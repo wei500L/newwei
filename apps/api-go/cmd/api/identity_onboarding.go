@@ -12,8 +12,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/identityonboarding"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 )
 
 // wireIdentityOnboarding registers the sixteen registration, invitation and
@@ -28,7 +28,7 @@ import (
 // connection, starts no worker or scheduler and performs no startup network
 // probe: the SMTP connection is established per message, inside the request that
 // needs it.
-func wireIdentityOnboarding(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireIdentityOnboarding(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: identity onboarding go takeover requires mysql, redis, and jwt")
 	}
@@ -55,7 +55,7 @@ func wireIdentityOnboarding(gateway *legacyproxy.Gateway, cfg config.Config, db 
 	)
 
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.IdentityOnboardingKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.IdentityOnboardingKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -115,7 +115,7 @@ func ApplySecurityHeaders(header http.Header) {
 //
 // It is the outermost wrapper in cmd/api: TraceMiddleware runs inside it, so the
 // trace headers are still set before the hook fires, and the Go handlers,
-// nestnotfound 404s and the metrics endpoint all write through it. A response
+// notfound 404s and the metrics endpoint all write through it. A response
 // proxied to NestJS already owns these headers and passes through unchanged.
 func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

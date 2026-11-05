@@ -14,7 +14,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/classificationrssops"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelinerecovery"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/qualityqueue"
@@ -50,7 +50,7 @@ func (r *qualityOpsRuntime) Close(ctx context.Context) error {
 // POST writes the ClassificationReportJob document and enqueues, the worker
 // builds the result into the same collections the NestJS GET already reads.
 func wireQualityOps(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -82,7 +82,7 @@ func wireQualityOps(
 			return nil, fmt.Errorf("api-go: classification reports go takeover requires jwt")
 		}
 		handler := classificationrssops.NewHandler(authenticator, classification)
-		gateway.RegisterGoHandler(legacyproxy.ClassificationReportsKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.ClassificationReportsKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}
@@ -123,7 +123,7 @@ func wireQualityOps(
 		}
 		service := pipelinerecovery.NewService(db, database)
 		handler := pipelinerecovery.NewHandler(authenticator, service)
-		gateway.RegisterGoHandler(legacyproxy.PipelineRecoveryKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.PipelineRecoveryKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}

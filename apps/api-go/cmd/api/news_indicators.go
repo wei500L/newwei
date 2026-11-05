@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsindicator"
 )
 
@@ -19,7 +19,7 @@ import (
 // legacy（含空串）不注册，全部路径回落 NestJS。GraphQL 的两个只读 query
 // 另由 API_GO_GRAPHQL_READ_MODE 与 API_GO_NEWS_INDICATORS_MODE 共同决定。
 func wireNewsIndicators(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -30,7 +30,7 @@ func wireNewsIndicators(
 	}
 	handler := newsindicator.NewHandler(authenticator, newsindicator.NewService(db, redisClient))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.NewsIndicatorsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.NewsIndicatorsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

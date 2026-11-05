@@ -9,7 +9,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
@@ -20,7 +20,7 @@ import (
 // 与 War Map / personal-news 共用同一个 Mongo 客户端（mongoConn 为 nil
 // 时按需打开并回填，由 main 在退出时关闭），不另开一套连接。
 func wireLlmLogs(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	authenticator *authhttp.Authenticator,
@@ -31,7 +31,7 @@ func wireLlmLogs(
 	}
 	handler := llmlogs.NewHandler(authenticator, llmlogs.NewService(db, mongoConn.Database()))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.LlmLogsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.LlmLogsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

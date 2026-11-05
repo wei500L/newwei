@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/oidclogin"
 )
 
@@ -28,7 +28,7 @@ import (
 // a GraphQL executor. The reused authlogin service is constructed with the same
 // configuration the login batch uses, but this unit only calls the trusted
 // login entry, which never sends mail.
-func wireOIDCLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
+func wireOIDCLogin(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: oidc login go takeover requires mysql and redis")
 	}
@@ -63,7 +63,7 @@ func wireOIDCLogin(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, 
 	handler := oidclogin.NewHandler(service)
 
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.OIDCLoginKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.OIDCLoginKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlreadtelemetry"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
@@ -26,7 +26,7 @@ import (
 // snapshot lock). storageConfig is the shared runtime storage configuration
 // reader used to presign S3 media URLs.
 func wireCrawlReadTelemetry(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -42,7 +42,7 @@ func wireCrawlReadTelemetry(
 		crawlreadtelemetry.NewService(db, redisClient, mongoConn.Database(), cfg.JWTSecret, storageConfig),
 	)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.CrawlReadTelemetryKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.CrawlReadTelemetryKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

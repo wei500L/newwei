@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawloptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawltaskwrite"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // newCrawlTaskWriteService builds the shared crawl task write service. It is
@@ -49,7 +49,7 @@ func newCrawlTaskWriteService(cfg config.Config, db *sql.DB, redisClient *redis.
 // CORS preflight for their own paths and fall back to the legacy proxy for an
 // OPTIONS request without preflight headers.
 func wireCrawlTaskLifecycle(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	svc *crawltaskwrite.Service,
 	authenticator *authhttp.Authenticator,
@@ -59,7 +59,7 @@ func wireCrawlTaskLifecycle(
 	}
 	policy := cors.New(cfg.CorsOrigin)
 	register := func(key string, handler http.Handler) {
-		gateway.RegisterGoHandler(key, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(key, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}
@@ -71,10 +71,10 @@ func wireCrawlTaskLifecycle(
 		})
 	}
 	if true {
-		register(legacyproxy.CrawlTaskWriteKey,
+		register(httproute.CrawlTaskWriteKey,
 			crawltaskwrite.NewHandler(authenticator, svc, cfg.TrustProxy))
 	}
 	if true {
-		register(legacyproxy.CrawlQueueOpsKey, crawltaskwrite.NewQueueHandler(authenticator, svc))
+		register(httproute.CrawlQueueOpsKey, crawltaskwrite.NewQueueHandler(authenticator, svc))
 	}
 }

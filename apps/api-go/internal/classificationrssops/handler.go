@@ -14,7 +14,7 @@ import (
 )
 
 // Paths migrated by this switch. The 13 route rules live in
-// internal/legacyproxy/classification_rss_ops_routes.go; these constants are the
+// internal/httproute/classification_rss_ops_routes.go; these constants are the
 // exact paths the handler dispatches on.
 const (
 	summaryPath             = "/api/admin/quality/classification/summary"

@@ -20,13 +20,13 @@ const (
 	EventsPath = "/api/dashboard/war-map/events"
 	// NewsMarkersPath 是新闻标记的精确路径。
 	NewsMarkersPath = "/api/dashboard/war-map/news-markers"
-	// TransportPath 与 LayersPath 使用各自的开关，不进入 Paths。
+	// TransportPath and LayersPath are registered separately and are not part of Paths.
 	TransportPath      = "/api/dashboard/war-map/transport-detail"
 	LayersPath         = "/api/dashboard/war-map/layers"
 	requiredPermission = "dashboards.read"
 )
 
-// Paths 是本开关接管的两个精确 GET。
+// Paths are the two exact GET routes this handler owns.
 var Paths = []string{EventsPath, NewsMarkersPath}
 
 type requestAuth interface {

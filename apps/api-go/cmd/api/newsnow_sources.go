@@ -11,8 +11,8 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/infrastructuresettings"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowsources"
 )
@@ -39,7 +39,7 @@ func (newsnowSourceRegistry) Lookup(sourceID string) (newsnowsources.SourceMeta,
 // global runtime-secret row and Redis for the compatible cache, refresh lock and
 // source-refresh relay, but no JWT authenticator, Mongo or queue.
 func wireNewsnowSources(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -58,7 +58,7 @@ func wireNewsnowSources(
 	})
 	handler := newsnowsources.NewHandler(service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.NewsnowSourcesKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.NewsnowSourcesKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
@@ -22,7 +22,7 @@ import (
 // reuses the one the other takeovers already opened (opened on demand here when
 // this is the only Mongo-backed takeover).
 func wireExceptionIngest(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -52,8 +52,8 @@ func wireExceptionIngest(
 		}
 		handler.ServeHTTP(w, r)
 	}
-	gateway.RegisterGoHandler(legacyproxy.ExceptionIngestClientKey, serve)
-	gateway.RegisterGoHandler(legacyproxy.ExceptionIngestInternalKey, serve)
+	gateway.Handle(httproute.ExceptionIngestClientKey, serve)
+	gateway.Handle(httproute.ExceptionIngestInternalKey, serve)
 	log.Printf("api-go: exception ingest takeover mode=%s", "go")
 	return nil
 }

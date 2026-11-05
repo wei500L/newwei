@@ -13,7 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/gdeltsnapshot"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // gdeltSnapshotUnit is the optional Go side of the situation-monitor GDELT
@@ -61,13 +61,13 @@ func (u *gdeltSnapshotUnit) Start(cfg config.Config) {
 
 // RegisterRoute registers the exact forced-refresh POST when
 // API_GO_GDELT_SNAPSHOT_REFRESH_MODE=go. legacy leaves the route on NestJS.
-func (u *gdeltSnapshotUnit) RegisterRoute(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
+func (u *gdeltSnapshotUnit) RegisterRoute(gateway *httproute.Router, cfg config.Config, db *sql.DB, authenticator *authhttp.Authenticator) error {
 	if u == nil || u.service == nil || db == nil || authenticator == nil {
 		return fmt.Errorf("api-go: GDELT snapshot refresh takeover requires mysql, jwt, and redis")
 	}
 	handler := gdeltsnapshot.NewHandler(authenticator, db, u.service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.GdeltSnapshotKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.GdeltSnapshotKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

@@ -21,7 +21,8 @@ const (
 	permissionManage = "settings.manage"
 )
 
-// Handler 只服务开关为 go 时接管的三条只读 GET。身份只来自鉴权链。
+// Handler serves the three read-only LLM request-log GET routes. Identity comes
+// only from the auth chain.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service
@@ -31,8 +32,9 @@ func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
 }
 
-// ServeHTTP 的分派顺序与路由规则一致（三条都是精确路径，互不为前缀）。
-// 更长路径与未列出的方法在路由层已经回落 NestJS，不会走到这里。
+// ServeHTTP dispatches in the same order as the routes (all three are exact
+// paths and none prefixes another). Longer paths and unlisted methods never reach
+// here; the router answers them with its 404 contract.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case basePath:

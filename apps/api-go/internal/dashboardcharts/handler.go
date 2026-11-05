@@ -28,7 +28,7 @@ const (
 	requiredPermission = "dashboards.read"
 )
 
-// Paths 是本开关接管的精确 GET。
+// Paths are the exact GET routes this handler owns.
 var Paths = []string{SectorHeatmapPath, FinancialCandlestickPath, WarMapGeoJSONPath}
 
 type requestAuth interface {

@@ -13,7 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/contentcatalog"
 	"github.com/wei500L/newwei/apps/api-go/internal/contentsubscriptions"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/userdigest"
@@ -25,7 +25,7 @@ import (
 // 返回值是摘要服务：HTTP 为 go 时交给 handler，后台投递为 go 时交给调度器，
 // 两者同时开启时共用同一个实例和同一条 Mongo 连接。
 func wirePersonalNews(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -67,7 +67,7 @@ func wirePersonalNews(
 	if behaviorGo || subsGo || digestGo {
 		policy := cors.New(cfg.CorsOrigin)
 		register := func(path string, handler http.Handler) {
-			gateway.RegisterGoHandler(path, func(w http.ResponseWriter, r *http.Request) {
+			gateway.Handle(path, func(w http.ResponseWriter, r *http.Request) {
 				if policy.FinishOptions(w, r) {
 					return
 				}

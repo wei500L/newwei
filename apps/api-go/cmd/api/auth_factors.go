@@ -12,7 +12,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireAuthFactors registers the seven authenticated MFA management and
@@ -25,7 +25,7 @@ import (
 // ordinary JWT authenticator. It deliberately creates no HTTP client and
 // performs no startup network probe: the OIDC routes only read and write local
 // configuration and never contact an identity provider.
-func wireAuthFactors(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireAuthFactors(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: auth factors go takeover requires mysql, redis, and jwt")
 	}
@@ -36,7 +36,7 @@ func wireAuthFactors(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB
 	})
 	handler := authfactors.NewHandler(authfactors.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.AuthFactorsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.AuthFactorsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

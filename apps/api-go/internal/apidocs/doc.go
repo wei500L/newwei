@@ -17,7 +17,7 @@
 //
 // Everything else under /docs, every non-GET/HEAD method, and every /docs*
 // request while SWAGGER_ENABLED is false is answered with the NestJS global
-// exception filter's 404 (internal/nestnotfound), never with a Go-flavoured
+// exception filter's 404 (internal/notfound), never with a Go-flavoured
 // error.
 //
 // The OpenAPI document vendored next to this file (openapi.snapshot.json) is

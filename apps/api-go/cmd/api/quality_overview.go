@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/qualityoverview"
 )
@@ -21,7 +21,7 @@ import (
 // 已有的那一条（没有时按需打开，退出时由 main 统一关闭）；Redis 复用
 // 网关的共享连接（快照锁与质量总览缓存）。
 func wireQualityOverview(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -33,7 +33,7 @@ func wireQualityOverview(
 	}
 	handler := qualityoverview.NewHandler(authenticator, qualityoverview.NewService(db, mongoConn.Database(), redisClient))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.QualityOverviewKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.QualityOverviewKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

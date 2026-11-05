@@ -11,7 +11,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 )
@@ -26,7 +26,7 @@ import (
 // nil when nothing has needed Mongo yet, in which case it is opened here and
 // back-filled so main closes it once on exit.
 func wirePlatformGovernanceSettings(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -47,7 +47,7 @@ func wirePlatformGovernanceSettings(
 	})
 	handler := platformgovernance.NewHandler(platformgovernance.NewAuthenticator(authenticator, db), service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.PlatformGovernanceSettingsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.PlatformGovernanceSettingsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

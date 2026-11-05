@@ -16,7 +16,7 @@ import (
 
 const viewsCollectionPath = "/api/analysis/views"
 
-// Handler 处理保存视图。main 稍后把它注册到 legacyproxy.AnalysisViewsKey。
+// Handler 处理保存视图。main 稍后把它注册到 httproute.AnalysisViewsKey。
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service

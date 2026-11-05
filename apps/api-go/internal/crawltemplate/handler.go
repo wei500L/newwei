@@ -20,7 +20,8 @@ const (
 	permWrite    = "crawl.write"
 )
 
-// Handler 只服务开关为 go 时接管的采集模板编辑接口。身份只来自鉴权链。
+// Handler serves the crawl-template editing routes. Identity comes only from the
+// auth chain.
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service
@@ -30,9 +31,10 @@ func NewHandler(auth *authhttp.Authenticator, svc *Service) *Handler {
 	return &Handler{auth: auth, svc: svc}
 }
 
-// ServeHTTP 的路由顺序与注册的路由规则一致：先是精确路径的列表/创建，
-// 再是恰好一段的 :id（只认 PATCH 与 DELETE）。GET /:id 详情、更长路径与
-// 未列出的方法不在这里（路由层已回落 NestJS）。
+// ServeHTTP dispatches in the same order as the registered rules: the exact
+// list/create path, then the one-segment :id (PATCH and DELETE only). The GET
+// /:id detail, longer paths and unlisted methods are not owned here and fall
+// through to the router's 404 contract.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {

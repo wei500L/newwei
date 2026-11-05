@@ -11,12 +11,12 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 )
 
-func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
+func wireNewsSources(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || authenticator == nil || redisClient == nil {
 		return fmt.Errorf("api-go: news sources go takeover requires mysql, jwt, and redis")
 	}
@@ -29,7 +29,7 @@ func wireNewsSources(gateway *legacyproxy.Gateway, cfg config.Config, db *sql.DB
 	snapshotRefresher := newssourcescheduler.New(newssourcescheduler.Options{DB: db, Redis: redisClient})
 	handler := newssources.NewHandler(authenticator, newssources.NewServiceWithSnapshots(db, redisClient, snapshotRefresher))
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.NewsSourcesKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.NewsSourcesKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

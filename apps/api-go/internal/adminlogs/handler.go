@@ -29,8 +29,9 @@ const (
 	maxLimit        = 200
 )
 
-// Handler 只服务开关为 go 时接管的管理端日志与异常读取 7 条 GET。
-// 身份只来自鉴权链，orgId 一律取自身份（query 里的 orgId 不参与）。
+// Handler serves the seven admin log and error GET routes. Identity comes only
+// from the auth chain; orgId is always taken from the identity (a query orgId is
+// ignored).
 type Handler struct {
 	auth *authhttp.Authenticator
 	svc  *Service

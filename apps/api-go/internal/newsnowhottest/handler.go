@@ -29,7 +29,7 @@ const (
 var errInvalidMachineToken = errors.New("newsnowhottest: invalid machine token")
 
 // Handler serves the two routes. It is registered on the gateway under
-// legacyproxy.NewsnowHottestKey and is reached only when the mode switch is go.
+// httproute.NewsnowHottestKey and is reached only when the mode switch is go.
 type Handler struct {
 	auth    *authhttp.Authenticator
 	db      *sql.DB

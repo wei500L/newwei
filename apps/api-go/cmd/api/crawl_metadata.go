@@ -9,7 +9,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlmetadata"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // wireCrawlMetadata 只在 API_GO_CRAWL_METADATA_MODE=go 时注册
@@ -17,7 +17,7 @@ import (
 // 不注册，该 POST 继续回落 NestJS。service 由 main 构造并与 GraphQL
 // crawlMetadata root 共享，二者不重复初始化 HTTP 连接或 Redis 客户端。
 func wireCrawlMetadata(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	service *crawlmetadata.Service,
 	authenticator *authhttp.Authenticator,
@@ -27,7 +27,7 @@ func wireCrawlMetadata(
 	}
 	handler := crawlmetadata.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.CrawlMetadataKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.CrawlMetadataKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

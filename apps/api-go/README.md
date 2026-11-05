@@ -219,90 +219,28 @@ Nest 的 `prom-client` 默认指标是 `nodejs_*`，Go 进程没有事件循环�
 另输出 `go_goroutines`、`go_memstats_*`、`go_gc_cycles_total`。使用 `nodejs_*` 的
 监控面板与告警需要按上表调整。
 
-## 四态路由（当前路由表）
+## 路由表（纯 Go，无代理/无双发）
 
-路由匹配：**迁移单元 = exact path + method 白名单**。相似路径、POST 以及写模式为 `legacy` 时的 PUT 回落 `/api/`。写模式为 `go` 时，同一六个路径的 PUT 另有 exact+PUT 规则。
+api-go 是唯一后端，路由表是纯 Go 的规则列表：不再有 `legacy`/`shadow`/`canary` 四态，也没有反向代理到 NestJS 或差分执行。未命中任何规则的请求（以及命中规则但方法不在白名单的请求）由 `internal/notfound` 按当前 404 契约返回。
 
-| 模式 | 当前路由 | 行为 |
-|---|---|---|
-| legacy | `/api/`、`/graphql`、`/socket.io/`、`/docs`、`/admin/queues`（含六个 user-settings GET 的 PUT/相似路径、其余全部未迁移端点） | 反向代理到 NestJS（事实源） |
-| shadow | `/api/healthz/live`（exact + 仅 GET）；六个 user-settings GET 的模式由 `API_GO_USER_SETTINGS_READ_MODE` 决定：`shadow` 时全部 shadow；未设置时 onboarding（`API_GO_ONBOARDING_MODE=shadow` 默认）与 rss-reader/spacetime-timeline shadow，war-map/newsnow/situation-monitor legacy | NestJS 响应 + Go 实现异步差分 |
-| canary | （无） | 待鉴权基础设施接入的分流组件（见下） |
-| go | `/__go/healthz`；读模式 `go` 时六个 GET（exact）；写模式 `go` 时六个 PUT（exact） | Go 原生。GET 走 `usersettingsread`；PUT 走 `usersettingswrite`（同一鉴权链，写后重读） |
+- **规则表来源**：`internal/httproute/all_routes.go` 的 `AllRoutes()` 汇总 `BaseRules()` 与全部 `With*` 构建函数；`cmd/api`、契约门禁和覆盖门禁共用这一份事实源。
+- **匹配语义**：`Exact` 精确匹配；`OneSegment`/`TwoSegments` 匹配固定前缀后的一到两个非空动态段（可带固定 `Tail`/`TailSuffix`）；其余按前缀匹配；`Methods` 非空时只匹配白名单方法（不命中继续尝试下一条规则）；最长 `Prefix` 优先，长度相同保持声明顺序（稳定排序）。
+- **预编译**：`New` 只复制并稳定排序一次（按 `Prefix` 长度降序）；`Freeze`（`cmd/api` 在 listener 启动前、所有注册完成后调用）把每条规则解析到它的 handler 并关闭注册。请求期只做线性匹配并直接调用。`Freeze` 之后再注册 handler 会 panic（编程错误）。
+- **handler 解析**：按规则的 `HandlerKey`（否则 `Prefix`）查找；精确键不存在时取“最长的、作为前缀的已注册键”。
+- **返回**：handler 自己写响应；未匹配统一走 `Reject`，写出 Nest 形状的 404（CORS、`x-trace-id` 与异常事件旁路保持不变）。
 
-### user-settings 只读域 Go 接管（Go-批3B，统一六端点）
+### 变更一条路由
 
-`API_GO_USER_SETTINGS_READ_MODE=go` 时，六个只读 GET 的完整请求链由 Go 独立完成——不请求 NestJS、不等待 legacy 200、不使用 `LegacyApprovedIdentity`（Go-批3A 曾以 `API_GO_ONBOARDING_MODE=go` 单独接管 onboarding；批3B 起收敛为统一 handler `internal/usersettingsread`，旧 `internal/onboarding` 已删除）：
+1. 在对应的 `internal/httproute/<domain>_routes.go` 的 `With*` 里加/改 `Rule`，并确认该构建函数已在 `AllRoutes()` 中调用；
+2. 在 `cmd/api` 里用 `gateway.Handle(key, handler)` 注册处理器（`/__go/healthz` 用 `HandleProcessHealth`），必须在 `gateway.Freeze()` 之前完成；
+3. handler 内自行完成鉴权、`orgId` 租户过滤与业务校验。
 
-```text
-提取 Bearer（拒绝 mtk_ 机器令牌）
-→ JWT 验签（internal/authn：仅 HS256、issuer/audience/exp/nbf 按 jsonwebtoken
-  语义、sub/orgId 非空；拒绝 alg=none/HS384/算法混淆；不读 permissions claim）
-→ Redis blacklist（internal/authn：access-token:blacklist:<jti>，与 NestJS 同一
-  Redis 同一 key；jti 缺失按 NestJS 当前语义放行；查询失败 fail-closed 500）
-→ MySQL membership/user/permission 重推导（internal/authz：复用同一 *sql.DB；
-  User/Org/Membership active 校验与 getUserProfile 同序同文案 401；
-  MembershipRole 多角色优先、空则 primary role 回退；权限名 RolePermission→
-  Permission 去重）
-→ items.read 判定（usersettingsread：数据库推导的权限集；JWT claim 不参与）
-→ 固定 UserSetting 查询（usersettings repository：五个单 key 端点各查一个
-  编译期固定 key；situation-monitor 一次聚合查询三个固定 key）
-→ normalization（usersettings：六个端点各自的 Build*Response——含批3B 完整
-  移植的 war-map-contract / situation-monitor / newsnow 契约）
-→ Go 写出响应（internal/authhttp 契约等价错误；200 带 Cache-Control: no-store）
-```
-
-- **错误契约**：与 NestJS `GlobalExceptionFilter` 逐字段对齐——JWT 层失败 401 `{"message":"Unauthorized"}`；撤销 401 `"Access token revoked"`；user/org/membership 状态拒绝 401 同文案（`"Organization disabled"` 等）；缺权限 403 `INSUFFICIENT_PERMISSIONS`（any 模式：`detail="Requires any permission: items.read"`，无 `missingPermissions`）；Redis 故障 fail-closed 500、MySQL 故障 fail-closed 503（均通用 `"Internal server error"`，对齐 NestJS 生产环境非 HttpException 路径）。
-- **边界**：仅六个只读 GET。登录/refresh/logout/MFA/OIDC/机器令牌仍全部由 NestJS 承载；六个 PUT 与全部其他写请求纯代理 NestJS（exact path + method 白名单：PUT/POST/HEAD 同路径与相似路径回落 legacy）。
-- **`/__go/healthz`**：`userSettingsRead.mode` 如实展示当前读模式（空/`shadow`/`go`）、`userSettingsRead.database` 只报 `unconfigured`/`invalid`/`configured`；`go` 模式下六个 GET 不再增加 `shadow.executed`。
-- **回滚**：`API_GO_USER_SETTINGS_READ_MODE=shadow`（全部六端点回到 NestJS 响应 + Go 差分）或删除该变量（兼容：onboarding 由 `API_GO_ONBOARDING_MODE` 控制、其余端点回到批3B 前去向）——配置变更，无数据迁移耦合。
-
-### user-settings 只读 shadow（差分阶段，Go-批2A/2B 起步、批3B 扩展）
-
-- **范围**：六个只读 GET 都可处于 shadow（`API_GO_USER_SETTINGS_READ_MODE=shadow`
-  时六端点全部 shadow；未设置时 onboarding/rss/spacetime shadow、其余三
-  个 legacy——批3B 前的兼容行为）。全部 PUT 始终 legacy（不迁移写入路径）。
-- **行为**：客户端响应完全来自 NestJS；Go 在旁路真实读取 MySQL
-  `UserSetting` 表（五个单 key 端点 `orgId+userId+固定 key` 三条件参数化
-  查询共用同一条私有 SQL；situation-monitor 一次聚合查询三个固定 key，
-  对齐 NestJS findMany 语义），并与 NestJS 响应差分（normalization 契约
-  逐字段对齐——含批3B 的 war-map 45 layer/legacy key/clamp、newsnow
-  有序对象/上限/真值、situation-monitor 三段聚合）。
-- **legacy-approved shadow identity（信任边界）**：shadow 是回滚兼容路径，
-  不是 Go 的独立鉴权。身份来源是 legacy 信任委托——同一请求先由
-  NestJS 执行并返回 200（签名/权限全部通过），此时才从（未验签的）
-  Bearer JWT payload 读取 `sub`/`orgId`，只用于本次只读查询。**不是
-  「Go 已验证身份」**；不读取、不信任 `permissions` claim；NestJS 非 200
-  （401/403/404/5xx）→ Go 零查询。Go 模式（`usersettingsread`）完全不
-  经过该身份——但 shadow 回滚能力依赖它，`shadowidentity` 包因此保留。
-- **失败非阻断**：MySQL 未配置/不可达/超时、JSON 异常、限流/并发预算
-  耗尽——都只跳过本次差分或形成结构化差分记录，客户端始终收到
-  NestJS 原响应。
-- **回滚**：`API_GO_USER_SETTINGS_READ_MODE=shadow`（六端点全部回 shadow）
-  或未设置（兼容行为）——配置变更；路由级单条改回 `ModeLegacy` 亦可
-  （纯代码变更，无数据耦合）。
-
-### canary 的信任边界（重要）
-
-当前分流的 orgId 取自**未验签**的 JWT payload claim，不是经过认证的组织
-身份。`CANARY_PERCENT` 默认 0，**当前没有任何路由处于 ModeCanary**。
-在 Go 侧完成真实 JWT 验签与 org membership 重推导（迁移序 5）之前，
-受保护业务路由不得依赖该 claim 决定是否进入 Go——fail-safe 一律回
-legacy。详见 `docs/refactor/api-go-four-mode.md`。
-
-## 迁移一个路由（四态）
-
-路由表在 `internal/legacyproxy/proxy.go` 的 `DefaultRules(onboardingMode, readMode)`（迁移单元 = exact path + method 白名单；fallback = 前缀匹配）：
-
-1. shadow 起步：把目标单元改为 `ModeShadow`（exact + method 白名单），在 `cmd/api/main.go` 的 dispatcher 里注册该路由的差分执行者；
-2. 差分 0 失败后 canary：改为 `ModeCanary` + 调 `CANARY_PERCENT` 灰度（orgId 稳定哈希——注意当前分流依据仍是未验签 claim，见下）；
-3. 全量：改为 `ModeGo` 并 `RegisterGoHandler` 注册处理器（前置件：该路由的 Go 侧鉴权链已落地——参照 Go-批3A 的 authn/authz/authhttp）；
-4. 回滚 = 任意阶段改回 `ModeLegacy`（或 `CANARY_PERCENT=0` / 单元模式配置）——纯配置变更，无数据耦合。
+无 `ModeGo`/`ModeLegacy`/`ModeShadow`/`ModeCanary`，无 `CANARY_PERCENT`；回滚依靠正常版本回滚。
 
 ## 验证
 
 ```bash
-pnpm --filter @modular/api-go test    # 网关行为测试（四态/代理透传/go 路由/502/trace/shadow 预算/canary 哈希/user-settings 身份门禁与三端点契约）
+pnpm --filter @modular/api-go test    # 路由/匹配/契约门禁、handler 契约与 user-settings 身份门禁等行为测试
 pnpm --filter @modular/api-go lint    # go vet
 pnpm --filter @modular/api-go build   # go build
 ```
@@ -350,4 +288,4 @@ cd apps/api-go && go test -tags=integration -count=1 \
   `golang.org/x/crypto`、`golang.org/x/text`
 - `migrations/` 在 Phase 1 禁止 schema 变更（见该目录 README）
 - 契约以 `docs/refactor/api-contract-inventory.md` 为冻结基线；鉴权矩阵（`apps/api/tests/contract/auth-matrix.json`）驱动逐端点语义对齐
-- shadow 只对 GET/HEAD/OPTIONS 差分——写请求禁止双发（双层强制：legacyproxy + shadow runner；user-settings shadow 单元进一步收窄为仅 GET）
+- 纯 Go 单端：不存在代理/shadow/双发；未命中的请求由 `internal/notfound` 写出 Nest 形状 404

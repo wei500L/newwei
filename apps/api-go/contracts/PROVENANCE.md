@@ -20,7 +20,7 @@
 - handler 平台校验为启发式（`platformCheckSource=handler-text-scan`），运行时强制力由
   handler 内 assertPlatformAdmin 提供。
 - 本矩阵是 **历史预期（注明基线 SHA）**，不是 Go 当前事实；Go 当前事实由
-  `apps/api-go/internal/legacyproxy/contract_registration_test.go` 用实际全量 Go 规则表校验
+  `apps/api-go/internal/httproute/contract_registration_test.go` 用实际全量 Go 规则表校验
   每个 `METHOD + 完整路径` 的注册归属，并校验本矩阵的权限结构自洽（公开/仅认证/权限门控
   的 permission 与 permissionMode 边界）。orgId 约束不由“路由存在”替代。
 - 请求/响应 DTO 与运行期权限值仍需运行时验证；本批不声称已部署或实网通过。

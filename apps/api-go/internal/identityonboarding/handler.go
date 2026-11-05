@@ -8,7 +8,7 @@ import (
 )
 
 // Route paths owned by this unit. Every one of them is registered as an exact
-// path (or a one-segment path with a fixed suffix) in legacyproxy; the handler
+// path (or a one-segment path with a fixed suffix) in httproute; the handler
 // repeats the method and shape checks so a mis-registration can never serve a
 // different method.
 const (

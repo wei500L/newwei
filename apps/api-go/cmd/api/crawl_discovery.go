@@ -18,7 +18,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlstrategyruns"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlworkflow"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/settingscrawl"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
 // The crawl discovery entries share one crawl4ai client, one metadata Service
@@ -33,7 +33,7 @@ const (
 // wireCrawlDiscovery registers the two Go takeovers. legacy (including unset)
 // registers nothing and every path keeps proxying to NestJS.
 func wireCrawlDiscovery(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -72,7 +72,7 @@ func wireCrawlDiscovery(
 	if previewGo {
 		preview := crawlstrategyruns.NewPreviewService(db, redisClient, discovery, workflows, cfg.NewsSourceInFlightLookbackMs)
 		handler := crawlstrategyruns.NewPreviewHandler(authenticator, runtime, preview)
-		gateway.RegisterGoHandler(legacyproxy.NewsSourcePreviewKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.NewsSourcePreviewKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}
@@ -87,7 +87,7 @@ func wireCrawlDiscovery(
 
 	if trialGo {
 		handler := crawlstrategyruns.NewHandler(authenticator, runtime)
-		gateway.RegisterGoHandler(legacyproxy.CrawlWorkflowTrialKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.CrawlWorkflowTrialKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}

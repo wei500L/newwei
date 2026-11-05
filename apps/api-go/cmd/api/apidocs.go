@@ -8,8 +8,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/apidocs"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
-	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
+	"github.com/wei500L/newwei/apps/api-go/internal/notfound"
 )
 
 // wireAPIDocs registers the Go /docs takeover only when API_GO_DOCS_MODE=go.
@@ -24,7 +24,7 @@ import (
 // policy and the exception recorder are injected by main.go so a Go-served 404
 // carries the same headers and side-channel event as every other unmatched
 // route.
-func wireAPIDocs(gateway *legacyproxy.Gateway, cfg config.Config, policy cors.Policy, recorder nestnotfound.Recorder) error {
+func wireAPIDocs(gateway *httproute.Router, cfg config.Config, policy cors.Policy, recorder notfound.Recorder) error {
 	if gateway == nil {
 		return fmt.Errorf("api-go: docs takeover requires a gateway")
 	}
@@ -37,7 +37,7 @@ func wireAPIDocs(gateway *legacyproxy.Gateway, cfg config.Config, policy cors.Po
 		Policy:   policy,
 		Recorder: recorder,
 	})
-	gateway.RegisterGoHandler(legacyproxy.DocsHandlerKey, handler.ServeHTTP)
+	gateway.Handle(httproute.DocsHandlerKey, handler.ServeHTTP)
 	log.Printf("api-go: docs takeover mode=%s enabled=%t", "go", enabled)
 	return nil
 }

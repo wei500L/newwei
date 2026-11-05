@@ -10,7 +10,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/exceptioningest"
-	"github.com/wei500L/newwei/apps/api-go/internal/nestnotfound"
+	"github.com/wei500L/newwei/apps/api-go/internal/notfound"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
@@ -29,7 +29,7 @@ func newNestNotFoundRecorder(
 	cfg config.Config,
 	mongoConn *mongodb.Client,
 	redisClient *redis.Client,
-) nestnotfound.Recorder {
+) notfound.Recorder {
 	if mongoConn == nil {
 		log.Printf("api-go: nest-not-found event recording disabled: no Mongo connection handle")
 		return nil

@@ -15,7 +15,7 @@ import (
 )
 
 // The two exact paths this unit owns. They are declared here (not imported
-// from legacyproxy) so the handler has no dependency on the routing layer.
+// from httproute) so the handler has no dependency on the routing layer.
 const (
 	avatarPresignPath = "/api/auth/avatar/presigned-url"
 	dataExportPath    = "/api/auth/data-export"

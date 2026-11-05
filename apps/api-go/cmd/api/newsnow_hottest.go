@@ -14,9 +14,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/infrastructuresettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
@@ -50,7 +50,7 @@ type newsnowHottestUnit struct {
 // newNewsnowHottestUnit builds the service, registers the HTTP routes when the
 // hot switch is go and prepares (but does not start) the schedulers.
 func newNewsnowHottestUnit(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -112,7 +112,7 @@ func newNewsnowHottestUnit(
 	if hottestGo {
 		handler := newsnowhottest.NewHandler(authenticator, db, unit.service)
 		policy := cors.New(cfg.CorsOrigin)
-		gateway.RegisterGoHandler(legacyproxy.NewsnowHottestKey, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(httproute.NewsnowHottestKey, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}

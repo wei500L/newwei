@@ -13,7 +13,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
@@ -25,7 +25,7 @@ import (
 // back to NestJS. The Mongo connection is shared with the other takeovers; the
 // Redis connection is the gateway-wide one.
 func wireNewsnowClusteringOps(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -49,7 +49,7 @@ func wireNewsnowClusteringOps(
 
 	handler := newsnowclusteringops.NewHandler(authenticator, service)
 	policy := cors.New(cfg.CorsOrigin)
-	gateway.RegisterGoHandler(legacyproxy.NewsnowClusteringOpsKey, func(w http.ResponseWriter, r *http.Request) {
+	gateway.Handle(httproute.NewsnowClusteringOpsKey, func(w http.ResponseWriter, r *http.Request) {
 		if policy.FinishOptions(w, r) {
 			return
 		}

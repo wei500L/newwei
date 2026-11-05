@@ -14,8 +14,8 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/config"
 	"github.com/wei500L/newwei/apps/api-go/internal/cors"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/newsevents"
+	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
-	"github.com/wei500L/newwei/apps/api-go/internal/legacyproxy"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsbehavior"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
@@ -36,7 +36,7 @@ import (
 // shared Mongo connection is opened only when no other unit already opened one
 // and is handed back through mongoConn so the single shutdown path closes it.
 func wireAnalysisExport(
-	gateway *legacyproxy.Gateway,
+	gateway *httproute.Router,
 	cfg config.Config,
 	db *sql.DB,
 	redisClient *redis.Client,
@@ -66,7 +66,7 @@ func wireAnalysisExport(
 	policy := cors.New(cfg.CorsOrigin)
 	register := func(key string, route analysisexport.Route) {
 		handler := analysisexport.NewHandler(authenticator, service, route)
-		gateway.RegisterGoHandler(key, func(w http.ResponseWriter, r *http.Request) {
+		gateway.Handle(key, func(w http.ResponseWriter, r *http.Request) {
 			if policy.FinishOptions(w, r) {
 				return
 			}
@@ -77,8 +77,8 @@ func wireAnalysisExport(
 			handler.ServeHTTP(w, r)
 		})
 	}
-	register(legacyproxy.AnalysisExportItemsKey, analysisexport.RouteItems)
-	register(legacyproxy.AnalysisExportEventsKey, analysisexport.RouteEvents)
+	register(httproute.AnalysisExportItemsKey, analysisexport.RouteItems)
+	register(httproute.AnalysisExportEventsKey, analysisexport.RouteEvents)
 	log.Printf("api-go: analysis CSV export takeover (POST /api/analysis/exports/items, POST /api/analysis/exports/events; readModel=%t)", cfg.ItemsReadModelEnabled)
 	return nil
 }

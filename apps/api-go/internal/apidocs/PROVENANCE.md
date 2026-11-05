@@ -16,7 +16,7 @@
 - 本 OpenAPI 是既有的 **路由 / 权限 / 状态码快照**；请求与响应 DTO 模型并不完整，
   不要把它当作“完整模型”或据此虚构 schema 字段。
 - 静态文档继续人工/再生成维护，但真正的 Go 契约门禁在
-  `apps/api-go/internal/legacyproxy/contract_registration_test.go`：它用实际 Go 全量规则
+  `apps/api-go/internal/httproute/contract_registration_test.go`：它用实际 Go 全量规则
   表校验本快照中的每个 `METHOD + path` 是否都由 Go 注册（而非 `/api/` 兜底），从而发现
   新增、遗漏、错误分类——不是“快照与自身比较”。
 
