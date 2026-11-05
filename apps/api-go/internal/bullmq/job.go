@@ -81,6 +81,19 @@ type Job struct {
 	ParentKey string
 	// RepeatJobKey is the repeat key when the job came from a repeat schedule.
 	RepeatJobKey string
+
+	// Token is the BullMQ lock token this attempt holds. It is set only on a job
+	// claimed by Worker.Claim and is never populated by the read-only decoder.
+	Token string
+	// AttemptsStarted is the number of times the job was moved to active (the
+	// job hash `ats` field).
+	AttemptsStarted int64
+	// StalledCount is how many times the stalled checker recovered this job (the
+	// job hash `stc` field).
+	StalledCount int64
+	// DeferredFailure is BullMQ's `defa` marker ("job stalled more than allowable
+	// limit"). A job carrying it must fail without running its processor.
+	DeferredFailure string
 }
 
 // StoredOptions is the resolved JobsOptions subset that changes console
@@ -347,4 +360,104 @@ func stringArray(raw string) []string {
 		return nil
 	}
 	return rows
+}
+
+// Attempts returns the configured maximum attempts, defaulting to one exactly
+// like BullMQ treats a job without opts.attempts.
+func (j *Job) Attempts() int64 {
+	attempts := j.Options().Attempts
+	if attempts < 1 {
+		return 1
+	}
+	return attempts
+}
+
+// Backoff returns the typed retry policy stored in the job options, or nil when
+// the job has no backoff.
+func (j *Job) Backoff() *Backoff {
+	raw := bytes.TrimSpace(j.Options().Backoff)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	var backoff Backoff
+	if err := json.Unmarshal(raw, &backoff); err != nil {
+		return nil
+	}
+	return &backoff
+}
+
+// FinalFailure reports whether this attempt is the last one BullMQ will run. A
+// deferred failure is final even when attempts remain because BullMQ marks it
+// unrecoverable.
+func (j *Job) FinalFailure() bool {
+	if j == nil {
+		return true
+	}
+	if j.DeferredFailure != "" {
+		return true
+	}
+	return j.AttemptsMade+1 >= j.Attempts()
+}
+
+// DeferredFailureError returns the terminal error the stalled checker already
+// recorded, or nil when the job may run.
+func (j *Job) DeferredFailureError() error {
+	if j == nil || j.DeferredFailure == "" {
+		return nil
+	}
+	return Unrecoverable(errors.New(j.DeferredFailure))
+}
+
+// keepOnComplete resolves the job-level removeOnComplete policy. The second
+// result reports whether the option was actually present.
+func (j *Job) keepOnComplete() (KeepJobs, bool) {
+	if j == nil {
+		return KeepJobs{}, false
+	}
+	return decodeKeepJobsValue(j.Options().RemoveOnComplete)
+}
+
+// keepOnFail resolves the job-level removeOnFail policy.
+func (j *Job) keepOnFail() (KeepJobs, bool) {
+	if j == nil {
+		return KeepJobs{}, false
+	}
+	return decodeKeepJobsValue(j.Options().RemoveOnFail)
+}
+
+// decodeKeepJobsValue normalizes BullMQ's boolean / number / {age,count} union
+// into a KeepJobs value, reporting whether a value was present at all.
+func decodeKeepJobsValue(raw json.RawMessage) (KeepJobs, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return KeepJobs{}, false
+	}
+	switch trimmed[0] {
+	case 't':
+		count := int64(0)
+		return KeepJobs{Count: &count}, true
+	case 'f':
+		count := int64(-1)
+		return KeepJobs{Count: &count}, true
+	case '{':
+		var shape struct {
+			Age   *int64 `json:"age"`
+			Count *int64 `json:"count"`
+		}
+		if err := json.Unmarshal(trimmed, &shape); err != nil {
+			return KeepJobs{}, false
+		}
+		count := shape.Count
+		if count == nil {
+			forever := int64(-1)
+			count = &forever
+		}
+		return KeepJobs{Age: shape.Age, Count: count}, true
+	default:
+		var number int64
+		if err := json.Unmarshal(trimmed, &number); err != nil {
+			return KeepJobs{}, false
+		}
+		return KeepJobs{Count: &number}, true
+	}
 }
