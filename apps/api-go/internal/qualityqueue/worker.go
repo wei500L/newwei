@@ -43,7 +43,11 @@ func NewWorker(queue *Queue, handler Handler, opts WorkerOptions) *Worker {
 	if queue == nil {
 		return &Worker{}
 	}
-	inner, err := bullmq.NewWorker(queue.rdb, nil, QueueName, func(ctx context.Context, job *bullmq.Job) (json.RawMessage, error) {
+	queueName := QueueName
+	if queue.name != "" {
+		queueName = queue.name
+	}
+	inner, err := bullmq.NewWorker(queue.rdb, nil, queueName, func(ctx context.Context, job *bullmq.Job) (json.RawMessage, error) {
 		if handler == nil {
 			return nil, nil
 		}

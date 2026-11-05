@@ -61,6 +61,7 @@ type addJobOptions struct {
 // Queue is a BullMQ producer bound to one Redis key space.
 type Queue struct {
 	rdb  redis.Cmdable
+	name string
 	keys keySpace
 	bull *bullmq.Queue
 }
@@ -73,7 +74,7 @@ func NewQueue(rdb redis.Cmdable) *Queue {
 // newQueue binds the producer/worker to one queue name. Integration tests use it
 // to stay out of the shared classification_quality key space.
 func newQueue(rdb redis.Cmdable, name string) *Queue {
-	return &Queue{rdb: rdb, keys: newKeySpace("", name), bull: bullmq.NewQueue(rdb, "", name)}
+	return &Queue{rdb: rdb, name: name, keys: newKeySpace("", name), bull: bullmq.NewQueue(rdb, "", name)}
 }
 
 // Add creates one standard job. The returned job id is the custom id passed in
