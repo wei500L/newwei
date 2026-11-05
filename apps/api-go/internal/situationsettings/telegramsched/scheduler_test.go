@@ -5,23 +5,6 @@ import (
 	"testing"
 )
 
-// TestScriptDigestsPinned fails if a vendored Lua file is edited or partially
-// copied, which would silently change the shared BullMQ state machine.
-func TestScriptDigestsPinned(t *testing.T) {
-	for name, want := range scriptDigests {
-		content, err := scriptFiles.ReadFile("scripts/" + name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		if got := scriptSHA256(content); got != want {
-			t.Fatalf("%s sha256 = %s, want %s", name, got, want)
-		}
-	}
-	if len(scriptDigests) != 5 {
-		t.Fatalf("vendored script count = %d", len(scriptDigests))
-	}
-}
-
 // TestLegacyRepeatJobIDMatchesBullMQ5632 pins removeRepeatableByKey's legacy
 // id: repeat:<md5(name + id + md5(key))>:, with name/id from keyToData(key).
 func TestLegacyRepeatJobIDMatchesBullMQ5632(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/bullmqcleanup"
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
 
@@ -79,7 +79,7 @@ func NewService(opts Options) *Service {
 		redis:    opts.Redis,
 		producer: opts.Producer,
 		now:      now,
-		prefix:   bullmqwire.Prefix,
+		prefix:   bullmq.Prefix,
 		queues:   specs,
 		known:    known,
 	}
@@ -98,8 +98,8 @@ func (s *Service) Inventory() []string {
 }
 
 // queueKeys returns the BullMQ key set of one tracked queue.
-func (s *Service) queueKeys(name string) bullmqwire.Keys {
-	return bullmqwire.NewKeys(s.prefix, name)
+func (s *Service) queueKeys(name string) bullmq.Keys {
+	return bullmq.NewKeys(s.prefix, name)
 }
 
 // validateQueue checks a queue name against the inventory. An empty name is a
@@ -249,14 +249,14 @@ func (s *Service) JobDetail(ctx context.Context, query jobDetailQuery) (JobDetai
 		return JobDetailResponse{}, errRedisUnavailable
 	}
 	keys := s.queueKeys(queue)
-	job, err := bullmqwire.ReadJob(ctx, s.redis, keys, query.JobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, keys, query.JobID)
 	if err != nil {
 		return JobDetailResponse{}, err
 	}
 	if job == nil {
 		return JobDetailResponse{}, newStatus(http.StatusNotFound, "job not found")
 	}
-	logs, err := bullmqwire.ReadJobLogs(ctx, s.redis, keys, query.JobID, jobLogsLimit)
+	logs, err := bullmq.ReadJobLogs(ctx, s.redis, keys, query.JobID, jobLogsLimit)
 	if err != nil {
 		return JobDetailResponse{}, err
 	}
@@ -279,7 +279,7 @@ func (s *Service) JobDetail(ctx context.Context, query jobDetailQuery) (JobDetai
 		Logs:          stringSlice(logs),
 		DataTruncated: dataTruncated,
 	}
-	if orgID := bullmqwire.OrgIDFromData(job.Data); orgID != "" {
+	if orgID := bullmq.OrgIDFromData(job.Data); orgID != "" {
 		detail.OrgID = &orgID
 	}
 	return JobDetailResponse{Job: detail}, nil

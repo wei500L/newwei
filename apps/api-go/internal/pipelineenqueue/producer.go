@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vmihailenco/msgpack/v5"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // priorityLimit is BullMQ's Job.PRIORITY_LIMIT. Higher values make Queue.add
@@ -83,6 +84,7 @@ type Options struct {
 type Producer struct {
 	redis *redis.Client
 	mongo *mongo.Database
+	queue *bullmq.Queue
 	now   func() time.Time
 }
 
@@ -92,7 +94,7 @@ func New(opts Options) *Producer {
 	if now == nil {
 		now = time.Now
 	}
-	return &Producer{redis: opts.Redis, mongo: opts.Mongo, now: now}
+	return &Producer{redis: opts.Redis, mongo: opts.Mongo, queue: bullmq.NewQueue(opts.Redis, "", QueueName), now: now}
 }
 
 // EnqueueItem ports QueueService.enqueueItem for the two supported job
@@ -136,47 +138,18 @@ func (p *Producer) EnqueueItem(
 		return "", err
 	}
 
-	jobOpts := jobOptions{
+	jobOpts := bullmq.JobOptions{
 		JobID:            jobID,
 		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: 7 * 24 * 60 * 60, Count: 10_000},
-		Attempts:         5,
-		Backoff:          backoffOptions{Type: "exponential", Delay: 2000},
-		Priority:         opts.Priority,
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr(7 * 24 * 60 * 60), Count: int64Ptr(10_000)},
+		Attempts:         int64Ptr(5),
+		Backoff:          &bullmq.Backoff{Type: "exponential", Delay: 2000},
 	}
-	packedOpts, err := msgpack.Marshal(jobOpts)
-	if err != nil {
-		return "", err
+	if opts.Priority != nil {
+		priority := *opts.Priority
+		jobOpts.Priority = &priority
 	}
-
-	// This is the BullMQ Redis wire protocol, not business data: the Lua
-	// script unpacks a positional MessagePack array. Null entries are the
-	// unused parent/repeat/deduplication slots (BullMQ passes null).
-	args := []any{
-		QueuePrefixKey,
-		jobID,
-		"process-item",
-		p.now().UnixMilli(),
-		nil, // parentKey
-		nil, // parentDependenciesKey
-		nil, // parent
-		nil, // repeatJobKey
-		nil, // deduplicationKey
-	}
-	packedArgs, err := msgpack.Marshal(args)
-	if err != nil {
-		return "", err
-	}
-
-	keys, script := standardJobKeys(), addStandardJobScript
-	if opts.Priority != nil && *opts.Priority != 0 {
-		keys, script = prioritizedJobKeys(), addPrioritizedJobScript
-	}
-	result, err := p.redis.Eval(ctx, script, keys, packedArgs, string(data), packedOpts).Result()
-	if err != nil {
-		return "", err
-	}
-	jobIDResult, err := jobIDFromEval(result)
+	jobIDResult, err := p.queue.Add(ctx, "process-item", data, jobOpts)
 	if err != nil {
 		return "", err
 	}
@@ -305,6 +278,9 @@ func (p *Producer) upsertPendingProcessedItem(
 		log.Printf("pipelineenqueue: failed to upsert pending processed item orgId=%s itemMetaId=%s: %v", orgID, itemMetaID, err)
 	}
 }
+
+// int64Ptr returns a pointer to value for the optional JobOptions fields.
+func int64Ptr(value int64) *int64 { return &value }
 
 // newTraceID returns a canonical UUID v4, the same shape ensureTraceId mints.
 func newTraceID() string {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // KeepJobs mirrors the BullMQ keepJobs shape used by removeOnComplete and
@@ -38,8 +38,8 @@ type Backoff struct {
 }
 
 // AddOptions are the BullMQ job options written for a new job. They are the
-// msgpack table the addStandardJob script stores in the job hash, so every
-// field name matches the NestJS job options exactly.
+// fields the classification queue's Queue.add sets; every field name matches the
+// NestJS job options exactly.
 type AddOptions struct {
 	JobID            string
 	Attempts         int64
@@ -48,8 +48,8 @@ type AddOptions struct {
 	RemoveOnFail     KeepJobs
 }
 
-// addJobOptions is the msgpack projection of AddOptions. jobId is included
-// because NestJS stores it in the hash opts field as well.
+// addJobOptions documents the exact msgpack field names qualityqueue stores in
+// the job hash. It is kept as the wire-shape contract for TestAddJobOptionsFieldNames.
 type addJobOptions struct {
 	JobID            string   `msgpack:"jobId"`
 	Attempts         int64    `msgpack:"attempts"`
@@ -60,19 +60,20 @@ type addJobOptions struct {
 
 // Queue is a BullMQ producer bound to one Redis key space.
 type Queue struct {
-	rdb  redis.Scripter
+	rdb  redis.Cmdable
 	keys keySpace
+	bull *bullmq.Queue
 }
 
 // NewQueue builds the producer for the classification_quality queue.
-func NewQueue(rdb redis.Scripter) *Queue {
+func NewQueue(rdb redis.Cmdable) *Queue {
 	return newQueue(rdb, QueueName)
 }
 
 // newQueue binds the producer/worker to one queue name. Integration tests use it
 // to stay out of the shared classification_quality key space.
-func newQueue(rdb redis.Scripter, name string) *Queue {
-	return &Queue{rdb: rdb, keys: newKeySpace("", name)}
+func newQueue(rdb redis.Cmdable, name string) *Queue {
+	return &Queue{rdb: rdb, keys: newKeySpace("", name), bull: bullmq.NewQueue(rdb, "", name)}
 }
 
 // Add creates one standard job. The returned job id is the custom id passed in
@@ -92,53 +93,12 @@ func (q *Queue) Add(ctx context.Context, name string, data json.RawMessage, opts
 	if len(data) == 0 {
 		data = json.RawMessage("{}")
 	}
-
-	// Script argument tuple: [key prefix, custom id, name, timestamp,
-	// parentKey, parentDependenciesKey, parent, repeatJobKey, deduplicationKey].
-	// The optional entries stay nil because this migration never creates
-	// parent, repeat or deduplicated jobs.
-	args, err := pack([]any{
-		q.keys.base, opts.JobID, name, time.Now().UnixMilli(),
-		nil, nil, nil, nil, nil,
-	})
-	if err != nil {
-		return "", err
-	}
-	encodedOpts, err := pack(addJobOptions{
+	attempts := opts.Attempts
+	return q.bull.Add(ctx, name, data, bullmq.JobOptions{
 		JobID:            opts.JobID,
-		Attempts:         opts.Attempts,
-		Backoff:          opts.Backoff,
-		RemoveOnComplete: opts.RemoveOnComplete,
-		RemoveOnFail:     opts.RemoveOnFail,
+		Attempts:         &attempts,
+		Backoff:          &bullmq.Backoff{Type: opts.Backoff.Type, Delay: opts.Backoff.Delay},
+		RemoveOnComplete: bullmq.KeepJobs{Age: opts.RemoveOnComplete.Age, Count: opts.RemoveOnComplete.Count},
+		RemoveOnFail:     bullmq.KeepJobs{Age: opts.RemoveOnFail.Age, Count: opts.RemoveOnFail.Count},
 	})
-	if err != nil {
-		return "", err
-	}
-
-	keys := []string{
-		q.keys.wait(),
-		q.keys.paused(),
-		q.keys.meta(),
-		q.keys.id(),
-		q.keys.completed(),
-		q.keys.delayed(),
-		q.keys.active(),
-		q.keys.events(),
-		q.keys.marker(),
-	}
-	result, err := scriptAddStandardJob.Run(ctx, q.rdb, keys,
-		string(args), string(data), string(encodedOpts)).Result()
-	if err != nil {
-		return "", fmt.Errorf("qualityqueue: add job %s: %w", opts.JobID, err)
-	}
-	switch value := result.(type) {
-	case string:
-		return value, nil
-	case int64:
-		// Negative codes are script-level failures; -5 means the parent key
-		// does not exist, which cannot happen for the jobs added here.
-		return "", fmt.Errorf("qualityqueue: add job %s failed with code %d", opts.JobID, value)
-	default:
-		return "", fmt.Errorf("qualityqueue: add job %s returned %T", opts.JobID, result)
-	}
 }

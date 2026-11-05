@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
 
@@ -197,7 +197,7 @@ func stripDLQEnvelope(data json.RawMessage) (dlqEnvelope, error) {
 		}
 	}
 	payload := encodeOrderedObject(stripped)
-	orgID := bullmqwire.OrgIDFromData(payload)
+	orgID := bullmq.OrgIDFromData(payload)
 	if orgID == "" {
 		return dlqEnvelope{}, newEnvelopeError("dead-letter payload has no orgId after the envelope was stripped; refusing to replay")
 	}
@@ -299,7 +299,7 @@ func (s *Service) replayOne(ctx context.Context, dlqJobID string, dryRun bool) (
 		return DLQReplayResult{}, fmt.Errorf("queueops: replay producer is not configured")
 	}
 	keys := s.queueKeys(dlqQueue)
-	job, err := bullmqwire.ReadJob(ctx, s.redis, keys, dlqJobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, keys, dlqJobID)
 	if err != nil {
 		return DLQReplayResult{}, err
 	}
@@ -407,7 +407,7 @@ func (s *Service) DeleteDLQBatch(ctx context.Context, actor Actor, dlqJobIDs []s
 // deleteOneDLQ is the shared single-job deletion used by both delete routes.
 func (s *Service) deleteOneDLQ(ctx context.Context, dlqJobID string) (DLQDeleteResult, error) {
 	keys := s.queueKeys(dlqQueue)
-	job, err := bullmqwire.ReadJob(ctx, s.redis, keys, dlqJobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, keys, dlqJobID)
 	if err != nil {
 		return DLQDeleteResult{}, err
 	}

@@ -12,14 +12,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/adminlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 )
@@ -143,12 +142,6 @@ func (p *Producer) WithPrefix(prefix string) *Producer {
 	return p
 }
 
-var (
-	addJobScript = redis.NewScript(addStandardJobLua)
-	stateScript  = redis.NewScript(getStateV2Lua)
-	removeScript = redis.NewScript(removeJobLua)
-)
-
 // EnsureDigestCoverage queues one digest prep job, deduping waiting/active/
 // delayed jobs and replacing any other state through the official locked
 // remove.
@@ -201,7 +194,7 @@ func (p *Producer) jobState(ctx context.Context, jobID string) (string, error) {
 		p.key("completed"), p.key("failed"), p.key("delayed"), p.key("active"),
 		p.key("wait"), p.key("paused"), p.key("waiting-children"), p.key("prioritized"),
 	}
-	value, err := stateScript.Run(ctx, p.redis, keys, jobID).Result()
+	value, err := bullmq.ScriptGetStateV2.Run(ctx, p.redis, keys, jobID).Result()
 	if err != nil {
 		return "", err
 	}
@@ -214,7 +207,7 @@ func (p *Producer) jobState(ctx context.Context, jobID string) (string, error) {
 
 func (p *Producer) removeJob(ctx context.Context, jobID string) error {
 	keys := []string{p.key(jobID), p.key("repeat")}
-	_, err := removeScript.Run(ctx, p.redis, keys, jobID, "0", p.basePrefix()).Result()
+	_, err := bullmq.ScriptRemoveJob.Run(ctx, p.redis, keys, jobID, "0", p.basePrefix()).Result()
 	return err
 }
 
@@ -223,49 +216,17 @@ func (p *Producer) addJob(ctx context.Context, payload Payload) error {
 	if err != nil {
 		return err
 	}
-	args := []any{
-		p.basePrefix(), payload.JobID(), QueueName, p.now().UnixMilli(),
-		nil, nil, nil, nil, nil,
-	}
-	packedArgs, err := msgpack.Marshal(args)
-	if err != nil {
-		return err
-	}
-	packedOpts, err := msgpack.Marshal(JobOptions{
-		Attempts:         5,
-		Backoff:          JobBackoff{Type: "exponential", Delay: 15000},
-		RemoveOnComplete: RemoveOnCompleteOpts{Age: StatusTTLSeconds, Count: 1000},
-		RemoveOnFail:     RemoveOnFailOpts{Age: 604800, Count: 10000},
+	attempts := int64(5)
+	completeAge, completeCount := int64(StatusTTLSeconds), int64(1000)
+	failAge, failCount := int64(604800), int64(10000)
+	_, err = bullmq.NewQueue(p.redis, p.prefix, QueueName).Add(ctx, QueueName, data, bullmq.JobOptions{
 		JobID:            payload.JobID(),
+		Attempts:         &attempts,
+		Backoff:          &bullmq.Backoff{Type: "exponential", Delay: 15000},
+		RemoveOnComplete: bullmq.KeepJobs{Age: &completeAge, Count: &completeCount},
+		RemoveOnFail:     bullmq.KeepJobs{Age: &failAge, Count: &failCount},
 	})
-	if err != nil {
-		return err
-	}
-	keys := []string{
-		p.key("wait"), p.key("paused"), p.key("meta"), p.key("id"), p.key("completed"),
-		p.key("delayed"), p.key("active"), p.key("events"), p.key("marker"),
-	}
-	result, err := addJobScript.Run(ctx, p.redis, keys, packedArgs, string(data), packedOpts).Result()
-	if err != nil {
-		return err
-	}
-	switch value := result.(type) {
-	case int64:
-		if value < 0 {
-			return fmt.Errorf("archive preparation addJob rejected with code %d", value)
-		}
-	case string:
-		if value == "" {
-			return errors.New("archive preparation addJob returned an empty id")
-		}
-	case []byte:
-		if len(value) == 0 {
-			return errors.New("archive preparation addJob returned an empty id")
-		}
-	default:
-		return errors.New("archive preparation addJob returned an unexpected result")
-	}
-	return nil
+	return err
 }
 
 // writeStatus stores the QUEUED record and trims the global index to 200.

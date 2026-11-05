@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/vmihailenco/msgpack/v5"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // EnqueueReplay adds one itemPipeline job with an explicit job id and the
@@ -43,43 +43,14 @@ func (p *Producer) EnqueueReplay(ctx context.Context, jobID string, data json.Ra
 		return "", err
 	}
 
-	jobOpts := jobOptions{
+	jobOpts := bullmq.JobOptions{
 		JobID:            jobID,
 		RemoveOnComplete: true,
-		RemoveOnFail:     failedRetention{Age: 7 * 24 * 60 * 60, Count: 10_000},
-		Attempts:         5,
-		Backoff:          backoffOptions{Type: "exponential", Delay: 2000},
+		RemoveOnFail:     bullmq.KeepJobs{Age: int64Ptr(7 * 24 * 60 * 60), Count: int64Ptr(10_000)},
+		Attempts:         int64Ptr(5),
+		Backoff:          &bullmq.Backoff{Type: "exponential", Delay: 2000},
 	}
-	packedOpts, err := msgpack.Marshal(jobOpts)
-	if err != nil {
-		return "", err
-	}
-
-	// BullMQ Redis wire protocol: the add script unpacks a positional MessagePack
-	// array. The parent, repeat and deduplication slots are null, exactly like
-	// EnqueueItem.
-	args := []any{
-		QueuePrefixKey,
-		jobID,
-		"process-item",
-		p.now().UnixMilli(),
-		nil, // parentKey
-		nil, // parentDependenciesKey
-		nil, // parent
-		nil, // repeatJobKey
-		nil, // deduplicationKey
-	}
-	packedArgs, err := msgpack.Marshal(args)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := p.redis.Eval(ctx, addStandardJobScript, standardJobKeys(), packedArgs,
-		string(data), packedOpts).Result()
-	if err != nil {
-		return "", err
-	}
-	jobIDResult, err := jobIDFromEval(result)
+	jobIDResult, err := p.queue.Add(ctx, "process-item", data, jobOpts)
 	if err != nil {
 		return "", err
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"testing"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 func sha256Hex(content []byte) string {
@@ -136,7 +138,7 @@ func TestMoveToDelayedScriptIsEmbedded(t *testing.T) {
 	if scripts.moveToDelayed == nil {
 		t.Fatal("loadQueueScripts() did not load moveToDelayed-8.lua")
 	}
-	content, err := scriptFiles.ReadFile("scripts/moveToDelayed-8.lua")
+	content, err := bullmq.ReadScript("moveToDelayed-8.lua")
 	if err != nil {
 		t.Fatalf("read embedded moveToDelayed-8.lua: %v", err)
 	}

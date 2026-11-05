@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // manualJobName is the BullMQ job name of a one-off fetch.
@@ -20,6 +22,7 @@ const manualJobName = "manual-fetch"
 // Go worker and the queue-ops console.
 type Producer struct {
 	redis   *redis.Client
+	name    string
 	keys    keySpace
 	scripts queueScripts
 }
@@ -31,7 +34,7 @@ func NewProducer(client *redis.Client) *Producer {
 }
 
 func newProducerWithName(client *redis.Client, name string) *Producer {
-	return &Producer{redis: client, keys: newKeySpace(Prefix, name), scripts: defaultQueueScripts}
+	return &Producer{redis: client, name: name, keys: newKeySpace(Prefix, name), scripts: defaultQueueScripts}
 }
 
 // AddManual queues one manual-fetch job and returns immediately. It uses
@@ -46,56 +49,14 @@ func (p *Producer) AddManual(ctx context.Context, data JobData) (string, error) 
 		return "", err
 	}
 	now := time.Now().UnixMilli()
-	args, err := pack([]any{
-		p.keys.base,
-		"", // let addStandardJob INCR the id
-		manualJobName,
-		now,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	})
-	if err != nil {
-		return "", err
-	}
-	opts, err := pack(manualOptions{
+	attempts := int64(0)
+	age, count := int64(FailedJobRetentionAgeSeconds), int64(FailedJobRetentionCount)
+	return bullmq.NewQueue(p.redis, Prefix, p.name).Add(ctx, manualJobName, json.RawMessage(rawData), bullmq.JobOptions{
+		Attempts:         &attempts,
 		RemoveOnComplete: true,
-		RemoveOnFail: KeepJobs{
-			Age:   int64Ptr(FailedJobRetentionAgeSeconds),
-			Count: int64Ptr(FailedJobRetentionCount),
-		},
-		Attempts:  0,
-		Timestamp: now,
+		RemoveOnFail:     bullmq.KeepJobs{Age: &age, Count: &count},
+		Timestamp:        &now,
 	})
-	if err != nil {
-		return "", err
-	}
-	keys := []string{
-		p.keys.wait(),
-		p.keys.paused(),
-		p.keys.meta(),
-		p.keys.id(),
-		p.keys.completed(),
-		p.keys.delayed(),
-		p.keys.active(),
-		p.keys.events(),
-		p.keys.marker(),
-	}
-	result, err := p.scripts.addStandardJob.Run(ctx, p.redis, keys,
-		string(args), string(rawData), string(opts)).Result()
-	if err != nil {
-		return "", err
-	}
-	switch value := result.(type) {
-	case string:
-		return value, nil
-	case int64:
-		return "", fmt.Errorf("economicqueue: add manual job failed with code %d", value)
-	default:
-		return "", fmt.Errorf("economicqueue: add manual job returned %T", result)
-	}
 }
 
 // manualOptions is the MessagePack job options addStandardJob stores. The stored

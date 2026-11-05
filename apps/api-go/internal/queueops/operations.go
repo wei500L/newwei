@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/bullmqwire"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 )
 
@@ -64,7 +64,7 @@ func (s *Service) Retry(ctx context.Context, actor Actor, queue, jobID string) (
 		return RetryResult{}, errRedisUnavailable
 	}
 	keys := s.queueKeys(name)
-	job, err := bullmqwire.ReadJob(ctx, s.redis, keys, jobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, keys, jobID)
 	if err != nil {
 		return RetryResult{}, err
 	}
@@ -104,7 +104,7 @@ func (s *Service) Delete(ctx context.Context, actor Actor, queue, jobID string) 
 	if s.redis == nil {
 		return DeleteResult{}, errRedisUnavailable
 	}
-	job, err := bullmqwire.ReadJob(ctx, s.redis, s.queueKeys(name), jobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, s.queueKeys(name), jobID)
 	if err != nil {
 		return DeleteResult{}, err
 	}
@@ -129,7 +129,7 @@ func (s *Service) Promote(ctx context.Context, actor Actor, queue, jobID string)
 		return PromoteResult{}, errRedisUnavailable
 	}
 	keys := s.queueKeys(name)
-	job, err := bullmqwire.ReadJob(ctx, s.redis, keys, jobID)
+	job, err := bullmq.ReadJob(ctx, s.redis, keys, jobID)
 	if err != nil {
 		return PromoteResult{}, err
 	}
@@ -185,7 +185,7 @@ func (s *Service) RetryFailed(ctx context.Context, actor Actor, queue string, li
 }
 
 // reprocessMany runs Job.retry for a page of ids in bounded pipelines.
-func (s *Service) reprocessMany(ctx context.Context, keys bullmqwire.Keys, ids []string) (int, error) {
+func (s *Service) reprocessMany(ctx context.Context, keys bullmq.Keys, ids []string) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
@@ -238,7 +238,7 @@ func (s *Service) reprocessMany(ctx context.Context, keys bullmqwire.Keys, ids [
 
 // pushCommands reads the lifo option of each job, exactly like Job.retry which
 // pushes to the tail (RPUSH) for a lifo job and to the head (LPUSH) otherwise.
-func (s *Service) pushCommands(ctx context.Context, keys bullmqwire.Keys, ids []string) ([]string, error) {
+func (s *Service) pushCommands(ctx context.Context, keys bullmq.Keys, ids []string) ([]string, error) {
 	pipe := s.redis.Pipeline()
 	commands := make([]*redis.StringCmd, len(ids))
 	for index, jobID := range ids {
@@ -282,7 +282,7 @@ func optionsLifo(options string) bool {
 }
 
 // retryKeys is the reprocessJob KEYS tuple of Job.retry(state="failed").
-func retryKeys(keys bullmqwire.Keys, jobID string) []string {
+func retryKeys(keys bullmq.Keys, jobID string) []string {
 	return []string{
 		keys.Job(jobID),
 		keys.Events,

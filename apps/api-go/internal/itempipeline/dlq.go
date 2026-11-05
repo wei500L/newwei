@@ -15,10 +15,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vmihailenco/msgpack/v5"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // orderedField is one member appended to the spread DLQ payload.
@@ -104,86 +104,36 @@ func mergeOrderedJSON(base json.RawMessage, fields []orderedField) (json.RawMess
 	return buffer.Bytes(), nil
 }
 
-// dlqProducer adds jobs to itemPipelineDlq through the official addStandardJob
-// script. It owns no worker; the DLQ is drained by whatever the deployment
-// configures (in legacy mode that remains NestJS).
+// dlqProducer adds jobs to itemPipelineDlq through the shared BullMQ Queue. It
+// owns no worker; the DLQ is drained by whatever the deployment configures.
 type dlqProducer struct {
-	client  *redis.Client
-	scripts queueScripts
-	keys    keys
+	queue *bullmq.Queue
+	keys  keys
 }
 
 func newDLQProducer(client *redis.Client, prefix string) (*dlqProducer, error) {
 	if client == nil {
 		return nil, fmt.Errorf("itempipeline: dlq producer requires a redis client")
 	}
-	scripts, err := loadQueueScripts()
-	if err != nil {
-		return nil, err
-	}
 	if prefix == "" {
 		prefix = DefaultPrefix
 	}
-	return &dlqProducer{client: client, scripts: scripts, keys: newKeys(prefix, DLQQueueName)}, nil
+	return &dlqProducer{
+		queue: bullmq.NewQueue(client, prefix, DLQQueueName),
+		keys:  newKeys(prefix, DLQQueueName),
+	}, nil
 }
 
 // enqueue adds the dead-letter job and returns the BullMQ job id.
 func (d *dlqProducer) enqueue(ctx context.Context, originalJobID string, attemptsMade int, data json.RawMessage) (string, error) {
 	jobID := fmt.Sprintf("dlq-%s-%s-%d", QueueName, originalJobID, attemptsMade)
-	options := dlqJobOptions{
+	age := int64(DLQRetentionAgeSeconds)
+	count := int64(DLQRetentionCount)
+	attempts := int64(1)
+	return d.queue.Add(ctx, "dlq", data, bullmq.JobOptions{
 		JobID:            jobID,
-		RemoveOnComplete: KeepJobs{Age: intPtr(DLQRetentionAgeSeconds), Count: intPtr(DLQRetentionCount)},
-		RemoveOnFail:     KeepJobs{Age: intPtr(DLQRetentionAgeSeconds), Count: intPtr(DLQRetentionCount)},
-		Attempts:         1,
-	}
-	packedOptions, err := msgpack.Marshal(options)
-	if err != nil {
-		return "", err
-	}
-	// BullMQ Redis wire protocol: positional MessagePack array; the parent,
-	// repeat and deduplication slots are null.
-	// BullMQ's add script builds the job hash key as ARGV[1] .. jobId, so the
-	// first argument is the queue key prefix (bull:itemPipelineDlq:), not the
-	// bare "bull" prefix.
-	args := []any{
-		d.keys.Base,
-		jobID,
-		"dlq",
-		time.Now().UnixMilli(),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	}
-	packedArgs, err := msgpack.Marshal(args)
-	if err != nil {
-		return "", err
-	}
-	keys := []string{
-		d.keys.Wait,
-		d.keys.Paused,
-		d.keys.Meta,
-		d.keys.ID,
-		d.keys.Completed,
-		d.keys.Delayed,
-		d.keys.Active,
-		d.keys.Events,
-		d.keys.Marker,
-	}
-	result, err := d.client.Eval(ctx, addStandardJobScript(), keys, packedArgs, string(data), packedOptions).Result()
-	if err != nil {
-		return "", err
-	}
-	switch value := result.(type) {
-	case string:
-		return value, nil
-	case int64:
-		if value < 0 {
-			return "", fmt.Errorf("itempipeline: dlq add rejected with BullMQ code %d", value)
-		}
-		return fmt.Sprintf("%d", value), nil
-	default:
-		return fmt.Sprintf("%v", value), nil
-	}
+		RemoveOnComplete: bullmq.KeepJobs{Age: &age, Count: &count},
+		RemoveOnFail:     bullmq.KeepJobs{Age: &age, Count: &count},
+		Attempts:         &attempts,
+	})
 }

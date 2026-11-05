@@ -2,51 +2,34 @@ package queueops
 
 import (
 	"context"
-	"embed"
-	"fmt"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
-
-// scriptFiles holds the expanded BullMQ 5.63.2 scripts this package executes.
-// See NOTICE for the provenance, the KEYS/ARGV tuples and the licence of every
-// file.
-//
-//go:embed scripts/*.lua
-var scriptFiles embed.FS
-
-// mustScript loads one embedded script. A missing file is a programming error,
-// so it panics at init instead of failing an operation at runtime.
-func mustScript(name string) *redis.Script {
-	raw, err := scriptFiles.ReadFile("scripts/" + name + ".lua")
-	if err != nil {
-		panic(fmt.Sprintf("queueops: embedded script %s is missing: %v", name, err))
-	}
-	return redis.NewScript(string(raw))
-}
 
 var (
 	// scriptGetCounts is BullMQ's getCounts command. One call reads every state
 	// count of one queue, and the waiting/paused lists are read through the
 	// deprecated marker handling the script owns.
-	scriptGetCounts = mustScript("getCounts")
+	scriptGetCounts = bullmq.ScriptGetCounts
 	// scriptGetRanges is BullMQ's getJobs range reader.
-	scriptGetRanges = mustScript("getRanges")
+	scriptGetRanges = bullmq.ScriptGetRanges
 	// scriptRemoveJob removes one job from any state and all of its data. It
 	// refuses a locked job (returns 0) and reports a job-scheduler job as -8.
-	scriptRemoveJob = mustScript("removeJob")
+	scriptRemoveJob = bullmq.ScriptRemoveJob
 	// scriptCleanJobsInSet deletes jobs of one state set by age and emits the
 	// cleaned event BullMQ's Queue.clean emits.
-	scriptCleanJobsInSet = mustScript("cleanJobsInSet")
+	scriptCleanJobsInSet = bullmq.ScriptCleanJobsInSet
 	// scriptReprocessJob is Job.retry(): it moves a failed/completed job back to
 	// the wait or paused list and emits the waiting event.
-	scriptReprocessJob = mustScript("reprocessJob")
+	scriptReprocessJob = bullmq.ScriptReprocessJob
 	// scriptPromote is Job.promote(): it moves a delayed job to the wait list (or
 	// the prioritized set) and emits the waiting event.
-	scriptPromote = mustScript("promote")
+	scriptPromote = bullmq.ScriptPromote
 	// scriptPause is Queue.pause/Queue.resume: it moves the wait list to the
 	// paused list (or back), flips meta.paused and republishes the marker.
-	scriptPause = mustScript("pause")
+	scriptPause = bullmq.ScriptPause
 )
 
 // allScripts is the set primed before a pipelined script call.

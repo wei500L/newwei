@@ -4,21 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
-// Producer adds analysis jobs to the BullMQ `analysis` queue using the official
-// standard-add script. The caller inserts the pending analysisresults document
-// first; a failed enqueue is returned as an error so the GraphQL mutation fails
-// instead of pretending the run was accepted. There is deliberately no
-// cross-store outbox: a Mongo insert followed by a Redis failure can leave a
-// pending row behind, which is the same boundary the NestJS submit path has.
+// Producer adds analysis jobs to the BullMQ `analysis` queue through the shared
+// bullmq.Queue. The caller inserts the pending analysisresults document first; a
+// failed enqueue is returned as an error so the GraphQL mutation fails instead of
+// pretending the run was accepted. There is deliberately no cross-store outbox: a
+// Mongo insert followed by a Redis failure can leave a pending row behind, which
+// is the same boundary the NestJS submit path has.
 type Producer struct {
-	client     *redis.Client
-	keys       keys
-	scripts    queueScripts
+	queue      *bullmq.Queue
 	maxRetries int
 }
 
@@ -28,19 +27,10 @@ func NewProducer(client *redis.Client, prefix string, maxRetries int) (*Producer
 	if client == nil {
 		return nil, fmt.Errorf("analysisqueue: producer requires a redis client")
 	}
-	scripts, err := loadQueueScripts()
-	if err != nil {
-		return nil, err
-	}
 	if maxRetries < 1 {
 		maxRetries = 1
 	}
-	return &Producer{
-		client:     client,
-		keys:       newKeys(prefix, QueueName),
-		scripts:    scripts,
-		maxRetries: maxRetries,
-	}, nil
+	return &Producer{queue: bullmq.NewQueue(client, prefix, QueueName), maxRetries: maxRetries}, nil
 }
 
 // Add enqueues one analysis job and returns its BullMQ job id
@@ -50,7 +40,7 @@ func NewProducer(client *redis.Client, prefix string, maxRetries int) (*Producer
 // retention ({age:604800,count:10000}) reproduce the NestJS queue.add options.
 // The source submit path has no backoff, so no backoff option is written.
 func (p *Producer) Add(ctx context.Context, payload Payload) (string, error) {
-	if p == nil || p.client == nil {
+	if p == nil || p.queue == nil {
 		return "", fmt.Errorf("analysisqueue: producer is not configured")
 	}
 	if payload.AnalysisID == "" {
@@ -66,51 +56,19 @@ func (p *Producer) Add(ctx context.Context, payload Payload) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("analysisqueue: encode job data: %w", err)
 	}
-	opts := defaultRedisJobOptions(p.maxRetries)
-	packedOpts, err := pack(opts)
-	if err != nil {
-		return "", err
-	}
-	packedArgs, err := pack([]any{
-		p.keys.Base,
-		jobID,
-		payload.Type,
-		time.Now().UnixMilli(),
-		nil, // parentKey
-		nil, // parent dependencies key
-		nil, // parent data
-		nil, // repeat job key
-		nil, // deduplication key
+	attempts := int64(p.maxRetries)
+	age, count := int64(FailedRetentionAgeSeconds), int64(FailedRetentionCount)
+	jobIDResult, err := p.queue.Add(ctx, payload.Type, data, bullmq.JobOptions{
+		JobID:            jobID,
+		Attempts:         &attempts,
+		RemoveOnComplete: true,
+		RemoveOnFail:     bullmq.KeepJobs{Age: &age, Count: &count},
 	})
-	if err != nil {
-		return "", err
-	}
-
-	result, err := p.scripts.addStandardJob.Run(ctx, p.client,
-		[]string{
-			p.keys.Wait,
-			p.keys.Paused,
-			p.keys.Meta,
-			p.keys.ID,
-			p.keys.Completed,
-			p.keys.Delayed,
-			p.keys.Active,
-			p.keys.Events,
-			p.keys.Marker,
-		},
-		packedArgs,
-		string(data),
-		packedOpts,
-	).Result()
 	if err != nil {
 		return "", fmt.Errorf("analysisqueue: add job: %w", err)
 	}
-	if code := toInt64(result); code < 0 {
-		return "", fmt.Errorf("analysisqueue: add job rejected with BullMQ code %d", code)
-	}
-	returned := toText(result)
-	if returned == "" {
+	if jobIDResult == "" {
 		return "", fmt.Errorf("analysisqueue: add job returned no job id")
 	}
-	return returned, nil
+	return jobIDResult, nil
 }
