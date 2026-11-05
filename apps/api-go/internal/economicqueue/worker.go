@@ -1,32 +1,29 @@
 package economicqueue
 
+// The akshare-data consumer now runs on the shared bullmq.Worker state machine.
+// This file keeps only the queue name, the business Handler signature, the
+// WorkerOptions and the repeat scheduling hook; the loop, lock renewal, finish,
+// retry and stalled recovery live in internal/bullmq. It also keeps a few small
+// delegates used by the queue's own protocol tests to claim and finish a job
+// without a second worker loop.
+
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"log"
-	"strconv"
-	"sync"
-	"sync/atomic"
+	"encoding/json"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 )
 
 // Handler processes one claimed job. Returning an error moves the job to the
-// failed set; the handler is responsible for persisting the user-visible fetch
-// status exactly once and must stop when ctx is cancelled (worker shutdown or a
-// lost job lock).
+// failed set; the handler persists the user-visible fetch status exactly once and
+// must stop when ctx is cancelled.
 type Handler func(ctx context.Context, job Job) error
 
 // WorkerOptions configures the BullMQ-compatible consumer. Zero values fall back
-// to the BullMQ 5.63.2 defaults, except LockDuration which defaults to five
-// minutes because the longest provider chain (three retries at up to 20s plus
-// backoff) must fit inside one claim.
+// to this queue's historical defaults (concurrency 2, five-minute lock).
 type WorkerOptions struct {
 	Concurrency     int
 	LockDuration    time.Duration
@@ -46,8 +43,6 @@ func (o WorkerOptions) normalized() WorkerOptions {
 	if o.StalledInterval <= 0 {
 		o.StalledInterval = 30 * time.Second
 	}
-	// BullMQ's own default is 1; zero therefore selects the default instead of
-	// "fail on the first recovered lock".
 	if o.MaxStalledCount <= 0 {
 		o.MaxStalledCount = 1
 	}
@@ -60,522 +55,161 @@ func (o WorkerOptions) normalized() WorkerOptions {
 	return o
 }
 
-// Worker is the single consumer of bull:akshare-data. It uses the official
-// BullMQ state-machine Lua scripts so a job it moves is byte-compatible with
-// the queue-ops console and with any job left by the retired NestJS worker.
-//
-// Lease lifecycle: moveToActive creates the per-job lock and a fresh token; the
-// renewal goroutine extends it every lockDuration/2. A renewal failure or a lock
-// owned by another token cancels the handler context and skips the finish call,
-// so a stale executor can never delete a new lock, remove a new active entry or
-// overwrite a newer terminal state. Jobs abandoned this way stay in the active
-// list and are recovered by the stalled checker.
+// Worker consumes bull:akshare-data.
 type Worker struct {
-	redis    *redis.Client
-	producer *Producer
+	inner    *bullmq.Worker
 	handler  Handler
 	opts     WorkerOptions
-	keys     keySpace
-	scripts  queueScripts
-	tokens   *tokenSource
-
-	stop       context.CancelFunc
-	jobCtx     context.Context
-	cancelJobs context.CancelFunc
-	runDone    chan struct{}
-	started    atomic.Bool
-	once       sync.Once
-	mu         sync.Mutex
+	producer *Producer
 }
 
-// NewWorker creates a worker. The caller owns the Redis client and closes it
-// after Close returns.
+// NewWorker creates a worker bound to the production queue.
 func NewWorker(client *redis.Client, handler Handler, opts WorkerOptions) *Worker {
-	jobCtx, cancelJobs := context.WithCancel(context.Background())
-	return &Worker{
-		redis:      client,
-		producer:   NewProducer(client),
-		handler:    handler,
-		opts:       opts.normalized(),
-		keys:       newKeySpace(Prefix, QueueName),
-		scripts:    defaultQueueScripts,
-		tokens:     newTokenSource(),
-		jobCtx:     jobCtx,
-		cancelJobs: cancelJobs,
-		runDone:    make(chan struct{}),
-	}
+	return newWorkerNamed(client, handler, opts, QueueName)
 }
 
-// newWorkerWithName builds a worker bound to a scratch queue name. Integration
-// tests use it so a run never touches the production akshare-data key space.
+// newWorkerWithName binds a worker to a scratch queue name for integration tests.
 func newWorkerWithName(client *redis.Client, handler Handler, opts WorkerOptions, name string) *Worker {
-	worker := NewWorker(client, handler, opts)
-	worker.keys = newKeySpace(Prefix, name)
-	worker.producer = newProducerWithName(client, name)
+	return newWorkerNamed(client, handler, opts, name)
+}
+
+func newWorkerNamed(client *redis.Client, handler Handler, opts WorkerOptions, name string) *Worker {
+	normalized := opts.normalized()
+	worker := &Worker{handler: handler, opts: normalized, producer: newProducerWithName(client, name)}
+	inner, err := bullmq.NewWorker(client, nil, name, func(ctx context.Context, job *bullmq.Job) (json.RawMessage, error) {
+		if worker.handler == nil {
+			return nil, nil
+		}
+		return nil, worker.handler(ctx, jobFromBullmq(job))
+	}, bullmq.WorkerOptions{
+		Prefix:             Prefix,
+		Name:               normalized.Name,
+		Concurrency:        normalized.Concurrency,
+		LockDuration:       normalized.LockDuration,
+		StalledInterval:    normalized.StalledInterval,
+		MaxStalledCount:    normalized.MaxStalledCount,
+		PollInterval:       normalized.PollInterval,
+		FailureReasonLimit: 191,
+		Stacktrace:         func(string) string { return "[]" },
+		OnClaim: func(ctx context.Context, job *bullmq.Job) {
+			adapted := jobFromBullmq(job)
+			if adapted.RepeatJobKey == "" {
+				return
+			}
+			if err := worker.producer.ScheduleNextRepeat(ctx, adapted); err != nil {
+				// BullMQ schedules the next repeat before the processor runs, so a
+				// failure here must not stop the fetch.
+				_ = err
+			}
+		},
+	})
+	if err == nil {
+		worker.inner = inner
+	}
 	return worker
 }
 
-// Run blocks until ctx is cancelled and every in-flight job has completed. Call
-// it in a goroutine after catalog and repeat synchronization.
+// Run blocks until ctx is cancelled and every in-flight job has completed.
 func (w *Worker) Run(ctx context.Context) {
-	if w == nil || w.redis == nil || w.handler == nil {
+	if w == nil || w.inner == nil {
 		return
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	w.mu.Lock()
-	w.stop = cancel
-	w.mu.Unlock()
-	w.started.Store(true)
-	log.Printf("economicqueue: akshare worker started concurrency=%d", w.opts.Concurrency)
-
-	var loops sync.WaitGroup
-	loops.Add(1)
-	safego.Go("economicqueue.worker.stalledLoop", func() {
-		defer loops.Done()
-		w.stalledLoop(runCtx)
-	})
-	for index := 0; index < w.opts.Concurrency; index++ {
-		loops.Add(1)
-		safego.Go("economicqueue.worker.fetchLoop", func() {
-			defer loops.Done()
-			w.fetchLoop(runCtx)
-		})
-	}
-
-	<-runCtx.Done()
-	// Stop claiming new work, let in-flight handlers drain, then release the
-	// handler contexts. Close cancels w.jobCtx at its deadline so a stuck
-	// handler cannot hold the process open forever.
-	loops.Wait()
-	close(w.runDone)
-	if w.cancelJobs != nil {
-		w.cancelJobs()
-	}
-	log.Printf("economicqueue: akshare worker stopped")
+	w.inner.Run(ctx)
 }
 
 // Close stops the loop and waits for in-flight jobs.
 func (w *Worker) Close(ctx context.Context) error {
-	if w == nil {
+	if w == nil || w.inner == nil {
 		return nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	w.once.Do(func() {
-		w.mu.Lock()
-		stop := w.stop
-		w.mu.Unlock()
-		if stop != nil {
-			stop()
-		}
-	})
-	if !w.started.Load() {
-		return nil
-	}
-	done := make(chan struct{})
-	go func() {
-		<-w.runDone
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		if w.cancelJobs != nil {
-			w.cancelJobs()
-		}
-		grace, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		select {
-		case <-done:
-			return nil
-		case <-grace.Done():
-			return fmt.Errorf("economicqueue: in-flight jobs did not stop before the shutdown deadline")
-		}
-	}
+	return w.inner.Close(ctx)
 }
 
-func (w *Worker) fetchLoop(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		var job *Job
-		err := safego.Call("economicqueue.worker.moveToActive", func() error {
-			var claimErr error
-			job, claimErr = w.moveToActive(ctx)
-			return claimErr
-		})
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			log.Printf("economicqueue: claim job failed: %v", err)
-			if !sleepContext(ctx, time.Second) {
-				return
-			}
-			continue
-		}
-		if job == nil {
-			if !sleepContext(ctx, w.opts.PollInterval) {
-				return
-			}
-			continue
-		}
-		// BullMQ schedules the next repeat before the processor runs, so a
-		// failed fetch does not stop the schedule. The guard inside
-		// ScheduleNextRepeat keeps a deleted/replaced schedule dead.
-		if job.RepeatJobKey != "" {
-			if err := w.producer.ScheduleNextRepeat(ctx, *job); err != nil {
-				log.Printf("economicqueue: schedule next repeat for %s failed: %v", job.ID, err)
-			}
-		}
-		_ = safego.Call("economicqueue.worker.process", func() error {
-			w.process(ctx, *job)
-			return nil
-		})
-	}
-}
-
-// moveToActive atomically promotes due delayed jobs, honors meta.paused, moves
-// one job from the correct list into active and takes its lock. A nil job means
-// the queue is empty or paused.
+// moveToActive claims one job for the protocol tests.
 func (w *Worker) moveToActive(ctx context.Context) (*Job, error) {
-	token := w.tokens.Next()
-	opts, err := pack(moveToActiveOptions{
-		Token:        token,
-		LockDuration: w.opts.LockDuration.Milliseconds(),
-		Name:         w.opts.Name,
-	})
-	if err != nil {
-		return nil, err
-	}
-	keys := []string{
-		w.keys.wait(),
-		w.keys.active(),
-		w.keys.prioritized(),
-		w.keys.events(),
-		w.keys.stalled(),
-		w.keys.limiter(),
-		w.keys.delayed(),
-		w.keys.paused(),
-		w.keys.meta(),
-		w.keys.priorityCounter(),
-		w.keys.marker(),
-	}
-	result, err := w.scripts.moveToActive.Run(ctx, w.redis, keys, w.keys.base, time.Now().UnixMilli(), string(opts)).Result()
-	if err != nil {
-		return nil, err
-	}
-	values, ok := result.([]any)
-	if !ok || len(values) < 2 {
-		return nil, fmt.Errorf("economicqueue: unexpected moveToActive reply %T", result)
-	}
-	jobID, _ := values[1].(string)
-	if jobID == "" {
+	if w == nil || w.inner == nil {
 		return nil, nil
 	}
-	fields := map[string]string{}
-	if raw, ok := values[0].([]any); ok {
-		fields = flattenPairs(raw)
+	job, _, err := w.inner.Claim(ctx)
+	if job == nil {
+		return nil, err
 	}
-	if len(fields) == 0 {
-		// The wait entry outlived its job hash; drop our active entry and
-		// release the lock so the stale id does not linger.
-		_ = w.redis.LRem(ctx, w.keys.active(), 1, jobID).Err()
-		_ = w.release(ctx, jobID, token)
-		return nil, fmt.Errorf("job hash missing")
-	}
-	job := jobFromFields(jobID, fields, token)
-	return &job, nil
+	adapted := jobFromBullmq(job)
+	return &adapted, err
 }
 
-func (w *Worker) process(parent context.Context, job Job) {
-	_ = parent
-	jobCtx, cancelJob := context.WithCancelCause(w.jobCtx)
-	var leaseLost atomic.Bool
-	renewDone := make(chan struct{})
-	safego.Go("economicqueue.worker.renewLock", func() {
-		w.renewLock(jobCtx, job, cancelJob, &leaseLost, renewDone)
-	})
-
-	var handlerErr error
-	if job.DeferredFailure != "" {
-		// BullMQ marked this job unrecoverable ("job stalled more than
-		// allowable limit") when it exceeded MaxStalledCount. Fail it without
-		// running the fetch so a terminal stall is never reported as success.
-		handlerErr = errors.New(job.DeferredFailure)
-	} else {
-		handlerErr = safego.Call("economicqueue.worker.handle", func() error {
-			return w.handler(jobCtx, job)
-		})
-	}
-	close(renewDone)
-	cancelJob(nil)
-
-	if w.jobCtx.Err() != nil {
-		// Shutdown deadline: leave the job active. Its lock expires and stalled
-		// recovery hands it to the next attempt.
+// process runs one claimed job for the protocol tests.
+func (w *Worker) process(ctx context.Context, job Job) {
+	if w == nil || w.inner == nil {
 		return
 	}
-	var leaseErr *LeaseLostError
-	if errors.As(handlerErr, &leaseErr) || leaseLost.Load() {
-		log.Printf("economicqueue: lease lost for job %s; leaving it to stalled recovery", job.ID)
-		return
-	}
-	finishCtx, cancelFinish := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancelFinish()
-	if handlerErr == nil {
-		w.finish(finishCtx, job, "completed", nil)
-		return
-	}
-	w.finish(finishCtx, job, "failed", handlerErr)
+	w.inner.ProcessOne(ctx, jobToBullmq(job))
 }
 
-// renewLock extends the job lock every lockDuration/2. A failed renewal or a
-// lock owned by another token cancels the handler: the attempt stops writing and
-// cannot record a terminal state.
-func (w *Worker) renewLock(ctx context.Context, job Job, cancel context.CancelCauseFunc, lost *atomic.Bool, done <-chan struct{}) {
-	interval := w.opts.LockDuration / 2
-	if interval <= 0 {
-		return
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			extended, err := w.scripts.extendLock.Run(ctx, w.redis,
-				[]string{w.keys.lock(job.ID), w.keys.stalled()},
-				job.Token,
-				w.opts.LockDuration.Milliseconds(),
-				job.ID,
-			).Int64()
-			if err != nil {
-				if ctx.Err() == nil {
-					log.Printf("economicqueue: renew lock %s: %v", job.ID, err)
-				}
-				lost.Store(true)
-				cancel(ErrLeaseLost)
-				return
-			}
-			if extended == 0 {
-				lost.Store(true)
-				cancel(ErrLeaseLost)
-				return
-			}
-		}
-	}
-}
-
-// finish moves one job to completed or failed through moveToFinished, which
-// checks the lock token before touching active/terminal state. cause is nil for
-// a success.
+// finish moves one job to completed or failed for the protocol tests.
 func (w *Worker) finish(ctx context.Context, job Job, target string, cause error) {
-	property := "returnvalue"
-	value := "null"
-	keep := keepOnComplete(job.Opts)
-	encodedFields := ""
-	if target == "failed" {
-		reason := truncateReason(cause)
-		property = "failedReason"
-		value = reason
-		keep = keepOnFail(job.Opts)
-		packed, err := pack([]string{"failedReason", reason, "stacktrace", "[]"})
-		if err != nil {
-			log.Printf("economicqueue: encode failure fields for %s: %v", job.ID, err)
-			return
-		}
-		encodedFields = string(packed)
-	}
-	opts, err := pack(finishOptions{
-		Token:          job.Token,
-		KeepJobs:       keep,
-		LockDuration:   w.opts.LockDuration.Milliseconds(),
-		Attempts:       job.Opts.Attempts,
-		MaxMetricsSize: "",
-	})
-	if err != nil {
-		log.Printf("economicqueue: encode finish options for %s: %v", job.ID, err)
+	if w == nil || w.inner == nil {
 		return
 	}
-	targetKey := w.keys.completed()
+	adapted := jobToBullmq(job)
 	if target == "failed" {
-		targetKey = w.keys.failed()
-	}
-	keys := []string{
-		w.keys.wait(),
-		w.keys.active(),
-		w.keys.prioritized(),
-		w.keys.events(),
-		w.keys.stalled(),
-		w.keys.limiter(),
-		w.keys.delayed(),
-		w.keys.paused(),
-		w.keys.meta(),
-		w.keys.priorityCounter(),
-		targetKey,
-		w.keys.job(job.ID),
-		w.keys.base + "metrics:" + target,
-		w.keys.marker(),
-	}
-	result, err := w.scripts.moveToFinished.Run(ctx, w.redis, keys,
-		job.ID,
-		time.Now().UnixMilli(),
-		property,
-		value,
-		target,
-		"0", // never prefetch: this loop claims the next job itself
-		w.keys.base,
-		string(opts),
-		encodedFields,
-	).Result()
-	if err != nil {
-		log.Printf("economicqueue: finish job %s as %s: %v", job.ID, target, err)
+		w.inner.FinishFailed(ctx, adapted, cause)
 		return
 	}
-	if code := toInt64(result); code < 0 {
-		// -2 missing lock / -3 not in active / -6 lock not owned: another
-		// executor owns this job now, so this stale finish is correctly ignored.
-		log.Printf("economicqueue: finish job %s as %s rejected with BullMQ code %d", job.ID, target, code)
-	}
+	w.inner.FinishCompleted(ctx, adapted, nil)
 }
 
-// release deletes the lock only when this worker still owns it.
-func (w *Worker) release(ctx context.Context, jobID, token string) error {
-	script := `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0`
-	return w.redis.Eval(ctx, script, []string{w.keys.lock(jobID)}, token).Err()
-}
-
-func (w *Worker) stalledLoop(ctx context.Context) {
-	timer := time.NewTimer(0)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			_ = safego.Call("economicqueue.worker.checkStalled", func() error {
-				w.checkStalled(ctx)
-				return nil
-			})
-			timer.Reset(w.opts.StalledInterval)
-		}
-	}
-}
-
-// checkStalled recovers jobs whose lock expired. moveStalledJobsToWait only
-// moves a job back to wait when its lock is missing, honors paused state, and
-// fails a non-repeat job that exceeds MaxStalledCount with the defa marker.
+// checkStalled runs one stalled-recovery pass for the protocol tests.
 func (w *Worker) checkStalled(ctx context.Context) {
-	keys := []string{
-		w.keys.stalled(),
-		w.keys.wait(),
-		w.keys.active(),
-		w.keys.stalledCheck(),
-		w.keys.meta(),
-		w.keys.paused(),
-		w.keys.marker(),
-		w.keys.events(),
-	}
-	result, err := w.scripts.moveStalledJobsToWait.Run(ctx, w.redis, keys,
-		w.opts.MaxStalledCount,
-		w.keys.base,
-		time.Now().UnixMilli(),
-		w.opts.StalledInterval.Milliseconds(),
-	).Result()
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Printf("economicqueue: stalled checker: %v", err)
-		}
+	if w == nil || w.inner == nil {
 		return
 	}
-	if values, ok := result.([]any); ok && len(values) > 0 {
-		log.Printf("economicqueue: recovered %d stalled job(s)", len(values))
-	}
+	w.inner.CheckStalled(ctx)
 }
 
-func sleepContext(ctx context.Context, duration time.Duration) bool {
-	if duration <= 0 {
-		return ctx.Err() == nil
+// jobFromBullmq adapts the shared job into the business job view.
+func jobFromBullmq(job *bullmq.Job) Job {
+	if job == nil {
+		return Job{}
 	}
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
+	adapted := Job{
+		ID:              job.ID,
+		Name:            job.Name,
+		Data:            job.Data,
+		Token:           job.Token,
+		Timestamp:       job.Timestamp,
+		Delay:           job.Delay,
+		RepeatJobKey:    job.RepeatJobKey,
+		AttemptsMade:    job.AttemptsMade,
+		StalledCount:    job.StalledCount,
+		DeferredFailure: job.DeferredFailure,
 	}
+	if raw := job.Opts; len(raw) > 0 {
+		_ = json.Unmarshal(raw, &adapted.Opts)
+	}
+	if adapted.Opts.RepeatJobKey == "" {
+		adapted.Opts.RepeatJobKey = adapted.RepeatJobKey
+	}
+	return adapted
 }
 
-// truncateReason matches the NestJS failedReason length cap of 191 runes.
-func truncateReason(err error) string {
-	if err == nil {
-		return ""
+// jobToBullmq is the inverse adapter used by the low-level protocol delegates.
+func jobToBullmq(job Job) *bullmq.Job {
+	opts, err := json.Marshal(job.Opts)
+	if err != nil {
+		opts = json.RawMessage("{}")
 	}
-	reason := err.Error()
-	runes := []rune(reason)
-	if len(runes) > 191 {
-		return string(runes[:188]) + "..."
+	return &bullmq.Job{
+		ID:              job.ID,
+		Name:            job.Name,
+		Data:            job.Data,
+		Opts:            opts,
+		Token:           job.Token,
+		Timestamp:       job.Timestamp,
+		Delay:           job.Delay,
+		RepeatJobKey:    job.RepeatJobKey,
+		AttemptsMade:    job.AttemptsMade,
+		StalledCount:    job.StalledCount,
+		DeferredFailure: job.DeferredFailure,
 	}
-	return reason
-}
-
-func toInt64(value any) int64 {
-	switch typed := value.(type) {
-	case int64:
-		return typed
-	case int:
-		return int64(typed)
-	case string:
-		parsed, _ := strconv.ParseInt(typed, 10, 64)
-		return parsed
-	case []byte:
-		parsed, _ := strconv.ParseInt(string(typed), 10, 64)
-		return parsed
-	default:
-		return 0
-	}
-}
-
-// ErrLeaseLost is the cancel cause used when lock renewal fails or the lock
-// belongs to another token.
-var ErrLeaseLost = errors.New("economicqueue: job lock was lost")
-
-// LeaseLostError tells the worker that this attempt no longer owns the job
-// lease; a handler may return it to skip the terminal write explicitly.
-type LeaseLostError struct{ Reason string }
-
-func (e *LeaseLostError) Error() string {
-	if e == nil || e.Reason == "" {
-		return "economicqueue: lease lost"
-	}
-	return "economicqueue: lease lost: " + e.Reason
-}
-
-// tokenSource produces a unique BullMQ lock token per fetched job.
-type tokenSource struct {
-	id      string
-	counter atomic.Uint64
-}
-
-func newTokenSource() *tokenSource {
-	var buf [12]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return &tokenSource{id: "akshare-data-go"}
-	}
-	return &tokenSource{id: "akshare-data-go-" + hex.EncodeToString(buf[:])}
-}
-
-func (t *tokenSource) Next() string {
-	return t.id + ":" + strconv.FormatUint(t.counter.Add(1), 10)
 }
