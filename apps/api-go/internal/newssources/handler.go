@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -122,7 +123,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveOptions(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +136,7 @@ func (h *Handler) serveOptions(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveGroups(w http.ResponseWriter, r *http.Request) {
@@ -148,14 +149,14 @@ func (h *Handler) serveGroups(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) servePresets(w http.ResponseWriter, r *http.Request) {
 	if h.authorize(w, r, permRead) == nil {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.svc.Presets())
+	httpx.WriteJSON(w, http.StatusOK, h.svc.Presets())
 }
 
 func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +178,7 @@ func (h *Handler) serveCreate(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveUpdate(w http.ResponseWriter, r *http.Request, id string) {
@@ -199,7 +200,7 @@ func (h *Handler) serveUpdate(w http.ResponseWriter, r *http.Request, id string)
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDelete(w http.ResponseWriter, r *http.Request, id string) {
@@ -211,7 +212,7 @@ func (h *Handler) serveDelete(w http.ResponseWriter, r *http.Request, id string)
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *Handler) serveRun(w http.ResponseWriter, r *http.Request, id string) {
@@ -224,7 +225,7 @@ func (h *Handler) serveRun(w http.ResponseWriter, r *http.Request, id string) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveSchedule(w http.ResponseWriter, r *http.Request, id string) {
@@ -246,7 +247,7 @@ func (h *Handler) serveSchedule(w http.ResponseWriter, r *http.Request, id strin
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveFrequency(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +269,7 @@ func (h *Handler) serveFrequency(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) servePreview(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +286,7 @@ func (h *Handler) servePreview(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveImport(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +303,7 @@ func (h *Handler) serveImport(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveGroup(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +325,7 @@ func (h *Handler) serveGroup(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveActive(w http.ResponseWriter, r *http.Request) {
@@ -346,7 +347,7 @@ func (h *Handler) serveActive(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveBatchDelete(w http.ResponseWriter, r *http.Request) {
@@ -368,7 +369,7 @@ func (h *Handler) serveBatchDelete(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, permission string) *authhttp.Identity {
@@ -474,15 +475,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

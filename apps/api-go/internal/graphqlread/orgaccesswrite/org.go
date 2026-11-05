@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -61,7 +62,7 @@ func (s *service) createOrgForActor(ctx context.Context, actorID, rawName, rawSl
 // duplicate-key error is reported as the slug conflict, matching the P2002
 // mapping in OrgService.createOrg.
 func (s *service) insertOrg(ctx context.Context, actorID, name, slug string, description *string) (workspace.OrgModel, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return workspace.OrgModel{}, err
@@ -241,7 +242,7 @@ func (s *service) updateOrg(ctx contract.Context, input updateOrgInput) (workspa
 		// The audit keeps the raw value, matching the NestJS metadata literal.
 		metadata.Description = auditString(input.Description)
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	assignments = append(assignments, "updatedAt = ?")
 	args = append(args, now, orgID)
 
@@ -276,7 +277,7 @@ func (s *service) setOrgActive(ctx contract.Context, input setOrgActiveInput) (w
 	if err := s.assertActorCanManageOrg(callCtx, ctx.Identity.UserID, orgID); err != nil {
 		return workspace.OrgModel{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(callCtx,
 		"UPDATE Org SET isActive = ?, updatedAt = ? WHERE id = ?", boolValue(input.IsActive), now, orgID); err != nil {
 		return workspace.OrgModel{}, err

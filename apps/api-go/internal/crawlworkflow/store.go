@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
-	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 )
@@ -27,10 +27,6 @@ type dbtx interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入;
@@ -175,7 +171,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, orgID, actorID string, inp
 	if err != nil {
 		return workflowDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO CrawlStrategyWorkflow (id, orgId, name, description, draftDefinition, createdById, updatedById, createdAt, updatedAt)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -221,7 +217,7 @@ func (s *Service) UpdateDraft(ctx context.Context, orgID, actorID, id string, in
 	if err != nil {
 		return workflowDocument{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	sets := []string{"draftDefinition = ?", "updatedById = ?", "updatedAt = ?"}
 	args := []any{[]byte(definitionJSON), actorID, now}
 	if input.NamePresent {

@@ -6,17 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"strings"
 	"time"
 )
-
-// isoTime formats an instant like Date.prototype.toISOString: UTC, millisecond
-// precision, trailing Z. Every timestamp in the payload and in the status
-// summary goes through this function.
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
-}
 
 // isoTimePtr formats an optional instant; nil stays nil so the JSON value is
 // null.
@@ -24,7 +18,7 @@ func isoTimePtr(value *time.Time) *string {
 	if value == nil {
 		return nil
 	}
-	formatted := isoTime(*value)
+	formatted := timefmt.FormatDateTime(*value)
 	return &formatted
 }
 

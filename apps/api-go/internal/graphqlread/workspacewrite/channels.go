@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"regexp"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (s *service) createAlertChannel(ctx contract.Context, input alertChannelInp
 	if err != nil {
 		return alerts.AlertChannelModel{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(callCtx,
 		"INSERT INTO `AlertNotificationChannel` (`id`, `orgId`, `type`, `name`, `target`, `config`, `isActive`, `createdById`, `createdAt`, `updatedAt`) "+
 			"VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)",
@@ -132,7 +133,7 @@ func (s *service) updateAlertChannel(ctx contract.Context, input updateAlertChan
 		args = append(args, configText)
 	}
 	assignments = append(assignments, "`updatedAt` = ?")
-	args = append(args, nowMillis(), input.ID, orgID)
+	args = append(args, timefmt.NowMillis(), input.ID, orgID)
 	if _, err := s.db.ExecContext(callCtx,
 		"UPDATE `AlertNotificationChannel` SET "+strings.Join(assignments, ", ")+" WHERE `id` = ? AND `orgId` = ?", args...); err != nil {
 		return alerts.AlertChannelModel{}, err

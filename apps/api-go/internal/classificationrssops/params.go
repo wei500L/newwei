@@ -1,6 +1,7 @@
 package classificationrssops
 
 import (
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"net/url"
 	"strconv"
@@ -160,5 +161,5 @@ func parseCursor(cursor *string) *time.Time {
 // expiryDate mirrors the private computeExpiryDate helper.
 func expiryDate(retentionDays int) time.Time {
 	days := maxInt(retentionDays, 1)
-	return nowMillis().Add(time.Duration(days) * 24 * time.Hour)
+	return timefmt.NowMillis().Add(time.Duration(days) * 24 * time.Hour)
 }

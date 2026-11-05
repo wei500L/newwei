@@ -21,11 +21,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 )
 
 // FormatDateTime is JavaScript Date.toISOString: UTC with exactly three millisecond digits.
+// The implementation lives in internal/timefmt so the REST and GraphQL surfaces share one format.
 func FormatDateTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
+	return timefmt.FormatDateTime(value)
 }
 
 // Identity is the server-derived user. Permissions come from MySQL, never

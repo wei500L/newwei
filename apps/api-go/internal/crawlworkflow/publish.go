@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 )
 
@@ -59,7 +60,7 @@ func (s *Service) PublishWorkflow(ctx context.Context, orgID, actorID, id string
 		return publishResult{}, err
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return publishResult{}, err

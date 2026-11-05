@@ -3,6 +3,7 @@ package authfactors
 import (
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"net/http"
 	"strings"
@@ -75,7 +76,7 @@ func writeContractError(w http.ResponseWriter, r *http.Request, body contractErr
 		Detail:     body.detail,
 		TraceID:    httpx.TraceIDFromContext(r.Context()),
 		Path:       r.URL.RequestURI(),
-		Timestamp:  nestTimestamp(nowMillis()),
+		Timestamp:  nestTimestamp(timefmt.NowMillis()),
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")
 	w.WriteHeader(body.statusCode)

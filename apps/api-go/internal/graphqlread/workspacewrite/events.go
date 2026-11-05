@@ -3,6 +3,7 @@ package workspacewrite
 import (
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/alerts"
 	"github.com/wei500L/newwei/apps/api-go/internal/graphqlread/contract"
@@ -110,7 +111,7 @@ func (s *service) updateAlertEventStatus(ctx contract.Context, input updateAlert
 	if !found {
 		return alerts.AlertEventModel{}, errors.New("Alert event not found for this org")
 	}
-	update := feedbackUpdate{Status: input.Status, UpdatedAt: contract.FormatDateTime(nowMillis()), Note: input.Note, NoteSet: input.NoteSet}
+	update := feedbackUpdate{Status: input.Status, UpdatedAt: contract.FormatDateTime(timefmt.NowMillis()), Note: input.Note, NoteSet: input.NoteSet}
 	if ctx.Identity.UserID != "" {
 		actorID := ctx.Identity.UserID
 		update.UpdatedByID = &actorID

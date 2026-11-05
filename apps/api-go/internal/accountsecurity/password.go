@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -85,7 +86,7 @@ func (s *Service) changePassword(ctx context.Context, userID, claimOrgID, curren
 		return err
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return dbWrap(err)

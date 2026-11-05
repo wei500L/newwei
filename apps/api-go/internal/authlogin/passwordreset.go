@@ -3,6 +3,7 @@ package authlogin
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/url"
 	"strings"
 )
@@ -71,7 +72,7 @@ func (s *Service) storePasswordResetToken(ctx context.Context, userID, rawToken 
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"INSERT INTO `PasswordResetToken` (`id`, `userId`, `tokenHash`, `ipAddress`, `userAgent`, "+
 			"`expiresAt`, `usedAt`, `createdAt`) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
@@ -152,7 +153,7 @@ func (s *Service) resetPassword(ctx context.Context, token, password string, ipA
 		return okResult{}, dbWrap(err)
 	}
 	record.UsedAt = nullableTime(usedAt)
-	if record.UsedAt != nil || record.ExpiresAt.Before(nowMillis()) {
+	if record.UsedAt != nil || record.ExpiresAt.Before(timefmt.NowMillis()) {
 		return okResult{}, unauthorized(passwordResetTokenMessage)
 	}
 
@@ -167,7 +168,7 @@ func (s *Service) resetPassword(ctx context.Context, token, password string, ipA
 		return okResult{}, err
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return okResult{}, dbWrap(err)

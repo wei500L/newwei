@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 
@@ -148,7 +149,7 @@ func (s *service) upsertSourcePolicyPreset(
 	if s == nil || s.db == nil {
 		return time.Time{}, errDatabaseUnavailable
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return time.Time{}, err

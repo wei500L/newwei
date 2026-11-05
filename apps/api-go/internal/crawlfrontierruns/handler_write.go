@@ -7,6 +7,7 @@ package crawlfrontierruns
 
 import (
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"net/http"
 )
 
@@ -43,7 +44,7 @@ func (h *Handler) serveCreateRun(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 // serveRetryNode serves POST /nodes/:id/retry (retryNode).
@@ -61,7 +62,7 @@ func (h *Handler) serveRetryNode(w http.ResponseWriter, r *http.Request, id stri
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 // serveRetryNodes serves POST /nodes/retry (retryNodes).
@@ -93,5 +94,5 @@ func (h *Handler) serveRetryNodes(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }

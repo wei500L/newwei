@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"math"
 	"math/rand"
@@ -663,7 +664,7 @@ func (s *Service) notifyThresholdBreaches(
 	throttlePayload, marshalErr := json.Marshal(struct {
 		TriggeredAt string `json:"triggeredAt"`
 		Signature   string `json:"signature"`
-	}{TriggeredAt: formatJSTime(nowMillis()), Signature: signature})
+	}{TriggeredAt: formatJSTime(timefmt.NowMillis()), Signature: signature})
 	if marshalErr == nil {
 		inserted, err := s.store.setIfAbsent(ctx, throttleKey, throttlePayload, alertNotificationTTLSecs)
 		if err != nil {
@@ -1107,7 +1108,7 @@ func (s *Service) SubmitReviewDecision(ctx context.Context, request reviewDecisi
 		return classificationReviewResponse{}, err
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	update := bson.D{{Key: "$set", Value: bson.D{
 		{Key: "status", Value: request.Status},
 		{Key: "correctedCategoryPath", Value: normalizedCorrectedPath},
@@ -1184,7 +1185,7 @@ func (s *Service) BatchReviewDecision(ctx context.Context, request batchReviewDe
 	if err != nil {
 		return batchDecisionResult{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	filter := bson.D{
 		{Key: "orgId", Value: request.OrgID},
 		{Key: "_id", Value: bson.D{{Key: "$in", Value: objectIDs}}},
@@ -1394,7 +1395,7 @@ func (s *Service) CreateSample(ctx context.Context, request samplingRequest) (sa
 		return samplingQueryResponse{}, err
 	}
 	sampleObjectID := bson.NewObjectID()
-	createdAt := nowMillis()
+	createdAt := timefmt.NowMillis()
 	document := classificationSampleDocument{
 		ID:          sampleObjectID,
 		OrgID:       request.OrgID,
@@ -1489,7 +1490,7 @@ func (s *Service) SubmitAnnotations(ctx context.Context, request annotationsRequ
 			continue
 		}
 
-		now := nowMillis()
+		now := timefmt.NowMillis()
 		// The upsert mirrors Mongoose timestamps: updatedAt on every write and
 		// createdAt only when the annotation is inserted.
 		update := bson.D{

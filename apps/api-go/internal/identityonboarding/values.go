@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // jsTrim mirrors String.prototype.trim: ASCII whitespace plus the Unicode space
@@ -35,11 +34,6 @@ func isJSSpace(r rune) bool {
 // str.length minus one per surrogate pair, which is the code point count.
 func jsLength(value string) int {
 	return len([]rune(value))
-}
-
-// nowMillis returns the millisecond-truncated UTC time Prisma stores.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID writes a Prisma cuid column. MySQL has no client-side default, so the

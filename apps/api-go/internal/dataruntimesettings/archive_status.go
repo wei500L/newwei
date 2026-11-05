@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/adminlogs"
@@ -104,7 +105,7 @@ func (s *Service) getArchiveOperationalStatus(ctx context.Context, orgID string)
 		recent = append(recent, toPublicStatusRecord(record))
 	}
 	return &archiveOperationalStatus{
-		UpdatedAt:      nestTimestamp(nowMillis()),
+		UpdatedAt:      nestTimestamp(timefmt.NowMillis()),
 		Pending:        pending,
 		Counts:         counts,
 		RecentStatuses: recent,

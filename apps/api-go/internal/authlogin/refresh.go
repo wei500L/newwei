@@ -3,6 +3,7 @@ package authlogin
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
@@ -68,7 +69,7 @@ const refreshTokenRowSQL = "SELECT `userId`, `tokenHash`, `expiresAt` FROM `Refr
 // lock was unavailable and several loaders run at once. Changing that order would
 // break the protocol NestJS relies on.
 func (s *Service) rotateRefreshToken(ctx context.Context, credential refreshCredential, effectiveOrgID string, ipAddress, userAgent *string) (sessionResult, error) {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	// Re-check inside the loader: between the outer pre-check and this claim the
 	// token may have been revoked (logout, password change, password reset).

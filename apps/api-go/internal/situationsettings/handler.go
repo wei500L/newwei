@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"net/http"
@@ -270,7 +271,7 @@ func WriteWithExtras(w http.ResponseWriter, r *http.Request, orgID string, setti
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSONBytes(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 var errNoExternalSnapshotProvider = &httpError{status: http.StatusInternalServerError, message: "External snapshot status is not configured"}
@@ -300,11 +301,4 @@ func readBodyOrFail(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	return trimmed, true
-}
-
-// writeJSONBytes renders a body without HTML escaping, matching JSON.stringify.
-func writeJSONBytes(w http.ResponseWriter, status int, payload []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(payload)
 }

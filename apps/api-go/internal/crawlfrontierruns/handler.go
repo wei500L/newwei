@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -28,8 +29,8 @@ const (
 	permWrite          = "crawl.write"
 )
 
-// document is implemented by every successful response payload, which keeps
-// writeJSON strongly typed without an untyped parameter.
+// document is implemented by every successful response payload so the handler
+// methods stay strongly typed.
 type document interface {
 	isDocument()
 }
@@ -220,7 +221,7 @@ func (h *Handler) serveList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveRun(w http.ResponseWriter, r *http.Request, id string) {
@@ -233,7 +234,7 @@ func (h *Handler) serveRun(w http.ResponseWriter, r *http.Request, id string) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveRunWorkflowRun(w http.ResponseWriter, r *http.Request, id string) {
@@ -246,7 +247,7 @@ func (h *Handler) serveRunWorkflowRun(w http.ResponseWriter, r *http.Request, id
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveRunCandidates(w http.ResponseWriter, r *http.Request, id string) {
@@ -259,7 +260,7 @@ func (h *Handler) serveRunCandidates(w http.ResponseWriter, r *http.Request, id 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveRunCandidate(w http.ResponseWriter, r *http.Request, id, candidateID string) {
@@ -272,7 +273,7 @@ func (h *Handler) serveRunCandidate(w http.ResponseWriter, r *http.Request, id, 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveNode(w http.ResponseWriter, r *http.Request, id string) {
@@ -285,7 +286,7 @@ func (h *Handler) serveNode(w http.ResponseWriter, r *http.Request, id string) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveWorkflowRun(w http.ResponseWriter, r *http.Request, runID string) {
@@ -298,7 +299,7 @@ func (h *Handler) serveWorkflowRun(w http.ResponseWriter, r *http.Request, runID
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveWorkflowCandidates(w http.ResponseWriter, r *http.Request, runID string) {
@@ -311,7 +312,7 @@ func (h *Handler) serveWorkflowCandidates(w http.ResponseWriter, r *http.Request
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveWorkflowCandidate(w http.ResponseWriter, r *http.Request, runID, candidateID string) {
@@ -324,7 +325,7 @@ func (h *Handler) serveWorkflowCandidate(w http.ResponseWriter, r *http.Request,
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveCancelRun(w http.ResponseWriter, r *http.Request, id string) {
@@ -338,7 +339,7 @@ func (h *Handler) serveCancelRun(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	// The controller has no @HttpCode, so POST succeeds with 201.
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 func (h *Handler) serveCancelRuns(w http.ResponseWriter, r *http.Request) {
@@ -366,7 +367,7 @@ func (h *Handler) serveCancelRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// POST /runs/cancel also succeeds with 201.
-	writeJSON(w, http.StatusCreated, payload)
+	httpx.WriteJSON(w, http.StatusCreated, payload)
 }
 
 // ---- Request and response helpers (same contract as the other crawl units) ----
@@ -439,15 +440,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload document) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

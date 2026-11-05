@@ -29,6 +29,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"os"
 	"strings"
@@ -157,8 +158,8 @@ func testAggregateEquivalence(ctx context.Context, t *testing.T, db *sql.DB) {
 	store := &mysqlStore{db: db}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
-	completed := samplePayload(isoTime(now.Add(-2*time.Minute)), isoTime(now.Add(-2*time.Minute).Add(freshTTL)))
-	rateLimited := samplePayload(isoTime(now.Add(-4*time.Minute)), isoTime(now.Add(-4*time.Minute).Add(freshTTL)))
+	completed := samplePayload(timefmt.FormatDateTime(now.Add(-2*time.Minute)), timefmt.FormatDateTime(now.Add(-2*time.Minute).Add(freshTTL)))
+	rateLimited := samplePayload(timefmt.FormatDateTime(now.Add(-4*time.Minute)), timefmt.FormatDateTime(now.Add(-4*time.Minute).Add(freshTTL)))
 	rateLimited.Status = StatusPartial
 	rateLimited.Partial = true
 	rateLimited.Warnings = []Warning{{Code: codeRateLimited, Severity: severityWarning, Message: "m"}}
@@ -167,7 +168,7 @@ func testAggregateEquivalence(ctx context.Context, t *testing.T, db *sql.DB) {
 
 	// A payload that normalizePayload rejects: it counts as a recent record but
 	// contributes to neither the rate-limited nor the availability counter.
-	unusable := samplePayload(isoTime(now.Add(-6*time.Minute)), isoTime(now.Add(-6*time.Minute).Add(freshTTL)))
+	unusable := samplePayload(timefmt.FormatDateTime(now.Add(-6*time.Minute)), timefmt.FormatDateTime(now.Add(-6*time.Minute).Add(freshTTL)))
 	unusableJSON, err := marshalJSON(unusable)
 	if err != nil {
 		t.Fatalf("marshal unusable: %v", err)
@@ -251,8 +252,8 @@ func testPrune(ctx context.Context, t *testing.T, db *sql.DB) {
 	resetRows(ctx, t, db)
 	store := &mysqlStore{db: db}
 	now := time.Now().UTC()
-	old := samplePayload(isoTime(now.Add(-8*24*time.Hour)), isoTime(now.Add(-8*24*time.Hour).Add(freshTTL)))
-	recent := samplePayload(isoTime(now.Add(-time.Hour)), isoTime(now.Add(-time.Hour).Add(freshTTL)))
+	old := samplePayload(timefmt.FormatDateTime(now.Add(-8*24*time.Hour)), timefmt.FormatDateTime(now.Add(-8*24*time.Hour).Add(freshTTL)))
+	recent := samplePayload(timefmt.FormatDateTime(now.Add(-time.Hour)), timefmt.FormatDateTime(now.Add(-time.Hour).Add(freshTTL)))
 	insertSnapshot(ctx, t, store, old, now.Add(-8*24*time.Hour))
 	insertSnapshot(ctx, t, store, recent, now.Add(-time.Hour))
 
@@ -288,7 +289,7 @@ func testRedisCacheAndLease(ctx context.Context, t *testing.T, db *sql.DB, addre
 		now:   time.Now,
 	}
 
-	payload := samplePayload("2026-10-20T12:34:00.000Z", isoTime(time.Now().UTC().Add(freshTTL)))
+	payload := samplePayload("2026-10-20T12:34:00.000Z", timefmt.FormatDateTime(time.Now().UTC().Add(freshTTL)))
 	if err := service.restoreCaches(ctx, payload); err != nil {
 		t.Fatalf("restoreCaches: %v", err)
 	}
@@ -355,7 +356,7 @@ func testRedisCacheAndLease(ctx context.Context, t *testing.T, db *sql.DB, addre
 	// unexpired row so the fresh layer is restored as well.
 	resetRows(ctx, t, db)
 	insertedAt := time.Now().UTC().Truncate(time.Millisecond)
-	freshPayload := samplePayload(isoTime(insertedAt), isoTime(insertedAt.Add(freshTTL)))
+	freshPayload := samplePayload(timefmt.FormatDateTime(insertedAt), timefmt.FormatDateTime(insertedAt.Add(freshTTL)))
 	insertSnapshot(ctx, t, &mysqlStore{db: db}, freshPayload, insertedAt)
 	if _, err := client.Del(ctx, freshCacheKey, staleCacheKey).Result(); err != nil {
 		t.Fatalf("del caches: %v", err)

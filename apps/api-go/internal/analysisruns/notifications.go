@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -169,7 +170,7 @@ func (w *NotificationWriter) write(
 	if err != nil {
 		return fmt.Errorf("analysisruns: encode notification data: %w", err)
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	bodyValue := sql.NullString{}
 	if body != nil {
 		bodyValue = sql.NullString{String: *body, Valid: true}

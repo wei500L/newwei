@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -39,12 +40,6 @@ const (
 	// path.
 	machineActorPrefix = "machine:"
 )
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
 
 // newRowID generates a client-side identifier in the same shape Prisma's cuid()
 // produces ('c' plus 24 hex characters).
@@ -167,7 +162,7 @@ func (s *Service) saveGovernance(ctx context.Context, payload json.RawMessage, a
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx, upsertSettingsSQL,
 		governanceSettingsKey, []byte(payload), governanceSettingsDescription,
 		now, now, nullableActorID(actorID)); err != nil {
@@ -266,7 +261,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, a
 		return errNoDatabase
 	}
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	insertErr := func() error {
 		id, idErr := newRowID()

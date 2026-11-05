@@ -6,6 +6,7 @@ package analysisruns
 import (
 	"context"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -86,7 +87,7 @@ func InsertPending[T any](
 	if store == nil || store.mongo == nil {
 		return PendingRecord{}, fmt.Errorf("analysisruns: mongo is not configured")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	document := insertDocument[T]{
 		ID:            bson.NewObjectID(),
 		OrgID:         orgID,
@@ -131,7 +132,7 @@ func (s *Store) Claim(ctx context.Context, id bson.ObjectID, token string) (Reco
 	if s == nil || s.mongo == nil {
 		return Record{}, false, fmt.Errorf("analysisruns: mongo is not configured")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	filter := bson.D{
 		{Key: "_id", Value: id},
 		{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{
@@ -175,7 +176,7 @@ func (s *Store) Complete(ctx context.Context, id bson.ObjectID, token string, ou
 			{Key: "status", Value: string(StatusCompleted)},
 			{Key: "output", Value: output},
 			{Key: "summary", Value: summary},
-			{Key: "updatedAt", Value: nowMillis()},
+			{Key: "updatedAt", Value: timefmt.NowMillis()},
 		}},
 		{Key: "$unset", Value: bson.D{{Key: "error", Value: ""}}},
 	}
@@ -201,7 +202,7 @@ func (s *Store) Fail(ctx context.Context, id bson.ObjectID, token, message, part
 	set := bson.D{
 		{Key: "status", Value: string(StatusFailed)},
 		{Key: "error", Value: message},
-		{Key: "updatedAt", Value: nowMillis()},
+		{Key: "updatedAt", Value: timefmt.NowMillis()},
 	}
 	if hasPartial {
 		set = append(set, bson.E{Key: "summary", Value: partialSummary})
@@ -224,8 +225,4 @@ func decodeInput[T any](raw bson.RawValue) (T, error) {
 		return out, fmt.Errorf("analysisruns: decode result input: %w", err)
 	}
 	return out, nil
-}
-
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }

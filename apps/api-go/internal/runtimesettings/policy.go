@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -366,7 +367,7 @@ func (s *Service) createRateLimitPolicy(ctx context.Context, orgID, actorID, fea
 		return rateLimitPolicy{}, policyConflict(feature)
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO RateLimitPolicy (feature, userLimit, ipLimit, windowSeconds, enabled, description, createdAt, updatedAt, updatedById) "+
 			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -436,7 +437,7 @@ func (s *Service) updateRateLimitPolicy(ctx context.Context, orgID, actorID, fea
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE RateLimitPolicy SET userLimit = ?, ipLimit = ?, windowSeconds = ?, enabled = ?, description = ?, updatedAt = ?, updatedById = ? WHERE feature = ?",
 		write.UserLimit, write.IPLimit, write.WindowSeconds, write.Enabled, write.Description,
-		nowMillis(), nullableActorID(actorID), normalized); err != nil {
+		timefmt.NowMillis(), nullableActorID(actorID), normalized); err != nil {
 		return rateLimitPolicy{}, err
 	}
 

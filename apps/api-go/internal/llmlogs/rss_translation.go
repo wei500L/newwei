@@ -3,6 +3,7 @@ package llmlogs
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"time"
 
@@ -88,7 +89,7 @@ func (w *RssTranslationWriter) WriteAttempt(ctx context.Context, entry RssTransl
 	}
 	created := entry.OccurredAt.UTC()
 	if created.IsZero() {
-		created = nowMillis()
+		created = timefmt.NowMillis()
 	} else {
 		created = created.Truncate(time.Millisecond)
 	}

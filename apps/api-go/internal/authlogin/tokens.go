@@ -2,6 +2,7 @@ package authlogin
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"regexp"
 	"time"
 
@@ -171,7 +172,7 @@ func (s *Service) signRefreshToken(ctx context.Context, userID, orgID string, ip
 	if err != nil {
 		return issuedRefreshToken{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	expiresAt := now.Add(lifetime)
 	if _, err := s.db.ExecContext(ctx,
 		"INSERT INTO `RefreshToken` (`id`, `userId`, `tokenHash`, `expiresAt`, `createdAt`, `revokedAt`, `ipAddress`, `userAgent`) "+

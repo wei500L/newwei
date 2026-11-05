@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (s *Service) insertChallenge(ctx context.Context, challengeType, userID, or
 	if err != nil {
 		return challengeRef{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	expiresAt := now.Add(ttl)
 	if _, err := s.db.ExecContext(ctx,
 		"INSERT INTO `AuthChallenge` (`id`, `type`, `userId`, `orgId`, `payload`, `expiresAt`, "+
@@ -124,7 +125,7 @@ func (s *Service) consumeChallenge(ctx context.Context, challengeID, message str
 	if s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	result, err := s.db.ExecContext(ctx,
 		"UPDATE `AuthChallenge` SET `consumedAt` = ? WHERE `id` = ? AND `consumedAt` IS NULL "+
 			"AND `lockedAt` IS NULL AND `failedAttempts` < ? AND `expiresAt` > ?",
@@ -166,7 +167,7 @@ func (s *Service) recordChallengeFailure(ctx context.Context, challengeID, messa
 	if s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	result, err := s.db.ExecContext(ctx,
 		"UPDATE `AuthChallenge` SET `failedAttempts` = `failedAttempts` + 1 WHERE `id` = ? "+
 			"AND `consumedAt` IS NULL AND `lockedAt` IS NULL AND `failedAttempts` < ? AND `expiresAt` > ?",
@@ -226,7 +227,7 @@ func (s *Service) lockChallenge(ctx context.Context, challengeID string) {
 	}
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `AuthChallenge` SET `lockedAt` = ? WHERE `id` = ? AND `lockedAt` IS NULL",
-		nowMillis(), challengeID); err != nil {
+		timefmt.NowMillis(), challengeID); err != nil {
 		logBackgroundFailure("challenge lock", dbWrap(err))
 	}
 }

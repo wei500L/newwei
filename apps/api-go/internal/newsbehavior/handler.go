@@ -2,6 +2,7 @@ package newsbehavior
 
 import (
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"log"
 	"net/http"
 
@@ -85,7 +86,7 @@ func (h *Handler) record(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		return
 	}
-	writeJSON(w, http.StatusCreated, recordedBody)
+	httpx.WriteRawJSON(w, http.StatusCreated, recordedBody)
 }
 
 func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +103,7 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) clear(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +119,7 @@ func (h *Handler) clear(w http.ResponseWriter, r *http.Request) {
 		writeFailure(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, clearedBody)
+	httpx.WriteRawJSON(w, http.StatusOK, clearedBody)
 }
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
@@ -147,10 +148,4 @@ func writeFailure(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		authhttp.WriteInternalFailure(w, r)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(payload)
 }

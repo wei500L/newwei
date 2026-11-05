@@ -2,6 +2,7 @@ package userdigest
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"sort"
 	"strings"
@@ -73,9 +74,9 @@ func (s *Service) GenerateDigest(ctx context.Context, orgID, userID string) (Dig
 	}
 	return Digest{
 		Version:     1,
-		GeneratedAt: isoTime(s.clock()),
-		WindowStart: isoTime(windowStart),
-		WindowEnd:   isoTime(windowEnd),
+		GeneratedAt: timefmt.FormatDateTime(s.clock()),
+		WindowStart: timefmt.FormatDateTime(windowStart),
+		WindowEnd:   timefmt.FormatDateTime(windowEnd),
 		Preference:  preference,
 		Events:      events,
 	}, nil
@@ -102,8 +103,8 @@ func enrichEvent(event digestEvent, preference Preference, topics, entities map[
 		Summary:           event.Summary,
 		PrimaryTopic:      event.PrimaryTopic,
 		PrimaryEntity:     event.PrimaryEntity,
-		StartAt:           isoTime(event.StartAt),
-		LastAt:            isoTime(event.LastAt),
+		StartAt:           timefmt.FormatDateTime(event.StartAt),
+		LastAt:            timefmt.FormatDateTime(event.LastAt),
 		ItemCount:         event.ItemCount,
 		RepresentativeURL: event.RepresentativeURL,
 		TopicSentiment:    topicSentiment,

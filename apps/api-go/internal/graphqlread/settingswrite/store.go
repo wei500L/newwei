@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -107,7 +108,7 @@ func (s *service) upsertSetting(ctx context.Context, key string, payload []byte,
 	if s == nil || s.db == nil {
 		return errDatabaseUnavailable
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt, updatedById) "+
 			"VALUES (?, ?, 0, ?, ?, ?, ?) AS new_row "+
@@ -123,7 +124,7 @@ func (s *service) upsertSettingForceDescription(ctx context.Context, key string,
 	if s == nil || s.db == nil {
 		return errDatabaseUnavailable
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt, updatedById) "+
 			"VALUES (?, ?, 0, ?, ?, ?, ?) AS new_row "+
@@ -135,7 +136,7 @@ func (s *service) upsertSettingForceDescription(ctx context.Context, key string,
 // upsertSettingTx runs the description-omitting upsert on a transaction handle
 // so the three rate-limit buckets commit atomically.
 func upsertSettingTx(ctx context.Context, tx *sql.Tx, key string, payload []byte, description string, updatedByID *string) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := tx.ExecContext(ctx,
 		"INSERT INTO SystemSetting (`key`, value, isPublic, description, createdAt, updatedAt, updatedById) "+
 			"VALUES (?, ?, 0, ?, ?, ?, ?) AS new_row "+
@@ -191,7 +192,7 @@ func writeAuditLogBestEffort[T any](db *sql.DB, ctx context.Context, orgID, acto
 		metaRaw = []byte("null")
 	}
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if id, idErr := newRowID(); idErr == nil {
 		_, err := db.ExecContext(ctx,
@@ -234,12 +235,6 @@ func newRowID() (string, error) {
 		return "", err
 	}
 	return "c" + hex.EncodeToString(buf[:]), nil
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // nullableActorID converts an actor id into the value written to the nullable

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"math"
 	"net/http"
 	"strconv"
@@ -132,7 +133,7 @@ func (h *Handler) serveTaskList(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, marshalErr)
 		return
 	}
-	writeJSONBody(w, http.StatusOK, body)
+	httpx.WriteRawJSON(w, http.StatusOK, body)
 }
 
 // serveTaskDetail handles GET /api/crawl-tasks/:id.
@@ -160,7 +161,7 @@ func (h *Handler) serveTaskDetail(w http.ResponseWriter, r *http.Request, taskID
 		writeServiceError(w, r, marshalErr)
 		return
 	}
-	writeJSONBody(w, http.StatusOK, body)
+	httpx.WriteRawJSON(w, http.StatusOK, body)
 }
 
 // parseCrawlTaskListFilters reproduces the ListCrawlTaskDto ValidationPipe

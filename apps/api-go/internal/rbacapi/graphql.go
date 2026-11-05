@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"net/http"
 	"strings"
 	"time"
@@ -346,7 +347,7 @@ func (s *Service) UpdateMembershipRolesView(ctx context.Context, orgID, actorID 
 	for _, roleID := range normalized {
 		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO MembershipRole (membershipId, orgId, roleId, createdAt) VALUES (?, ?, ?, ?)",
-			membershipID, orgID, roleID, nowMillis()); err != nil {
+			membershipID, orgID, roleID, timefmt.NowMillis()); err != nil {
 			return UserView{}, err
 		}
 	}

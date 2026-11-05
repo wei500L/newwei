@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 )
 
 // ---- SystemSetting reads ----
@@ -73,7 +74,7 @@ func (s *Service) upsertRealtime(ctx context.Context, value json.RawMessage) err
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertRealtimeSQL,
 		settingKeyRealtime, []byte(value), descriptionRealtime, now, now)
 	return err
@@ -84,7 +85,7 @@ func (s *Service) upsertArchivePreparation(ctx context.Context, value json.RawMe
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertArchivePreparationSQL,
 		settingKeyArchivePreparation, []byte(value), descriptionArchivePreparation, now, now, updatedByID)
 	return err
@@ -95,7 +96,7 @@ func (s *Service) upsertNominatim(ctx context.Context, value json.RawMessage, up
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertNominatimSQL,
 		settingKeyNominatim, []byte(value), descriptionNominatim, now, now, updatedByID)
 	return err

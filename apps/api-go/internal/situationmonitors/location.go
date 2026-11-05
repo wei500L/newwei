@@ -2,6 +2,7 @@ package situationmonitors
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/jsvalue"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/contentsubscriptions"
@@ -103,7 +104,7 @@ func legacyLocation(value any) *locationDTO {
 	if !ok {
 		return nil
 	}
-	name := normalizeName(asString(record["name"]))
+	name := normalizeName(jsvalue.String(record["name"]))
 	lat, latOK := asFinite(record["lat"])
 	lng, lngOK := asFinite(record["lng"])
 	if name == "" || !latOK || !lngOK {
@@ -114,11 +115,6 @@ func legacyLocation(value any) *locationDTO {
 		loc.CountryCodeAlpha2 = country
 	}
 	return loc
-}
-
-func asString(value any) string {
-	text, _ := value.(string)
-	return text
 }
 
 // geocode delegates to the shared geocoding client. The monitor service keeps

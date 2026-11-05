@@ -2,6 +2,7 @@ package userdigest
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -212,7 +213,7 @@ func (s *DeliveryScheduler) notifyReady(ctx context.Context, record DeliverySche
 		Link:        notificationLinkToday,
 		EventCount:  len(digest.Events),
 		GeneratedAt: digest.GeneratedAt,
-		NextRunAt:   isoTime(nextRunAt),
+		NextRunAt:   timefmt.FormatDateTime(nextRunAt),
 	}); err != nil {
 		log.Printf("userdigest: notify digest ready failed scheduleId=%s orgId=%s userId=%s err=%v", record.ID, record.OrgID, record.UserID, err)
 	}
@@ -225,7 +226,7 @@ func (s *DeliveryScheduler) notifyEmpty(ctx context.Context, record DeliverySche
 	}
 	if err := s.deps.Notifier.NotifyEmpty(ctx, record.OrgID, record.UserID, DigestEmptyParams{
 		Link:      notificationLinkToday,
-		NextRunAt: isoTime(nextRunAt),
+		NextRunAt: timefmt.FormatDateTime(nextRunAt),
 	}); err != nil {
 		log.Printf("userdigest: notify digest empty failed scheduleId=%s orgId=%s userId=%s err=%v", record.ID, record.OrgID, record.UserID, err)
 	}

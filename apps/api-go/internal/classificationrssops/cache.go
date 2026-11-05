@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -134,7 +135,7 @@ func (s *snapshotStore) rebuild(ctx context.Context, orgID, scope, variantKey st
 	if err != nil {
 		return nil, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second)
 	id, err := newRowID()
 	if err != nil {

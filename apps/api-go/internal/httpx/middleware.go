@@ -82,11 +82,12 @@ func EnsureTraceID(incoming string) string {
 // "application/json; charset=utf-8" content type (Express appends the charset to
 // every JSON body; json.NewEncoder's trailing newline has no Express
 // equivalent). The document is marshalled before the status line so a
-// serialization failure cannot leave a half-written response.
+// serialization failure cannot leave a half-written response; a failure becomes
+// the conventional 500 "Internal server error" text response.
 func WriteJSON(w http.ResponseWriter, status int, body any) {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")

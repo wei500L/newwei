@@ -6,8 +6,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
-	"time"
 )
 
 // The audit vocabulary of this console.
@@ -112,7 +112,7 @@ func writeAuditLogBestEffort(ctx context.Context, exec auditExecer, entry auditE
 	if len(metadata) == 0 {
 		metadata = json.RawMessage("null")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	actor := nullableActorID(entry.ActorID)
 	if id, err := newRowID(); err == nil {
 		if _, err := exec.ExecContext(ctx,
@@ -232,12 +232,6 @@ func newRowID() (string, error) {
 		return "", err
 	}
 	return "c" + hex.EncodeToString(buf[:]), nil
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching the
-// DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // nullableActorID converts an empty actor into SQL NULL.

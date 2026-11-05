@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -272,7 +273,7 @@ func (s *Service) ProcessReviewSeedItemJob(ctx context.Context, orgID, processed
 		}
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	evidenceID := processedItemID + ":" + fmt.Sprint(now.UnixMilli())
 	if createdAt := rawTime(document.CreatedAt); createdAt != nil {
 		evidenceID = processedItemID + ":" + formatJSTime(*createdAt)
@@ -362,14 +363,14 @@ func (s *Service) ProcessReportJob(ctx context.Context, orgID, jobID string) err
 	}
 	filter := bson.D{{Key: "_id", Value: jobObjectID}, {Key: "orgId", Value: orgID}}
 	setJob := func(fields bson.D) error {
-		fields = append(fields, bson.E{Key: "updatedAt", Value: nowMillis()})
+		fields = append(fields, bson.E{Key: "updatedAt", Value: timefmt.NowMillis()})
 		_, err := jobs.UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: fields}})
 		return err
 	}
 	if err := setJob(bson.D{
 		{Key: "status", Value: "running"},
 		{Key: "progress", Value: 0.1},
-		{Key: "startedAt", Value: nowMillis()},
+		{Key: "startedAt", Value: timefmt.NowMillis()},
 	}); err != nil {
 		return err
 	}
@@ -378,7 +379,7 @@ func (s *Service) ProcessReportJob(ctx context.Context, orgID, jobID string) err
 		log.Printf("classification rss ops: failed to build classification quality report %s: %v", jobID, cause)
 		if updateErr := setJob(bson.D{
 			{Key: "status", Value: "failed"},
-			{Key: "completedAt", Value: nowMillis()},
+			{Key: "completedAt", Value: timefmt.NowMillis()},
 			{Key: "error", Value: classificationReportJobError{Message: cause.Error()}},
 		}); updateErr != nil {
 			log.Printf("classification rss ops: failed to mark report job %s failed: %v", jobID, updateErr)
@@ -421,7 +422,7 @@ func (s *Service) ProcessReportJob(ctx context.Context, orgID, jobID string) err
 		})
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	resultObjectID := bson.NewObjectID()
 	results, err := s.collection(reportResultsCollection)
 	if err != nil {
@@ -447,7 +448,7 @@ func (s *Service) ProcessReportJob(ctx context.Context, orgID, jobID string) err
 	if err := setJob(bson.D{
 		{Key: "status", Value: "completed"},
 		{Key: "progress", Value: 1},
-		{Key: "completedAt", Value: nowMillis()},
+		{Key: "completedAt", Value: timefmt.NowMillis()},
 		{Key: "reportResultId", Value: resultObjectID.Hex()},
 		{Key: "error", Value: nil},
 	}); err != nil {

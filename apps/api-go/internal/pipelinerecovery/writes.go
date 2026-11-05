@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -92,7 +93,7 @@ func (s *Service) Replay(ctx context.Context, orgID, itemMetaID, rawItemID strin
 
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE ItemMeta SET mongoRef = ?, status = ?, updatedAt = ? WHERE id = ?",
-		clonedID.Hex(), itemStatusPending, nowMillis(), itemMetaID); err != nil {
+		clonedID.Hex(), itemStatusPending, timefmt.NowMillis(), itemMetaID); err != nil {
 		return ReplayResult{}, err
 	}
 
@@ -136,12 +137,12 @@ func (s *Service) Rollback(ctx context.Context, orgID, itemMetaID, rawItemID str
 
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE ItemMeta SET status = ?, updatedAt = ? WHERE id = ?",
-		itemStatusPending, nowMillis(), itemMetaID); err != nil {
+		itemStatusPending, timefmt.NowMillis(), itemMetaID); err != nil {
 		return RollbackResult{}, err
 	}
 
 	processedID := bson.NewObjectID()
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	update := bson.D{
 		{Key: "$set", Value: bson.D{
 			{Key: "rawItemId", Value: sourceOID},
@@ -259,7 +260,7 @@ func (s *Service) insertClonedRawItem(ctx context.Context, id bson.ObjectID, ite
 			comparableBase = base
 		}
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := collection.InsertOne(ctx, bson.D{
 		{Key: "_id", Value: id},
 		{Key: "itemMetaId", Value: itemMetaID},

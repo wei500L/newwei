@@ -1,6 +1,7 @@
 package gdeltsnapshot
 
 import (
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"testing"
 	"time"
 )
@@ -160,11 +161,11 @@ func TestIsExpiredMatchesDateParse(t *testing.T) {
 
 // TestIsoTimeFormat pins the Date.toISOString shape.
 func TestIsoTimeFormat(t *testing.T) {
-	if got := isoTime(time.Date(2026, 1, 2, 3, 4, 5, 6000000, time.UTC)); got != "2026-01-02T03:04:05.006Z" {
+	if got := timefmt.FormatDateTime(time.Date(2026, 1, 2, 3, 4, 5, 6000000, time.UTC)); got != "2026-01-02T03:04:05.006Z" {
 		t.Errorf("isoTime = %q", got)
 	}
 	// Sub-millisecond precision is truncated, like Date's millisecond storage.
-	if got := isoTime(time.Date(2026, 1, 2, 3, 4, 5, 123999999, time.UTC)); got != "2026-01-02T03:04:05.123Z" {
+	if got := timefmt.FormatDateTime(time.Date(2026, 1, 2, 3, 4, 5, 123999999, time.UTC)); got != "2026-01-02T03:04:05.123Z" {
 		t.Errorf("isoTime = %q, want truncation to milliseconds", got)
 	}
 }

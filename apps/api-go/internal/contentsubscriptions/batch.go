@@ -3,6 +3,7 @@ package contentsubscriptions
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/personalnews"
 )
@@ -78,7 +79,7 @@ func (s *Service) upsertLocked(ctx context.Context, q queryer, orgID, userID str
 		// 锁覆盖：计数读取 → INSERT IGNORE → 回读。并发的另一个实例
 		// 必须等到 RELEASE_LOCK 之后才能再数一次，因此同一种类不会被
 		// 两批请求一起冲过 50。已经超过 50 的旧行不在这里删除。
-		if err := s.insertSubscriptions(ctx, q, orgID, userID, toCreate, nowMillis(), true); err != nil {
+		if err := s.insertSubscriptions(ctx, q, orgID, userID, toCreate, timefmt.NowMillis(), true); err != nil {
 			if !isDuplicateKey(err) {
 				return batchResponse{}, err
 			}

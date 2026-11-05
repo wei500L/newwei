@@ -104,10 +104,6 @@ func newRowID() (string, error) {
 	return "c" + hex.EncodeToString(buf[:]), nil
 }
 
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 func (s *Service) readCounts(ctx context.Context, q queryer, orgID, userID string) (counts, error) {
 	rows, err := q.QueryContext(ctx,
 		"SELECT kind, COUNT(*) FROM UserContentSubscription WHERE orgId = ? AND userId = ? GROUP BY kind",

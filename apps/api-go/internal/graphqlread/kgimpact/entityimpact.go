@@ -3,6 +3,7 @@ package kgimpact
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"math"
 	"sort"
@@ -174,8 +175,8 @@ func dataToModel(data entityGraphData, generatedAt time.Time) entityImpactGraphM
 
 func buildEigCacheKey(orgID string, startDate, endDate time.Time, minEntityConfidence, minCorrelation float64, minCoOccurrence, maxNodes int, categories []string) string {
 	return eigDataCachePrefix + orgID +
-		":" + formatISO(startDate) +
-		":" + formatISO(endDate) +
+		":" + timefmt.FormatDateTime(startDate) +
+		":" + timefmt.FormatDateTime(endDate) +
 		":conf=" + toFixed(minEntityConfidence, 3) +
 		":corr=" + toFixed(minCorrelation, 3) +
 		":co=" + itoa(minCoOccurrence) +

@@ -138,12 +138,6 @@ func nonEmptyString(value string) *string {
 	return &value
 }
 
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // newRowID generates a client-side identifier in the shape Prisma's cuid()
 // produces ('c' plus 24 hex characters), because the columns have no database
 // default.

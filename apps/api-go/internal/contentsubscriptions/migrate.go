@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/personalnews"
 )
@@ -45,11 +46,11 @@ func (s *Service) ensureSubscriptionMigration(ctx context.Context, q queryer, or
 			return err
 		}
 	}
-	payload, err := json.Marshal(migrationMarker{MigratedAt: nowMillis().UTC().Format("2006-01-02T15:04:05.000Z")})
+	payload, err := json.Marshal(migrationMarker{MigratedAt: timefmt.NowMillis().UTC().Format("2006-01-02T15:04:05.000Z")})
 	if err != nil {
 		return err
 	}
-	return s.upsertSetting(ctx, q, orgID, userID, migrationSettingKey, payload, nowMillis())
+	return s.upsertSetting(ctx, q, orgID, userID, migrationSettingKey, payload, timefmt.NowMillis())
 }
 
 func (s *Service) replaceSubscriptionsByKind(ctx context.Context, q queryer, orgID, userID, kind string, values []string, source string) error {
@@ -99,7 +100,7 @@ func (s *Service) replaceSubscriptionsByKind(ctx context.Context, q queryer, org
 		return err
 	}
 	byKey := indexResolutions(resolved)
-	at := nowMillis()
+	at := timefmt.NowMillis()
 	for _, entry := range missing {
 		resolution, ok := byKey[subscriptionKey(entry.Kind, entry.NormalizedValue)]
 		if !ok {

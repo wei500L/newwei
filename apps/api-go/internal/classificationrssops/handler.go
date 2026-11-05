@@ -3,6 +3,7 @@ package classificationrssops
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -308,7 +309,7 @@ func (h *Handler) serveSummary(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveSourceItems(w http.ResponseWriter, r *http.Request, sourceID string) {
@@ -348,7 +349,7 @@ func (h *Handler) serveSourceItems(w http.ResponseWriter, r *http.Request, sourc
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 func (h *Handler) serveReviewQueue(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +395,7 @@ func (h *Handler) serveReviewQueue(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 func (h *Handler) serveReviewDecision(w http.ResponseWriter, r *http.Request, reviewID string) {
@@ -440,7 +441,7 @@ func (h *Handler) serveReviewDecision(w http.ResponseWriter, r *http.Request, re
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveBatchReviewDecision(w http.ResponseWriter, r *http.Request) {
@@ -495,7 +496,7 @@ func (h *Handler) serveBatchReviewDecision(w http.ResponseWriter, r *http.Reques
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveSamplingQuery(w http.ResponseWriter, r *http.Request) {
@@ -560,7 +561,7 @@ func (h *Handler) serveSamplingQuery(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveSamplingAnnotations(w http.ResponseWriter, r *http.Request) {
@@ -643,7 +644,7 @@ func (h *Handler) serveSamplingAnnotations(w http.ResponseWriter, r *http.Reques
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveCreateReport(w http.ResponseWriter, r *http.Request) {
@@ -674,7 +675,7 @@ func (h *Handler) serveCreateReport(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveReportJob(w http.ResponseWriter, r *http.Request, jobID string) {
@@ -688,7 +689,7 @@ func (h *Handler) serveReportJob(w http.ResponseWriter, r *http.Request, jobID s
 		return
 	}
 	if response == nil {
-		writeJSON(w, http.StatusOK, json.RawMessage("null"))
+		httpx.WriteRawJSON(w, http.StatusOK, json.RawMessage("null"))
 		return
 	}
 	encoded, err := json.Marshal(response)
@@ -696,7 +697,7 @@ func (h *Handler) serveReportJob(w http.ResponseWriter, r *http.Request, jobID s
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 func (h *Handler) serveDiagnosticsOverview(w http.ResponseWriter, r *http.Request) {
@@ -714,7 +715,7 @@ func (h *Handler) serveDiagnosticsOverview(w http.ResponseWriter, r *http.Reques
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDiagnosticsChain(w http.ResponseWriter, r *http.Request) {
@@ -732,7 +733,7 @@ func (h *Handler) serveDiagnosticsChain(w http.ResponseWriter, r *http.Request) 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveDiagnosticsSources(w http.ResponseWriter, r *http.Request) {
@@ -750,7 +751,7 @@ func (h *Handler) serveDiagnosticsSources(w http.ResponseWriter, r *http.Request
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 func (h *Handler) serveBackfillSourceID(w http.ResponseWriter, r *http.Request) {
@@ -777,7 +778,7 @@ func (h *Handler) serveBackfillSourceID(w http.ResponseWriter, r *http.Request) 
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 func (h *Handler) serveTranslationMetrics(w http.ResponseWriter, r *http.Request) {
@@ -811,7 +812,7 @@ func (h *Handler) serveTranslationMetrics(w http.ResponseWriter, r *http.Request
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, encoded)
+	httpx.WriteRawJSON(w, http.StatusOK, encoded)
 }
 
 // parseDiagnosticsQuery mirrors the controller's Number(raw) parse plus the
@@ -940,13 +941,6 @@ func normalizeStringArray(values []string, maxSize int) []string {
 		return nil
 	}
 	return out
-}
-
-// writeJSON writes a pre-encoded JSON payload with the NestJS content type.
-func writeJSON(w http.ResponseWriter, status int, payload json.RawMessage) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(payload)
 }
 
 // writeServiceError maps a typed service error onto the GlobalExceptionFilter

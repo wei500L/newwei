@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"math"
 	"net/http"
@@ -153,7 +154,7 @@ func (s *Service) CreateTask(ctx context.Context, caller *authhttp.Identity, inp
 	if err != nil {
 		return crawlreadtelemetry.CrawlTaskView{}, err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"INSERT INTO CrawlTask (id, orgId, createdById, targetUrl, displayName, status, config, timeRangeFrom, timeRangeTo, concurrency, keywords, runCount, createdAt, updatedAt) "+
 			"VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, 0, ?, ?)",
@@ -191,7 +192,7 @@ func (s *Service) CreateTask(ctx context.Context, caller *authhttp.Identity, inp
 	}
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE CrawlTask SET status = 'queued', updatedAt = ? WHERE id = ? AND status = 'pending'",
-		nowMillis(), taskID); err != nil {
+		timefmt.NowMillis(), taskID); err != nil {
 		return crawlreadtelemetry.CrawlTaskView{}, fmt.Errorf("%w: %v", errDatabase, err)
 	}
 
@@ -246,7 +247,7 @@ func (s *Service) DeleteTask(ctx context.Context, caller *authhttp.Identity, tas
 	if err != nil {
 		return err
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	payload, err := json.Marshal(cleanupOutboxPayload{
 		Type:   "cleanup_crawl_results",
 		TaskID: taskID,
@@ -325,7 +326,7 @@ func (s *Service) RetryTask(ctx context.Context, caller *authhttp.Identity, task
 
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE CrawlTask SET status = 'queued', lastError = NULL, updatedAt = ? WHERE id = ? AND orgId = ?",
-		nowMillis(), taskID, caller.OrgID); err != nil {
+		timefmt.NowMillis(), taskID, caller.OrgID); err != nil {
 		return crawlreadtelemetry.CrawlTaskView{}, fmt.Errorf("%w: %v", errDatabase, err)
 	}
 	// C1: when the enqueue fails, roll the status back so the operator can
@@ -333,7 +334,7 @@ func (s *Service) RetryTask(ctx context.Context, caller *authhttp.Identity, task
 	if _, err := s.queue.EnqueueTask(ctx, taskID, caller.OrgID, enqueueOptions); err != nil {
 		log.Printf("crawltaskwrite: retry enqueue failed for task %s: %v", taskID, err)
 		rollback := "UPDATE CrawlTask SET status = ?, lastError = ?, updatedAt = ? WHERE id = ? AND orgId = ? AND status = 'queued'"
-		if _, rollbackErr := s.db.ExecContext(ctx, rollback, status, nullableStringValue(lastError), nowMillis(), taskID, caller.OrgID); rollbackErr != nil {
+		if _, rollbackErr := s.db.ExecContext(ctx, rollback, status, nullableStringValue(lastError), timefmt.NowMillis(), taskID, caller.OrgID); rollbackErr != nil {
 			log.Printf("crawltaskwrite: failed to roll back retry status for task %s: %v", taskID, rollbackErr)
 		}
 		return crawlreadtelemetry.CrawlTaskView{}, newStatus(http.StatusInternalServerError, "Internal server error")

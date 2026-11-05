@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 )
@@ -142,7 +143,7 @@ func (r *mysqlRepository) Claim(ctx context.Context, candidate Candidate) (*Clai
 	if r == nil || r.db == nil {
 		return nil, errors.New("auditoutbox: mysql is not configured")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("auditoutbox: begin claim transaction: %w", err)
@@ -262,7 +263,7 @@ func (r *mysqlRepository) MarkFailed(ctx context.Context, update StatusUpdate) e
 	if r == nil || r.db == nil {
 		return errors.New("auditoutbox: mysql is not configured")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := r.db.ExecContext(ctx, markFailedSQL,
 		update.Message,
 		update.AvailableAt.UTC().Truncate(time.Millisecond),
@@ -284,7 +285,7 @@ func (r *mysqlRepository) MarkDead(ctx context.Context, update StatusUpdate) err
 	if r == nil || r.db == nil {
 		return errors.New("auditoutbox: mysql is not configured")
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := r.db.ExecContext(ctx, markDeadSQL,
 		update.Message,
 		update.AvailableAt.UTC().Truncate(time.Millisecond),

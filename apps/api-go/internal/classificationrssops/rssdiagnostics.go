@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"os"
 	"sort"
@@ -1053,7 +1054,7 @@ func (s *Service) BackfillSourceID(ctx context.Context, request rssBackfillReque
 		}
 		set := bson.D{
 			{Key: "sourceId", Value: *resolved},
-			{Key: "updatedAt", Value: nowMillis()},
+			{Key: "updatedAt", Value: timefmt.NowMillis()},
 		}
 		if pipelineJobID := firstNonEmpty(trimmedPointer(candidate.PipelineJobID), trimmedPointer(candidate.RawPipelineJobID)); pipelineJobID != nil {
 			set = append(set, bson.E{Key: "pipelineJobId", Value: *pipelineJobID})

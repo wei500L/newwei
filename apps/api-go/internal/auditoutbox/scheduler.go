@@ -419,12 +419,6 @@ func (s *Scheduler) rand() float64 {
 	return mathrand.Float64()
 }
 
-// nowMillis returns the current UTC instant truncated to milliseconds, because
-// every DATETIME(3) column Prisma writes has millisecond precision.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // newRowID generates a client-side identifier in the shape Prisma's cuid()
 // produces ('c' plus 24 hex characters) because AuditLog.id has no database
 // default in the Go path.

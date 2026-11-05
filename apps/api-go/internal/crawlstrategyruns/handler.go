@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"log"
 	"mime"
@@ -76,7 +77,7 @@ func (h *Handler) serveTrialRun(w http.ResponseWriter, r *http.Request, id strin
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	httpx.WriteJSON(w, http.StatusCreated, result)
 }
 
 func (h *Handler) serveReplay(w http.ResponseWriter, r *http.Request, runID string) {
@@ -98,7 +99,7 @@ func (h *Handler) serveReplay(w http.ResponseWriter, r *http.Request, runID stri
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, result)
+	httpx.WriteJSON(w, http.StatusCreated, result)
 }
 
 func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
@@ -219,15 +220,4 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	authhttp.WriteInternalFailure(w, r)
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(encoded)
 }

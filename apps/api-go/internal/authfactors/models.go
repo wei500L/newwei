@@ -153,12 +153,6 @@ type oidcConfigRow struct {
 
 // ---- small helpers ----
 
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
-}
-
 // nestTimestamp renders a time exactly like JavaScript's
 // Date.prototype.toISOString (UTC, millisecond precision, trailing Z).
 func nestTimestamp(value time.Time) string {

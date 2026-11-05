@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"mime"
 	"net"
@@ -347,7 +348,7 @@ func (h *Handler) writeResponse(w http.ResponseWriter, r *http.Request, status i
 		writeServiceError(w, r, encodeErr)
 		return
 	}
-	writeRawJSON(w, status, payload)
+	httpx.WriteRawJSON(w, status, payload)
 }
 
 // writeProfile renders the authenticated profile, which is produced by the
@@ -364,7 +365,7 @@ func (h *Handler) writeProfile(w http.ResponseWriter, r *http.Request, profile a
 		writeServiceError(w, r, encodeErr)
 		return
 	}
-	writeRawJSON(w, http.StatusOK, payload)
+	httpx.WriteRawJSON(w, http.StatusOK, payload)
 }
 
 // marshalNoEscape encodes a value without Go's HTML escaping, matching Express
@@ -377,12 +378,6 @@ func marshalNoEscape[T any](value T) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'}), nil
-}
-
-func writeRawJSON(w http.ResponseWriter, status int, payload []byte) {
-	w.Header().Set("content-type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(payload)
 }
 
 // requestIP mirrors `req.ip`: the Express trust-proxy resolved client address.

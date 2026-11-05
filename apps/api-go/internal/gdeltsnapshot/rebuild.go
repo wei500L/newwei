@@ -2,6 +2,7 @@ package gdeltsnapshot
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"sync"
@@ -178,7 +179,7 @@ func (s *Service) rebuild(ctx context.Context) (*Payload, error) {
 	// millisecond precision and the MySQL column is DATETIME(3), so both stores
 	// keep exactly the value the NestJS Date carries.
 	generatedAt := s.now().UTC().Truncate(time.Millisecond)
-	generatedAtISO := isoTime(generatedAt)
+	generatedAtISO := timefmt.FormatDateTime(generatedAt)
 	for _, category := range Categories {
 		state := categoryStates.state(category)
 		if state.Status == categoryStatusFresh {
@@ -194,7 +195,7 @@ func (s *Service) rebuild(ctx context.Context) (*Payload, error) {
 		VariantKey:  variantKey,
 		Status:      status,
 		GeneratedAt: generatedAtISO,
-		ExpiresAt:   isoTime(expiresAt),
+		ExpiresAt:   timefmt.FormatDateTime(expiresAt),
 		Partial:     status != StatusCompleted,
 		Warnings:    warnings,
 		Diagnostics: Diagnostics{

@@ -3,6 +3,7 @@ package authlogin
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 )
 
@@ -46,7 +47,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, r
 		return
 	}
 	actor := nullableAuditActor(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	var rawMetadata []byte
 	if len(metadata) > 0 {
 		rawMetadata = []byte(metadata)

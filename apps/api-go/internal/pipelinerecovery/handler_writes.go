@@ -2,6 +2,7 @@ package pipelinerecovery
 
 import (
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"mime"
 	"net/http"
@@ -43,7 +44,7 @@ func (h *Handler) serveReplay(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 // serveRollback handles POST /api/admin/quality/pipeline/rollback.
@@ -67,7 +68,7 @@ func (h *Handler) serveRollback(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, encoded)
+	httpx.WriteRawJSON(w, http.StatusCreated, encoded)
 }
 
 // stringValue dereferences an optional JSON string. A missing field behaves like

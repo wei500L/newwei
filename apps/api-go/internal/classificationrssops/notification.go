@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 )
@@ -92,7 +93,7 @@ func (s *Service) writeClassificationAlertNotification(
 	if err != nil {
 		return err
 	}
-	if err := classificationAlertInsertRow(ctx, s.db, id, orgID, userID, body, payload, nowMillis()); err != nil {
+	if err := classificationAlertInsertRow(ctx, s.db, id, orgID, userID, body, payload, timefmt.NowMillis()); err != nil {
 		return err
 	}
 	s.publishClassificationAlertRelay(ctx, id, orgID, userID)

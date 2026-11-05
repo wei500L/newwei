@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
 	"time"
@@ -88,7 +89,7 @@ type reportEnqueuer interface {
 func (s *Service) CreateReportJob(ctx context.Context, request createReportJobRequest) (createReportJobResponse, error) {
 	objectID := bson.NewObjectID()
 	jobID := objectID.Hex()
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	document := reportJobDocument{
 		ID:            objectID,
 		OrgID:         request.OrgID,
@@ -151,7 +152,7 @@ func (s *Service) markReportJobEnqueueFailure(ctx context.Context, orgID string,
 	if err != nil {
 		return
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err = collection.UpdateOne(ctx,
 		bson.D{{Key: "_id", Value: objectID}, {Key: "orgId", Value: orgID}},
 		bson.D{{Key: "$set", Value: bson.D{

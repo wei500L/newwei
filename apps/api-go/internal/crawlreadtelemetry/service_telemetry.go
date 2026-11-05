@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"io"
 	"net/http"
 	"regexp"
@@ -116,7 +117,7 @@ func (h *Handler) serveTelemetryRecord(w http.ResponseWriter, r *http.Request) {
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBody(w, http.StatusCreated, body)
+	httpx.WriteRawJSON(w, http.StatusCreated, body)
 }
 
 // serveTelemetrySummary handles GET /api/admin/search-telemetry/summary
@@ -156,7 +157,7 @@ func (h *Handler) serveTelemetrySummary(w http.ResponseWriter, r *http.Request) 
 		authhttp.WriteInternalFailure(w, r)
 		return
 	}
-	writeJSONBody(w, http.StatusOK, body)
+	httpx.WriteRawJSON(w, http.StatusOK, body)
 }
 
 // validateRecordSearchTelemetry mirrors the class-validator rules of

@@ -2,6 +2,7 @@ package llmlogs
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -68,7 +69,7 @@ func (w *CompletionWriter) WriteClusteringDecision(ctx context.Context, entry Cl
 	metadata := w.service.filterMetadataEntries(ctx, clusteringMetadataEntries(entry.Metadata))
 	created := entry.OccurredAt.UTC()
 	if created.IsZero() {
-		created = nowMillis()
+		created = timefmt.NowMillis()
 	} else {
 		created = created.Truncate(time.Millisecond)
 	}

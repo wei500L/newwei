@@ -3,6 +3,7 @@ package llmlogs
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 
@@ -70,7 +71,7 @@ func (w *ArchiveSearchWriter) WriteArchiveSearchAttempt(ctx context.Context, ent
 	}
 	created := entry.OccurredAt.UTC()
 	if created.IsZero() {
-		created = nowMillis()
+		created = timefmt.NowMillis()
 	} else {
 		created = created.Truncate(time.Millisecond)
 	}

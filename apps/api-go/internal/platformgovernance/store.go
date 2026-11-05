@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 
@@ -55,12 +56,6 @@ type Service struct {
 // path.
 func NewService(db *sql.DB, redisClient *redis.Client, mongoDB *mongo.Database, env Env) *Service {
 	return &Service{db: db, redis: redisClient, mongo: mongoDB, env: env, sleep: time.Sleep}
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID generates a client-side identifier in the same shape Prisma's cuid()
@@ -121,7 +116,7 @@ func (s *Service) upsertSetting(ctx context.Context, key string, value json.RawM
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingForceDescriptionSQL,
 		key, []byte(value), isPublic, description, now, now, updatedByID)
 	return err
@@ -164,7 +159,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, a
 	}
 	const resource = "system_settings"
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if id, idErr := newRowID(); idErr == nil {
 		_, err := s.db.ExecContext(ctx,

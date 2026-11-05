@@ -3,6 +3,7 @@ package situationmonitors
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"strings"
 	"time"
@@ -93,8 +94,8 @@ func mapRow(row monitorRow) storedMonitor {
 		ApprovedGeos:         parseStringArray(row.ApprovedGeos, maxApprovedSuggestions),
 		ApprovedLexicalTerms: parseStringArray(row.ApprovedLexical, maxApprovedTerms),
 		RejectedSuggestions:  parseRejected(row.Rejected),
-		CreatedAt:            isoTime(row.CreatedAt),
-		UpdatedAt:            isoTime(row.UpdatedAt),
+		CreatedAt:            timefmt.FormatDateTime(row.CreatedAt),
+		UpdatedAt:            timefmt.FormatDateTime(row.UpdatedAt),
 	}
 	if loc := parseLocation(row); loc != nil {
 		out.Location = loc
@@ -108,17 +109,13 @@ func mapRow(row monitorRow) storedMonitor {
 		out.QueryEmbeddingVector = vector
 	}
 	if row.LastResolved.Valid {
-		out.LastResolvedAt = isoTime(row.LastResolved.Time)
+		out.LastResolvedAt = timefmt.FormatDateTime(row.LastResolved.Time)
 	}
 	return out
 }
 
 func stringsTrim(value string) string {
 	return strings.TrimSpace(value)
-}
-
-func isoTime(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
 func emptyRejected() rejectedState {

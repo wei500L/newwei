@@ -3,6 +3,7 @@ package kgimpact
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"sort"
 	"strings"
@@ -520,7 +521,7 @@ func encodeImpact(model knowledgeGraphImpactAnalysisModel) json.RawMessage {
 		Seed:        model.Seed,
 		Candidates:  model.Candidates,
 		Metadata:    model.Metadata,
-		GeneratedAt: formatISO(model.GeneratedAt),
+		GeneratedAt: timefmt.FormatDateTime(model.GeneratedAt),
 	}
 	raw, err := json.Marshal(entry)
 	if err != nil {
@@ -548,10 +549,6 @@ func decodeImpact(raw []byte) (knowledgeGraphImpactAnalysisModel, bool) {
 		Metadata:    entry.Metadata,
 		GeneratedAt: parseISO(entry.GeneratedAt),
 	}, true
-}
-
-func formatISO(value time.Time) string {
-	return value.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
 func parseISO(value string) time.Time {

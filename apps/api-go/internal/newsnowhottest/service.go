@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"math"
 	"sync"
@@ -410,7 +411,7 @@ func (s *Service) buildGlobalSnapshot(
 	}
 	return GlobalSnapshot{
 		Signature:                signature,
-		GeneratedAt:              isoTime(generatedAt),
+		GeneratedAt:              timefmt.FormatDateTime(generatedAt),
 		Diagnostics:              buildDiagnostics(fetches),
 		Errors:                   errorsOut,
 		TotalDomesticSourceCount: metadata.totalDomesticSourceCount,
@@ -566,7 +567,7 @@ func (s *Service) buildSignalsFromSeeds(ctx context.Context, orgID string, seeds
 		freshnessScore, isNew, isRising := computeFreshness(capturedAt.UnixMilli(), state, seed.Rank)
 		signals[index] = Signal{
 			SignalSeed:     seed,
-			CapturedAt:     isoTime(capturedAt),
+			CapturedAt:     timefmt.FormatDateTime(capturedAt),
 			State:          state,
 			IsNew:          isNew,
 			IsRising:       isRising,
@@ -687,7 +688,7 @@ func toISODateTime(value newsnowsources.DateValue) *string {
 			return nil
 		}
 		millis := int64(number)
-		formatted := isoTime(time.UnixMilli(millis))
+		formatted := timefmt.FormatDateTime(time.UnixMilli(millis))
 		return &formatted
 	case newsnowsources.ValueString:
 		text, _ := value.StringValue()
@@ -697,7 +698,7 @@ func toISODateTime(value newsnowsources.DateValue) *string {
 		}
 		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
 			if parsed, err := time.Parse(layout, trimmed); err == nil {
-				formatted := isoTime(parsed)
+				formatted := timefmt.FormatDateTime(parsed)
 				return &formatted
 			}
 		}

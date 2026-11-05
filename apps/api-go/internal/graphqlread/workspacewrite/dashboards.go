@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 
@@ -150,7 +151,7 @@ func (s *service) upsertDashboard(ctx contract.Context, input upsertDashboardInp
 	}
 	callCtx := callContext(ctx)
 	orgID := ctx.Identity.OrgID
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	configText, err := jsonText(input.Config)
 	if err != nil {
 		return workspace.DashboardModel{}, err

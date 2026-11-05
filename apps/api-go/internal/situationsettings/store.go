@@ -8,9 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -192,7 +192,7 @@ func (s *Service) upsertSettings(ctx context.Context, value []byte) error {
 	if s == nil || s.db == nil {
 		return errNoDatabase
 	}
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	_, err := s.db.ExecContext(ctx, upsertSettingsSQL,
 		settingsKey, value, settingsDescription, now, now)
 	return err
@@ -331,7 +331,7 @@ func (s *Service) writeAuditLogBestEffort(ctx context.Context, orgID, actorID, a
 	}
 	const resource = "system_settings"
 	actor := nullableActorID(actorID)
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if id, err := newRowID(); err == nil {
 		if _, err := s.db.ExecContext(ctx,
@@ -371,12 +371,6 @@ func nullableActorID(actorID string) *string {
 		return nil
 	}
 	return &actorID
-}
-
-// nowMillis returns the current UTC time truncated to milliseconds, matching
-// the DATETIME(3) columns Prisma writes.
-func nowMillis() time.Time {
-	return time.Now().UTC().Truncate(time.Millisecond)
 }
 
 // newRowID generates a client-side identifier in the same shape Prisma's cuid()

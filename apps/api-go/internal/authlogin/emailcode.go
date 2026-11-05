@@ -3,6 +3,7 @@ package authlogin
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"log"
 	"time"
 
@@ -407,7 +408,7 @@ func (s *Service) sendVerificationCode(ctx context.Context, userID, orgID, email
 // sendBindCode performs the state write, the code cache write and the delivery.
 // Any failure is returned so the caller can roll the pending address back.
 func (s *Service) sendBindCode(ctx context.Context, userID, normalizedEmail string, payload json.RawMessage, code string, settings emailCodeSettings) error {
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `User` SET `pendingEmail` = ?, `updatedAt` = ? WHERE `id` = ?",
 		normalizedEmail, now, userID); err != nil {
@@ -484,7 +485,7 @@ func (s *Service) verifyEmail(ctx context.Context, userID, orgID, code string, i
 		return authenticatedUser{}, badRequest(invalidEmailCodeMessage)
 	}
 
-	now := nowMillis()
+	now := timefmt.NowMillis()
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE `User` SET `email` = ?, `emailVerified` = ?, `pendingEmail` = NULL, `updatedAt` = ? WHERE `id` = ?",
 		payload.Email, now, now, userID); err != nil {

@@ -2,6 +2,7 @@ package gdeltsnapshot
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"time"
 )
@@ -37,7 +38,7 @@ func (s *Service) loadStatusMetrics(ctx context.Context) (statusMetrics, error) 
 // non-negative, so Go's half-away-from-zero math.Round matches Math.round,
 // including exact ties such as 24/96 * 10 = 2.5.
 func computeStatusMetrics(row aggregateRow, now time.Time) statusMetrics {
-	scheduled := isoTime(nextScheduledAt(now))
+	scheduled := timefmt.FormatDateTime(nextScheduledAt(now))
 	metrics := statusMetrics{
 		LastFullSuccessAt:          isoTimePtr(row.LastFullSuccessAt),
 		LastNonSuccessAt:           isoTimePtr(row.LastNonSuccessAt),

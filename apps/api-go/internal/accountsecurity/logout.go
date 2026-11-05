@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"strings"
 	"time"
 )
@@ -32,7 +33,7 @@ func (s *Service) logout(ctx context.Context, identity *Identity, refreshToken *
 		return errNoDatabase
 	}
 	userID := identity.UserID
-	now := nowMillis()
+	now := timefmt.NowMillis()
 
 	if logoutAll {
 		if _, err := s.db.ExecContext(ctx,

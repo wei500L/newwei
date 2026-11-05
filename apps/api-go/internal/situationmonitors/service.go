@@ -3,6 +3,7 @@ package situationmonitors
 import (
 	"context"
 	"database/sql"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
 )
@@ -72,7 +73,7 @@ func (s *Service) Create(ctx context.Context, orgID, userID string, input monito
 		if err != nil {
 			return err
 		}
-		created, err := s.insertMonitor(ctx, conn, orgID, userID, "manual", payload, nowMillis())
+		created, err := s.insertMonitor(ctx, conn, orgID, userID, "manual", payload, timefmt.NowMillis())
 		if err != nil {
 			return err
 		}
@@ -171,5 +172,5 @@ func (s *Service) buildPayload(ctx context.Context, orgID string, input monitorW
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	return persistedFromParts(name, enabled, color, rawKeywords, approvedTopics, approvedEntities, approvedSources, approvedGeos, approvedLexical, rejected, loc, embedding, nowMillis()), nil
+	return persistedFromParts(name, enabled, color, rawKeywords, approvedTopics, approvedEntities, approvedSources, approvedGeos, approvedLexical, rejected, loc, embedding, timefmt.NowMillis()), nil
 }

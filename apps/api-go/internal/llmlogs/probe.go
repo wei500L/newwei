@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -154,7 +155,7 @@ func (w *ProbeWriter) WriteProbe(ctx context.Context, entry ProbeLogEntry) error
 	metadata := w.service.filterMetadataEntries(ctx, entry.Metadata.entries())
 	created := entry.OccurredAt.UTC()
 	if created.IsZero() {
-		created = nowMillis()
+		created = timefmt.NowMillis()
 	} else {
 		created = created.Truncate(time.Millisecond)
 	}

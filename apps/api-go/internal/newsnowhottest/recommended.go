@@ -2,6 +2,7 @@ package newsnowhottest
 
 import (
 	"context"
+	"github.com/wei500L/newwei/apps/api-go/internal/timefmt"
 	"math"
 	"net/url"
 	"sort"
@@ -42,7 +43,7 @@ func (s *Service) GetRecommendedFeed(ctx context.Context, input RecommendedInput
 	if len(hottestSourceIDs) == 0 {
 		return RecommendedResponse{
 			Scope:       "hottest",
-			GeneratedAt: isoTime(s.now()),
+			GeneratedAt: timefmt.FormatDateTime(s.now()),
 			Degraded:    true,
 			Items:       []RecommendedItem{},
 		}, nil
@@ -204,7 +205,7 @@ func (s *Service) GetRecommendedFeed(ctx context.Context, input RecommendedInput
 	degraded := analysisDegraded || collaborative.Degraded || len(batch.Errors) > 0
 	return RecommendedResponse{
 		Scope:       "hottest",
-		GeneratedAt: isoTime(s.now()),
+		GeneratedAt: timefmt.FormatDateTime(s.now()),
 		Degraded:    degraded,
 		Items:       items,
 	}, nil

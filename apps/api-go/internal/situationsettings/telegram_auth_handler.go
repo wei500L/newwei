@@ -3,6 +3,7 @@ package situationsettings
 import (
 	"context"
 	"encoding/json"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"log"
 	"net/http"
 
@@ -150,7 +151,7 @@ func (h *TelegramAuthHandler) serveStart(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// @Post without @HttpCode => 201 Created.
-	writeJSONBytes(w, http.StatusCreated, payload)
+	httpx.WriteRawJSON(w, http.StatusCreated, payload)
 }
 
 // serveComplete mirrors completeTelegramAuth: complete the login, write the
