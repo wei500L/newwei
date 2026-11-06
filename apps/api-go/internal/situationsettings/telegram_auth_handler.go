@@ -120,14 +120,10 @@ func (h *TelegramAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (h *TelegramAuthHandler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
-	return h.auth.Authorize(w, r, requiredPermission)
-}
-
 // serveStart mirrors startTelegramAuth: 201
 // {requestId, isCodeViaApp, expiresAt}.
 func (h *TelegramAuthHandler) serveStart(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}
@@ -158,7 +154,7 @@ func (h *TelegramAuthHandler) serveStart(w http.ResponseWriter, r *http.Request)
 // credentials through updateSettings, hot-sync the Telegram schedule and return
 // the same withExternalSnapshotStatus spread as the settings PUT.
 func (h *TelegramAuthHandler) serveComplete(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}

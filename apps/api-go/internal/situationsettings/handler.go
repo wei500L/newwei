@@ -98,12 +98,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) *authhttp.Identity {
-	return h.auth.Authorize(w, r, requiredPermission)
-}
-
 func (h *Handler) serveGet(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}
@@ -116,7 +112,7 @@ func (h *Handler) serveGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) servePut(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}
@@ -139,7 +135,7 @@ func (h *Handler) servePut(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveReset(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}
@@ -156,7 +152,7 @@ func (h *Handler) serveReset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) serveClearTelegramAuth(w http.ResponseWriter, r *http.Request) {
-	identity := h.authorize(w, r)
+	identity := h.auth.Authorize(w, r, requiredPermission)
 	if identity == nil {
 		return
 	}
