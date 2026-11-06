@@ -1,33 +1,29 @@
-// Package crawlworker is the Go owner of the three crawl4ai BullMQ queues when
-// API_GO_CRAWL_WORKER_MODE=go: crawl4ai-hot, crawl4ai-normal and the legacy
-// crawl4ai queue.
+// Package crawlworker is the Go owner of the three crawl4ai BullMQ queues:
+// crawl4ai-hot, crawl4ai-normal and the legacy crawl4ai queue.
 //
-// It ports the NestJS CrawlQueueProcessor worker runtime
-// (apps/api/src/modules/crawl/crawl.processor.ts): one BullMQ Worker per queue,
-// a shared process-wide concurrency limiter, the manual BullMQ rate limiter, a
-// stalled checker per queue, the memory pressure fallback and the A4 QueueEvents
-// side effects (B1: moved into the worker, applied exactly once).
+// Each queue runs on a shared internal/bullmq.Worker, which owns the BullMQ
+// 5.63.2 worker state machine: moveToActive, the job lock and its renewal, the
+// finish/retry/delayed transitions, the stalled checker and the graceful
+// shutdown. This package keeps only the crawl-specific parts:
 //
-// # Ownership and queue protocol
+//   - the shared strict-priority concurrency limiter (limiter.go);
+//   - the O1 settings cache and the C2 concurrency subscriber (settings.go,
+//     worker.go);
+//   - the attempt business logic: error classification, the crawl4ai memory
+//     pressure fallback and the B1 side effects (attempt.go, errors.go);
+//   - the per-queue BullMQ transitions the attempt drives itself (queue.go) and
+//     the stalled business side effect wired to the worker's OnStalled hook.
 //
-// Execution ownership is whole-process. With the switch in go mode NestJS skips
-// creating its crawl Workers and its QueueEvents readers, and this package
-// claims the jobs. Producers are unchanged: jobs are the JSON CrawlJobData
-// document, job options and command arguments are MessagePack, and the vendored
-// bullmq@5.63.2 Lua in scripts/ implements moveToActive, moveToFinished,
-// retryJob, moveToDelayed, moveJobFromActiveToWait, extendLock,
-// moveStalledJobsToWait and updateData. The queue event stream keeps working for
-// the NestJS admin consumers; it is a broadcast (XREAD), never a competing
-// consumer. During a switchover both processes may briefly claim jobs, and the
-// BullMQ job lock admits one owner per attempt.
+// # Queue protocol
 //
-// One caveat of a mixed rollout: a legacy API_GO_CRAWL_WORKER_MODE instance still
-// registers its QueueEvents readers, and those readers decrement crawl:activity
-// for every completed/failed event regardless of which process executed the job.
-// A job finished here is therefore decremented twice while such an instance
-// exists (this worker inline + that reader). The counter self-heals through
-// ensureActiveTaskCount, and the window closes as soon as every instance runs in
-// go mode; switching all instances in one restart avoids it entirely.
+// Jobs are the JSON CrawlJobData document, job options and command arguments are
+// MessagePack, and the vendored bullmq@5.63.2 Lua in scripts/ implements
+// moveToActive, moveToFinished, retryJob, moveToDelayed, moveJobFromActiveToWait,
+// extendLock, moveStalledJobsToWait and updateData. Producers are unchanged, so
+// switching between the Go and Node implementations needs no data migration; the
+// BullMQ job lock admits one owner per attempt. The queue event stream keeps
+// working for the NestJS admin consumers; it is a broadcast (XREAD), never a
+// competing consumer.
 //
 // # Concurrency (A1)
 //
@@ -36,7 +32,8 @@
 // be read the CRAWL4AI_MAX_CONCURRENCY environment value is used, then one. The
 // value is written to bull:<queue>:meta concurrency for the three queues (the
 // Queue.setGlobalConcurrency equivalent, warn-only on failure) and becomes the
-// shared limiter capacity and the per-queue pull concurrency.
+// shared limiter capacity and the per-queue pull concurrency (the shared
+// bullmq.Worker's SetConcurrency).
 //
 // The limiter is strict-priority: hot jobs are served before normal jobs and a
 // normal acquisition is refused while a hot waiter is queued. Closing the worker
@@ -46,11 +43,12 @@
 //
 // The moveToActive options carry the manual BullMQ limiter
 // {max: clamp(round(N)*100, 1, 10000), duration: 1000}. The C2 broadcast
-// crawl:worker-concurrency:v1 {"version":1,"maxConcurrency":N} changes both the
-// limiter capacity and the pull concurrency of every running queue worker; a
-// malformed message (non-object, wrong version, non-integer or out-of-range
-// value) is warned and ignored, with the settings document and the BullMQ meta
-// staying authoritative.
+// crawl:worker-concurrency:v1 {"version":1,"maxConcurrency":N} changes the
+// limiter capacity, the manual rate-limit table (SetLimiter) and the pull
+// concurrency (SetConcurrency) of every running queue worker; a malformed
+// message (non-object, wrong version, non-integer or out-of-range value) is
+// warned and ignored, with the settings document and the BullMQ meta staying
+// authoritative.
 //
 // # Settings cache (O1)
 //
@@ -103,13 +101,14 @@
 //   - stalled: every job id moveStalledJobsToWait returns (including the jobs that
 //     exceeded maxStalledCount and were stamped with a deferred failure) gets
 //     CrawlTask running -> queued with the stalled message and the ops snapshot.
+//     The shared worker delivers the ids through its OnStalled hook.
 //
 // # Shutdown
 //
-// Close stops the fetch loops, drains the in-flight attempts while their locks
-// keep renewing, then stops the stalled checkers and the C2 subscription and
-// closes the dedicated blocking connections. An attempt still running at the
-// deadline is canceled: it leaves its job active, the lock expires, and BullMQ
-// stalled recovery re-delivers it. The shared command Redis client is never
-// closed, matching itempipeline.Worker.Close.
+// Close stops the fetch loops of all three queues, drains the in-flight attempts
+// while their locks keep renewing, then stops the C2 subscription and refuses
+// the remaining limiter waiters; the dedicated blocking connections are closed by
+// the shared workers. An attempt still running at the deadline is canceled: it
+// leaves its job active, the lock expires, and BullMQ stalled recovery re-delivers
+// it. The shared command Redis client is never closed.
 package crawlworker

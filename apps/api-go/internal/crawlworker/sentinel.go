@@ -32,11 +32,6 @@ var (
 	// errNoTaskRunner reports a job that needs the execution runner but the
 	// worker was built without one.
 	errNoTaskRunner = errors.New("crawlworker: crawl execution runner is not configured")
-	// errWorkerNotStarted reports an operation on a worker that never started.
-	errWorkerNotStarted = errors.New("crawlworker: worker is not started")
 	// errWorkerAlreadyStarted reports a second Start call.
 	errWorkerAlreadyStarted = errors.New("crawlworker: worker already started")
-	// errLockLost is the attempt cancel cause when the BullMQ job lock is no
-	// longer owned by this attempt.
-	errLockLost = errors.New("crawlworker: crawl job lock was lost")
 )

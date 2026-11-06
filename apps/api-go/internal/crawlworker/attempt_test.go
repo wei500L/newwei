@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawl4ai"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
@@ -224,16 +225,17 @@ const testJobData = `{"taskId":"task-1","orgId":"org-1","sourceId":"source-1","t
 
 const testFrontierJobData = `{"taskId":"task-1","orgId":"org-1","sourceId":"source-1","triggeredById":"user-1","traceId":"trace-1","memoryPressureRequeues":0,"priorityClass":"hot","jobKind":"frontier_node","frontierNodeId":"node-7"}`
 
-// testJob builds a claimed job exactly as moveToActive would decode it.
+// testJob builds a claimed job exactly as the shared worker would decode it.
 func testJob(t *testing.T, data, opts string, attemptsMade, attemptsStarted int) claimedJob {
 	t.Helper()
-	job, err := jobFromFlat([]any{
-		"id", "job-1",
-		"data", data,
-		"opts", opts,
-		"atm", int64(attemptsMade),
-		"ats", int64(attemptsStarted),
-	}, "token-1", "job-1")
+	job, err := claimedJobFromBullmq(&bullmq.Job{
+		ID:              "job-1",
+		Token:           "token-1",
+		Data:            json.RawMessage(data),
+		Opts:            json.RawMessage(opts),
+		AttemptsMade:    int64(attemptsMade),
+		AttemptsStarted: int64(attemptsStarted),
+	})
 	if err != nil {
 		t.Fatalf("decode the test job: %v", err)
 	}

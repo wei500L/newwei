@@ -1,6 +1,7 @@
 package crawlworker
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -14,13 +15,10 @@ func TestScriptsLoad(t *testing.T) {
 		t.Fatalf("load scripts: %v", err)
 	}
 	for name, hash := range map[string]string{
-		"moveToActive":            scripts.moveToActive.Hash(),
 		"moveToFinished":          scripts.moveToFinished.Hash(),
 		"moveJobFromActiveToWait": scripts.moveJobFromActiveToWait.Hash(),
 		"retryJob":                scripts.retryJob.Hash(),
 		"moveToDelayed":           scripts.moveToDelayed.Hash(),
-		"moveStalledJobsToWait":   scripts.moveStalledJobsToWait.Hash(),
-		"extendLock":              scripts.extendLock.Hash(),
 		"updateData":              scripts.updateData.Hash(),
 	} {
 		if len(hash) != 40 {
@@ -55,22 +53,20 @@ func TestKeysFollowTheBullMQLayout(t *testing.T) {
 	}
 }
 
-func TestJobFromFlatDecodesTheHashes(t *testing.T) {
-	flat := []any{
-		"id", "task-1",
-		"name", "crawl-task",
-		"data", `{"taskId":"task-1","orgId":"org-1","sourceId":"source-9","traceId":"trace-1","memoryPressureRequeues":2,"priorityClass":"hot","jobKind":"frontier_node","frontierNodeId":"node-7"}`,
-		"opts", `{"attempts":5,"backoff":{"type":"exponential","delay":1000}}`,
-		"atm", int64(1),
-		"ats", int64(2),
-		"stc", int64(0),
-		"priority", "0",
-	}
-	job, err := jobFromFlat(flat, "token-1", "task-1")
+func TestClaimedJobFromBullmqDecodesTheHashes(t *testing.T) {
+	job, err := claimedJobFromBullmq(&bullmq.Job{
+		ID:              "task-1",
+		Token:           "token-1",
+		Data:            json.RawMessage(`{"taskId":"task-1","orgId":"org-1","sourceId":"source-9","traceId":"trace-1","memoryPressureRequeues":2,"priorityClass":"hot","jobKind":"frontier_node","frontierNodeId":"node-7"}`),
+		Opts:            json.RawMessage(`{"attempts":5,"backoff":{"type":"exponential","delay":1000}}`),
+		AttemptsMade:    1,
+		AttemptsStarted: 2,
+		StalledCount:    0,
+	})
 	if err != nil {
 		t.Fatalf("decode job: %v", err)
 	}
-	if job.ID != "task-1" || job.Token != "token-1" || job.Name != "crawl-task" {
+	if job.ID != "task-1" || job.Token != "token-1" {
 		t.Fatalf("job identity = %+v", job)
 	}
 	if job.Data.TaskID != "task-1" || job.Data.OrgID != "org-1" || job.Data.TraceID != "trace-1" {
@@ -93,9 +89,13 @@ func TestJobFromFlatDecodesTheHashes(t *testing.T) {
 	}
 }
 
-func TestJobFromFlatRejectsABrokenDataDocument(t *testing.T) {
-	flat := []any{"id", "task-1", "data", "{", "opts", "{}"}
-	if _, err := jobFromFlat(flat, "token", "task-1"); err == nil {
+func TestClaimedJobFromBullmqRejectsABrokenDataDocument(t *testing.T) {
+	_, err := claimedJobFromBullmq(&bullmq.Job{
+		ID:   "task-1",
+		Data: json.RawMessage("{"),
+		Opts: json.RawMessage("{}"),
+	})
+	if err == nil {
 		t.Fatal("expected a decode error")
 	}
 }
@@ -168,11 +168,14 @@ func TestKeepJobsFollowsGetKeepJobs(t *testing.T) {
 	}
 }
 
-func TestPackMoveToActiveOptionsCarriesTheLimiter(t *testing.T) {
-	packed, err := pack(moveToActiveOptions{
-		Token:        "token-1",
-		LockDuration: 30_000,
-		Limiter:      limiterOptions{Max: 500, Duration: 1_000},
+func TestPackFinishOptionsCarriesTheLimiter(t *testing.T) {
+	packed, err := pack(finishOptions{
+		Token:          "token-1",
+		KeepJobs:       keepJobs{Count: intPointer(-1)},
+		Limiter:        limiterOptions{Max: 500, Duration: 1_000},
+		LockDuration:   30_000,
+		Attempts:       3,
+		MaxMetricsSize: "",
 	})
 	if err != nil {
 		t.Fatalf("pack: %v", err)
