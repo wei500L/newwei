@@ -117,6 +117,12 @@ type WorkerOptions struct {
 	// OnClaim runs once per claimed job before the processor, for queue-specific
 	// bookkeeping that must happen before processing (repeat scheduling).
 	OnClaim func(ctx context.Context, job *Job)
+	// OnStalled runs once per stalled-recovery pass with the job ids the
+	// moveStalledJobsToWait script moved back to wait, in script order. The list
+	// includes the jobs that exceeded MaxStalledCount (the Lua stamps their `defa`
+	// deferred failure and re-queues them in the same pass), so a queue that
+	// writes a business side effect for every stalled job must handle all of them.
+	OnStalled func(ctx context.Context, jobIDs []string)
 	// ProcessDeferredFailure runs the processor for a job carrying BullMQ's defa
 	// marker. Queues whose handler advances the terminal state on defa (analysis,
 	// clustering) must set this; queues that must not repeat side effects leave it
@@ -232,7 +238,9 @@ type Worker struct {
 	opts        WorkerOptions
 	processor   Processor
 	tokens      *tokenSource
-	slots       chan struct{}
+	gate        *concurrencyGate
+	limiterMu   sync.RWMutex
+	limiter     *Limiter
 	wg          sync.WaitGroup
 	mu          sync.Mutex
 	closing     bool
@@ -265,8 +273,42 @@ func NewWorker(commands redis.Cmdable, blocking *redis.Client, queue string, pro
 		opts:      normalized,
 		processor: processor,
 		tokens:    newTokenSource(),
-		slots:     make(chan struct{}, normalized.Concurrency),
+		gate:      newConcurrencyGate(normalized.Concurrency),
+		limiter:   normalized.Limiter,
 	}, nil
+}
+
+// SetConcurrency changes how many jobs this worker may pull at once, like the
+// BullMQ 5.x worker.concurrency setter. Growing it takes effect immediately: a
+// fetch loop blocked on a full gate wakes and claims. Shrinking it never
+// interrupts an in-flight attempt; the worker simply stops claiming until the
+// in-flight count drops below the new limit. Queues that never call it keep the
+// construction-time Concurrency and behave exactly as before.
+func (w *Worker) SetConcurrency(concurrency int) {
+	if w == nil {
+		return
+	}
+	w.gate.setLimit(concurrency)
+}
+
+// SetLimiter replaces the BullMQ rate limit the next moveToActive claim sends. It
+// is only needed by a queue whose manual limiter follows a runtime concurrency
+// change; a nil value disables the limiter. Queues that never call it keep the
+// construction-time WorkerOptions.Limiter.
+func (w *Worker) SetLimiter(limiter *Limiter) {
+	if w == nil {
+		return
+	}
+	w.limiterMu.Lock()
+	w.limiter = limiter
+	w.limiterMu.Unlock()
+}
+
+// currentLimiter reads the limiter the next claim should send.
+func (w *Worker) currentLimiter() *Limiter {
+	w.limiterMu.RLock()
+	defer w.limiterMu.RUnlock()
+	return w.limiter
 }
 
 // Start verifies the clients and starts the fetch loop and the stalled checker.
@@ -406,9 +448,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			}
 			continue
 		}
-		select {
-		case w.slots <- struct{}{}:
-		case <-ctx.Done():
+		if !w.gate.acquire(ctx) {
 			return
 		}
 
@@ -420,7 +460,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			return claimErr
 		})
 		if err != nil {
-			<-w.slots
+			w.gate.release()
 			if ctx.Err() != nil {
 				return
 			}
@@ -431,7 +471,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 			continue
 		}
 		if job == nil {
-			<-w.slots
+			w.gate.release()
 			if limiterDelay > 0 {
 				// A rate-limited queue reports the remaining limiter TTL in
 				// moveToActive reply[2]; wait it out (capped by DrainDelay) instead
@@ -462,7 +502,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		w.mu.Lock()
 		if w.closing {
 			w.mu.Unlock()
-			<-w.slots
+			w.gate.release()
 			return
 		}
 		w.wg.Add(1)
@@ -470,7 +510,7 @@ func (w *Worker) fetchLoop(ctx context.Context) {
 		claimed := job
 		safego.Go("bullmq.worker.job", func() {
 			defer w.wg.Done()
-			defer func() { <-w.slots }()
+			defer w.gate.release()
 			w.ProcessOne(ctx, claimed)
 		})
 	}
@@ -520,7 +560,7 @@ func (w *Worker) claim(ctx context.Context) (*Job, int64, int64, error) {
 		Token:        token,
 		LockDuration: w.opts.LockDuration.Milliseconds(),
 		Name:         w.opts.Name,
-		Limiter:      w.opts.Limiter,
+		Limiter:      w.currentLimiter(),
 	})
 	if err != nil {
 		return nil, 0, 0, err
@@ -1001,8 +1041,30 @@ func (w *Worker) checkStalled(ctx context.Context) {
 		}
 		return
 	}
-	if values, ok := result.([]any); ok && len(values) > 0 {
-		w.opts.Logger("bullmq: recovered %d stalled job(s)", len(values))
+	w.handleStalledResult(ctx, result)
+}
+
+// handleStalledResult dispatches one moveStalledJobsToWait reply. The script
+// returns a flat array of the job ids it moved back to wait, including the jobs
+// stamped with a deferred failure, in the order it processed them; the optional
+// OnStalled callback receives exactly that list.
+func (w *Worker) handleStalledResult(ctx context.Context, result any) {
+	values, ok := result.([]any)
+	if !ok || len(values) == 0 {
+		return
+	}
+	jobIDs := make([]string, 0, len(values))
+	for _, value := range values {
+		if id := toText(value); id != "" {
+			jobIDs = append(jobIDs, id)
+		}
+	}
+	if len(jobIDs) == 0 {
+		return
+	}
+	w.opts.Logger("bullmq: recovered %d stalled job(s)", len(jobIDs))
+	if w.opts.OnStalled != nil {
+		w.opts.OnStalled(ctx, jobIDs)
 	}
 }
 
@@ -1217,6 +1279,73 @@ func sleepContext(ctx context.Context, duration time.Duration) bool {
 		return false
 	case <-timer.C:
 		return true
+	}
+}
+
+// concurrencyGate is the worker's pull-concurrency limit. It replaces a fixed
+// buffered channel so SetConcurrency can resize the limit at runtime without
+// interrupting the attempts already in flight: shrinking only stops new claims
+// until the in-flight count drops below the new limit, and growing wakes a
+// blocked fetch loop immediately. wake is a one-slot coalescing hint, never the
+// source of truth: every loop re-reads limit/inFlight under the mutex.
+type concurrencyGate struct {
+	mu       sync.Mutex
+	limit    int
+	inFlight int
+	wake     chan struct{}
+}
+
+func newConcurrencyGate(limit int) *concurrencyGate {
+	if limit < 1 {
+		limit = 1
+	}
+	return &concurrencyGate{limit: limit, wake: make(chan struct{}, 1)}
+}
+
+// setLimit resizes the gate and wakes a waiting fetch loop.
+func (g *concurrencyGate) setLimit(limit int) {
+	if limit < 1 {
+		limit = 1
+	}
+	g.mu.Lock()
+	g.limit = limit
+	g.mu.Unlock()
+	g.wakeUp()
+}
+
+// acquire takes one slot, blocking until inFlight < limit or ctx is cancelled.
+func (g *concurrencyGate) acquire(ctx context.Context) bool {
+	for {
+		g.mu.Lock()
+		if g.inFlight < g.limit {
+			g.inFlight++
+			g.mu.Unlock()
+			return true
+		}
+		g.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return false
+		case <-g.wake:
+		}
+	}
+}
+
+// release frees one slot and wakes a waiting fetch loop.
+func (g *concurrencyGate) release() {
+	g.mu.Lock()
+	if g.inFlight > 0 {
+		g.inFlight--
+	}
+	g.mu.Unlock()
+	g.wakeUp()
+}
+
+// wakeUp signals the fetch loop without blocking.
+func (g *concurrencyGate) wakeUp() {
+	select {
+	case g.wake <- struct{}{}:
+	default:
 	}
 }
 

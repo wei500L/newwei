@@ -1,9 +1,8 @@
 package crawlworker
 
 // BullMQ protocol layer for the three crawl4ai queues: queue names, key layout,
-// the CrawlJobData JSON document, job options, the MessagePack option objects
-// passed to moveToActive/moveToFinished, and the C2 concurrency broadcast
-// payload.
+// the CrawlJobData JSON document, job options, the MessagePack option object
+// passed to moveToFinished, and the C2 concurrency broadcast payload.
 //
 // Everything here matches bullmq@5.63.2 as the NestJS CrawlQueueProcessor and
 // the Go crawlqueue producer write it: job data is JSON, job options and command
@@ -11,18 +10,16 @@ package crawlworker
 // typeof-string / typeof-number guards the NestJS handler applies.
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 )
 
@@ -34,18 +31,16 @@ const prefix = crawlqueue.Prefix
 // is executed by the Frontier processor instead of the task runner.
 const jobKindFrontierNode = "frontier_node"
 
-// BullMQ 5.63.2 Worker defaults. The NestJS CrawlQueueProcessor creates its
-// workers without overriding lockDuration, stalledInterval, maxStalledCount or
-// drainDelay, so the Go worker uses the same values.
+// BullMQ 5.63.2 Worker defaults. The crawl queue workers use these values when
+// they build their shared bullmq.Worker and when they size a transition timeout.
 const (
 	lockDuration    = 30 * time.Second
-	lockRenewTime   = 15 * time.Second
 	stalledInterval = 30 * time.Second
 	maxStalledCount = 1
 	drainDelay      = 5 * time.Second
 	// transitionTimeout bounds one BullMQ transition or side-effect write. The
-	// lock is still renewed by the attempt goroutine while it runs, and a
-	// transition that times out leaves the job active for stalled recovery.
+	// lock is still renewed by the shared worker while it runs, and a transition
+	// that times out leaves the job active for stalled recovery.
 	transitionTimeout = 10 * time.Second
 )
 
@@ -278,105 +273,61 @@ func decodeKeepJobs(raw json.RawMessage) *keepJobs {
 
 func intPointer(value int) *int { return &value }
 
-// claimedJob is one job moved to the active list. Token is the lock token this
+// claimedJob is one job handed to an attempt. Token is the lock token this
 // attempt owns; rawData is the exact JSON document stored in the job hash, which
 // the memory pressure requeue rewrites in place.
 type claimedJob struct {
 	ID              string
-	Name            string
 	Token           string
 	Data            JobData
 	rawData         json.RawMessage
 	Opts            jobOptions
 	AttemptsMade    int
 	AttemptsStarted int
-	StalledCounter  int
 	DeferredFailure string
-	Priority        int
-	Timestamp       int64
 }
 
 // Attempts returns the configured maximum attempts.
 func (j claimedJob) Attempts() int { return resolveMaxAttempts(j.Opts.Attempts) }
 
-// jobFromFlat decodes the flat HGETALL array moveToActive returns together with
-// the job id it reports.
-func jobFromFlat(flat []any, token, jobID string) (claimedJob, error) {
-	if len(flat) == 0 {
-		return claimedJob{}, errors.New("crawlworker: empty job hash")
+// claimedJobFromBullmq adapts a job the shared bullmq.Worker claimed into the
+// crawl attempt view: the raw payload is kept byte-for-byte for the memory
+// pressure rewrite, and the payload/options are decoded through the same NestJS
+// typeof guards as before. The shared worker already decoded the hash and owns
+// the lock, so this only reinterprets the business document.
+func claimedJobFromBullmq(job *bullmq.Job) (claimedJob, error) {
+	if job == nil {
+		return claimedJob{}, errors.New("crawlworker: nil claimed job")
 	}
-	fields := make(map[string]string, len(flat)/2)
-	for index := 0; index+1 < len(flat); index += 2 {
-		fields[toText(flat[index])] = toText(flat[index+1])
+	rawData := job.Data
+	if len(rawData) == 0 {
+		rawData = json.RawMessage("{}")
 	}
-	if jobID == "" {
-		jobID = fields["id"]
-	}
-	rawData := json.RawMessage(fields["data"])
 	var data JobData
 	if err := json.Unmarshal(rawData, &data); err != nil {
 		return claimedJob{}, fmt.Errorf("crawlworker: decode job data: %w", err)
 	}
-	options, err := decodeJobOptions([]byte(fields["opts"]))
+	options, err := decodeJobOptions(job.Opts)
 	if err != nil {
 		return claimedJob{}, err
 	}
-	priority := 0
-	if value, ok := jsonNumber(json.RawMessage(strings.TrimSpace(fields["priority"]))); ok {
-		priority = jsRound(value)
-	}
 	return claimedJob{
-		ID:              jobID,
-		Name:            fields["name"],
-		Token:           token,
+		ID:              job.ID,
+		Token:           job.Token,
 		Data:            data,
 		rawData:         rawData,
 		Opts:            options,
-		AttemptsMade:    int(toInt64(fields["atm"])),
-		AttemptsStarted: int(toInt64(fields["ats"])),
-		StalledCounter:  int(toInt64(fields["stc"])),
-		DeferredFailure: fields["defa"],
-		Priority:        priority,
-		Timestamp:       toInt64(fields["timestamp"]),
+		AttemptsMade:    int(job.AttemptsMade),
+		AttemptsStarted: int(job.AttemptsStarted),
+		DeferredFailure: job.DeferredFailure,
 	}, nil
 }
 
-// tokenSource produces a unique BullMQ lock token per claimed job. BullMQ uses a
-// 32 bit random worker id plus a monotonic counter; the prefix keeps the tokens
-// of this process recognizable in logs.
-type tokenSource struct {
-	id      string
-	counter atomic.Uint64
-}
-
-// newTokenSource builds the token source.
-func newTokenSource() *tokenSource {
-	var buffer [12]byte
-	if _, err := rand.Read(buffer[:]); err != nil {
-		return &tokenSource{id: "crawl-worker-go"}
-	}
-	return &tokenSource{id: "crawl-worker-go-" + hex.EncodeToString(buffer[:])}
-}
-
-// Next returns the next token.
-func (t *tokenSource) Next() string {
-	return t.id + ":" + strconv.FormatUint(t.counter.Add(1), 10)
-}
-
-// limiterOptions is the msgpack `limiter` member of moveToActive/moveToFinished.
+// limiterOptions is the msgpack `limiter` member of moveToFinished. It mirrors
+// the BullMQ `{max, duration}` table the transition scripts read.
 type limiterOptions struct {
 	Max      int64 `msgpack:"max"`
 	Duration int64 `msgpack:"duration"`
-}
-
-// moveToActiveOptions is the msgpack object moveToActive expects. `name` is
-// omitted like the nameless NestJS worker (BullMQ packs undefined as nil, and
-// the Lua only tests truthiness).
-type moveToActiveOptions struct {
-	Token        string         `msgpack:"token"`
-	LockDuration int64          `msgpack:"lockDuration"`
-	Limiter      limiterOptions `msgpack:"limiter"`
-	Name         string         `msgpack:"name,omitempty"`
 }
 
 // finishOptions is the msgpack object moveToFinished expects. The members
@@ -437,25 +388,6 @@ func newFailureFields(reason string) jobFailureFields {
 	return jobFailureFields{Reason: reason, StackTrace: stacktraceJSON(reason)}
 }
 
-// toText converts a Redis reply element to text. It is driver-boundary
-// normalization (bulk strings, integers), not business data.
-func toText(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case []byte:
-		return string(typed)
-	case int64:
-		return strconv.FormatInt(typed, 10)
-	case int:
-		return strconv.Itoa(typed)
-	case nil:
-		return ""
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
 // toInt64 converts a Redis reply element to int64.
 func toInt64(value any) int64 {
 	switch typed := value.(type) {
@@ -474,22 +406,6 @@ func toInt64(value any) int64 {
 	default:
 		return 0
 	}
-}
-
-// toTextSlice converts a Redis array reply of job ids.
-func toTextSlice(value any) []string {
-	values, ok := value.([]any)
-	if !ok || len(values) == 0 {
-		return nil
-	}
-	ids := make([]string, 0, len(values))
-	for _, entry := range values {
-		text := toText(entry)
-		if text != "" {
-			ids = append(ids, text)
-		}
-	}
-	return ids
 }
 
 // parseWorkerConcurrencyMessage validates the C2 broadcast payload
