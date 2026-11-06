@@ -31,7 +31,7 @@ Go 迁移以“与 NestJS 契约等价”为目标，并由多批窗口并行完
 
 ## 第一轮结果与第二轮候选
 
-2026-11-05 规划窗口核实：10 个任务全部有 PR 合入 main（#162–#174，含整合 PR #165、#168），最新 main `6ab26a54` 普通 CI success（#169、#171 合并时的 push run 被后续 push 取消，二者 PR head 的 CI 均为 success）。8 个任务完整完成，2 个部分完成。各执行窗口交付记录中的“剩余问题”汇总如下，作为第二轮候选（尚未写提示词）：
+2026-11-05 规划窗口核实：10 个任务全部有 PR 合入 main（#162–#174，含整合 PR #165、#168），最新 main `6ab26a54` 普通 CI success（#169、#171 合并时的 push run 被后续 push 取消，二者 PR head 的 CI 均为 success）。8 个任务完整完成，2 个部分完成。各执行窗口交付记录中的“剩余问题”汇总如下，作为第二轮候选（已于 2026-11-06 拆成下节 4 个任务）：
 
 | 候选 | 来源 | 内容 |
 |---|---|---|
@@ -43,6 +43,17 @@ Go 迁移以“与 NestJS 契约等价”为目标，并由多批窗口并行完
 | SAFE-GOROUTINE 取舍 | [SAFE-GOROUTINE-001](tasks/REFACTOR-SAFE-GOROUTINE-001.md) | 少数 channel 会合式扇出在发送前 panic 时单接收者可能阻塞（进程不崩），未改扇出结构 |
 
 全部验证仍只有静态审查 + 普通 CI，没有连接真实 Redis/MySQL/Mongo/LiteLLM，也没有部署。
+
+## 第二轮任务（2026-11-06 规划，基线 main `67f31754`）
+
+| 波次 | 任务 | 内容 | 前置 | 可并行 |
+|---|---|---|---|---|
+| A | [REFACTOR-LLM-CLIENT-001](tasks/REFACTOR-LLM-CLIENT-001.md) | publicportal/crawlfrontierllm/llmembed/history/探针的 profile、密钥、补全、流式、嵌入上收到 litellmcompat | 无 | 是 |
+| A | [REFACTOR-CRAWLWORKER-001](tasks/REFACTOR-CRAWLWORKER-001.md) | 给 `bullmq.Worker` 补可调并发、stalled 回调、slot 钩子，迁移 crawlworker | 无 | 是 |
+| A | [REFACTOR-CLEANUP-001](tasks/REFACTOR-CLEANUP-001.md) | readJSON/writeError/authorize 收尾、3 份 `fn(*sql.Conn)` GET_LOCK（修复释放失败泄漏）与 4 处缓存锁、路由与 `cmd/api` 迁移期注释 | 无 | 是（避开 LLM-CLIENT/CRAWLWORKER 的包） |
+| B | [REFACTOR-HTTP-CLIENT-001](tasks/REFACTOR-HTTP-CLIENT-001.md) | 43 处 `&http.Client{` 收敛到 `internal/platform/outbound` 共享 Transport（SSRF 拨号器例外保留） | LLM-CLIENT 合入 | — |
+
+文件所有权：`internal/bullmq/**` 只归 CRAWLWORKER；LLM 相关包只归 LLM-CLIENT（CLEANUP 显式排除）；`cmd/api` 中 CLEANUP 只改注释，其余两者只改构造参数，冲突用 merge 保留并集。SAFE-GOROUTINE 的扇出取舍不派发，保持现状。
 
 ## 不进入本轮的候选（只记 BACKLOG，不派发）
 

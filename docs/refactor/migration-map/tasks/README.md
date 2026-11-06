@@ -1,5 +1,18 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-06 REFACTOR 第二轮（planned）
+
+基线 main `67f31754`。来源是第一轮各任务交付记录中的剩余问题，见总计划“[第二轮任务](../BACKEND-REFACTOR-PLAN.md#第二轮任务2026-11-06-规划基线-main-67f31754)”。
+
+| 波次 | 任务 | 前置 | 提示词 |
+|---|---|---|---|
+| A | [REFACTOR-LLM-CLIENT-001](REFACTOR-LLM-CLIENT-001.md) | 无 | [提示词](REFACTOR-LLM-CLIENT-001.prompt.md) |
+| A | [REFACTOR-CRAWLWORKER-001](REFACTOR-CRAWLWORKER-001.md) | 无 | [提示词](REFACTOR-CRAWLWORKER-001.prompt.md) |
+| A | [REFACTOR-CLEANUP-001](REFACTOR-CLEANUP-001.md) | 无 | [提示词](REFACTOR-CLEANUP-001.prompt.md) |
+| B | [REFACTOR-HTTP-CLIENT-001](REFACTOR-HTTP-CLIENT-001.md) | LLM-CLIENT | [提示词](REFACTOR-HTTP-CLIENT-001.prompt.md) |
+
+全部 planned，尚未发出或认领。
+
 ## 2026-11-04 后端重构修复系列（REFACTOR，第一轮已合入）
 
 基线 `18c41879858d70d5d1b335b4bdab81e68ccdb693`。来源是 2026-11-04 api-go 纯静态横向审查。总计划、波次与文件冲突说明见 [BACKEND-REFACTOR-PLAN](../BACKEND-REFACTOR-PLAN.md)，所有执行窗口先读 [通用纪律](REFACTOR-COMMON.md)。
