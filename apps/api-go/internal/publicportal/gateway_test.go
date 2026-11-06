@@ -2,16 +2,12 @@ package publicportal
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 func TestGatewayCompletionUsesConfiguredProfile(t *testing.T) {
@@ -68,26 +64,6 @@ func TestGatewayCompletionUsesConfiguredProfile(t *testing.T) {
 	}
 }
 
-func TestDecryptSettingsSecretRoundTrip(t *testing.T) {
-	key := bytes32()
-	payload := encryptForTest("sk-live", key)
-	plain, err := decryptSecret(payload, base64.StdEncoding.EncodeToString(key))
-	if err != nil || plain != "sk-live" {
-		t.Fatalf("plain = %q err=%v", plain, err)
-	}
-	encoded, _ := json.Marshal(payload)
-	var asMap map[string]any
-	if err := json.Unmarshal(encoded, &asMap); err != nil {
-		t.Fatal(err)
-	}
-	if profileAPIKey(asMap, base64.StdEncoding.EncodeToString(key)) != "sk-live" {
-		t.Fatal("profile key")
-	}
-	if profileAPIKey(asMap, "") != "" {
-		t.Fatal("missing encryption key must not yield a plaintext key")
-	}
-}
-
 func TestGovernanceMissingKeyFailsClosed(t *testing.T) {
 	_, err := resolveCompletionProfile([]byte(`{
 		"activeId":"profile-1",
@@ -97,26 +73,4 @@ func TestGovernanceMissingKeyFailsClosed(t *testing.T) {
 	if !ok || status.Code != http.StatusServiceUnavailable {
 		t.Fatalf("err = %v", err)
 	}
-}
-
-func bytes32() []byte {
-	key := make([]byte, 32)
-	_, _ = rand.Read(key)
-	return key
-}
-
-func encryptForTest(plain string, key []byte) map[string]any {
-	envelope, err := settingscrypto.Encrypt(plain, key)
-	if err != nil {
-		panic(err)
-	}
-	encoded, err := json.Marshal(envelope)
-	if err != nil {
-		panic(err)
-	}
-	var asMap map[string]any
-	if err := json.Unmarshal(encoded, &asMap); err != nil {
-		panic(err)
-	}
-	return asMap
 }

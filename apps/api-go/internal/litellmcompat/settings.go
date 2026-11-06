@@ -74,6 +74,21 @@ type gatewayProfile struct {
 	GovernanceTargetProfileID string
 }
 
+// Profile is the resolved, decrypted gateway profile. It is the single profile
+// projection every LLM client shares, so the former per-package copies of
+// normalizeProfile/decryptSecret/normalizeAPIBase/applyGovernance are retired.
+type Profile = gatewayProfile
+
+// ProfileKind selects which profile a caller resolves.
+type ProfileKind string
+
+// Profile kinds.
+const (
+	ProfileCompletion ProfileKind = "completion"
+	ProfileEmbedding  ProfileKind = "embedding"
+	ProfileRerank     ProfileKind = "rerank"
+)
+
 type gatewaySettings struct {
 	ActiveID          string
 	EmbeddingActiveID string
@@ -109,13 +124,23 @@ func (c *Client) loadGatewaySettings(ctx context.Context) (gatewaySettings, erro
 	if err != nil {
 		return gatewaySettings{}, err
 	}
-	settings := gatewaySettings{
-		EmbeddingMode: "follow_completion",
-		RerankMode:    "follow_completion",
-	}
 	if !ok || len(bytes.TrimSpace(raw)) == 0 {
-		return settings, nil
+		return emptyGatewaySettings(), nil
 	}
+	return c.parseGatewaySettings(raw), nil
+}
+
+// emptyGatewaySettings is the document default before any profiles are read.
+func emptyGatewaySettings() gatewaySettings {
+	return gatewaySettings{EmbeddingMode: "follow_completion", RerankMode: "follow_completion"}
+}
+
+// parseGatewaySettings normalizes one llm_gateway_profiles document. It is the
+// single parser shared by the DB path, the read-only snapshot resolver and the
+// tests; an unreadable document yields the empty default so the caller reports
+// "model not configured" rather than inventing a profile.
+func (c *Client) parseGatewaySettings(raw []byte) gatewaySettings {
+	settings := emptyGatewaySettings()
 	var doc struct {
 		ActiveID          json.RawMessage   `json:"activeId"`
 		EmbeddingActiveID json.RawMessage   `json:"embeddingActiveId"`
@@ -125,7 +150,7 @@ func (c *Client) loadGatewaySettings(ctx context.Context) (gatewaySettings, erro
 		Profiles          []json.RawMessage `json:"profiles"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return settings, nil
+		return settings
 	}
 	if stringValue(doc.EmbeddingMode) == "use_default" {
 		settings.EmbeddingMode = "use_default"
@@ -148,7 +173,7 @@ func (c *Client) loadGatewaySettings(ctx context.Context) (gatewaySettings, erro
 	if profile := findGatewayProfile(settings.Profiles, stringValue(doc.RerankActiveID)); profile != nil && profile.Enabled && profile.RerankModel != "" {
 		settings.RerankActiveID = profile.ID
 	}
-	return settings, nil
+	return settings
 }
 
 func findGatewayProfile(profiles []gatewayProfile, id string) *gatewayProfile {
@@ -189,7 +214,7 @@ func (c *Client) normalizeProfile(raw json.RawMessage) (gatewayProfile, bool) {
 	}
 	id := stringValue(record.ID)
 	model := stringValue(record.Model)
-	if id == "" || model == "" {
+	if id == "" {
 		return gatewayProfile{}, false
 	}
 	name := stringValue(record.Name)
@@ -252,13 +277,13 @@ func (c *Client) resolveCompletion(ctx context.Context) (gatewayProfile, error) 
 		return gatewayProfile{}, err
 	}
 	profile := findGatewayProfile(settings.Profiles, settings.ActiveID)
-	if profile == nil || !profile.Enabled {
+	if profile == nil || !profile.Enabled || profile.Model == "" {
 		profile = defaultGatewayProfile(settings.Profiles, "completion")
 	}
 	if profile == nil {
 		return gatewayProfile{}, ErrCompletionUnavailable
 	}
-	return c.applyGovernance(ctx, settings.Profiles, *profile)
+	return c.applyGovernanceResolved(ctx, settings.Profiles, *profile)
 }
 
 func (c *Client) resolveEmbedding(ctx context.Context) (gatewayProfile, error) {
@@ -270,7 +295,7 @@ func (c *Client) resolveEmbedding(ctx context.Context) (gatewayProfile, error) {
 	if profile == nil {
 		return gatewayProfile{}, ErrEmbeddingUnavailable
 	}
-	return c.applyGovernance(ctx, settings.Profiles, *profile)
+	return c.applyGovernanceResolved(ctx, settings.Profiles, *profile)
 }
 
 func (c *Client) resolveRerank(ctx context.Context) (gatewayProfile, error) {
@@ -282,7 +307,21 @@ func (c *Client) resolveRerank(ctx context.Context) (gatewayProfile, error) {
 	if profile == nil {
 		return gatewayProfile{}, ErrRerankUnavailable
 	}
-	return c.applyGovernance(ctx, settings.Profiles, *profile)
+	return c.applyGovernanceResolved(ctx, settings.Profiles, *profile)
+}
+
+// applyGovernanceResolved applies the managed-proxy governance override and
+// normalizes the endpoint suffix so every client uses the same base. The former
+// per-package resolvers normalized the base after selection; folding it in
+// keeps the shared resolution byte-equivalent and fixes the DB path that
+// previously skipped it.
+func (c *Client) applyGovernanceResolved(ctx context.Context, profiles []gatewayProfile, profile gatewayProfile) (gatewayProfile, error) {
+	resolved, err := c.applyGovernance(ctx, profiles, profile)
+	if err != nil {
+		return gatewayProfile{}, err
+	}
+	resolved.APIBase = settingscrypto.NormalizeGatewayAPIBase(resolved.APIBase)
+	return resolved, nil
 }
 
 func resolveKindProfile(settings gatewaySettings, kind string) *gatewayProfile {
@@ -311,6 +350,9 @@ func defaultGatewayProfile(profiles []gatewayProfile, kind string) *gatewayProfi
 	for index := range profiles {
 		profile := &profiles[index]
 		if !profile.Enabled {
+			continue
+		}
+		if kind == "completion" && profile.Model == "" {
 			continue
 		}
 		if kind == "embedding" && profile.EmbeddingModel == "" {
@@ -367,20 +409,26 @@ func (c *Client) loadGovernance(ctx context.Context) (managedGovernance, error) 
 	if !ok || len(bytes.TrimSpace(raw)) == 0 {
 		return managedGovernance{KeyState: "missing"}, nil
 	}
+	return c.parseGovernance(raw), nil
+}
+
+// parseGovernance decodes one litellm_proxy_governance document. It backs both
+// the DB path and the read-only snapshot resolver.
+func (c *Client) parseGovernance(raw json.RawMessage) managedGovernance {
 	var doc struct {
 		Enabled    json.RawMessage `json:"enabled"`
 		TargetID   json.RawMessage `json:"targetProfileId"`
 		RuntimeKey json.RawMessage `json:"managedRuntimeKey"`
 	}
-	if json.Unmarshal(raw, &doc) != nil {
-		return managedGovernance{KeyState: "missing"}, nil
+	if len(bytes.TrimSpace(raw)) == 0 || json.Unmarshal(raw, &doc) != nil {
+		return managedGovernance{KeyState: "missing"}
 	}
 	state := managedGovernance{
 		Enabled:  booleanValue(doc.Enabled, false),
 		TargetID: stringValue(doc.TargetID),
 	}
 	state.Key, state.KeyState = c.resolveGovernanceKey(doc.RuntimeKey)
-	return state, nil
+	return state
 }
 
 func (c *Client) resolveGovernanceKey(raw json.RawMessage) (string, string) {
@@ -421,6 +469,13 @@ func (c *Client) applyGovernance(ctx context.Context, profiles []gatewayProfile,
 	if err != nil {
 		return gatewayProfile{}, err
 	}
+	return c.applyGovernanceState(profiles, profile, gov)
+}
+
+// applyGovernanceState applies the managed-proxy runtime key when the selected
+// profile is the governance target on the same normalized apiBase. It returns a
+// typed GovernanceError so the calling handler can keep its own 503 message.
+func (c *Client) applyGovernanceState(profiles []gatewayProfile, profile gatewayProfile, gov managedGovernance) (gatewayProfile, error) {
 	if !gov.Enabled || gov.TargetID == "" {
 		return profile, nil
 	}
@@ -434,17 +489,66 @@ func (c *Client) applyGovernance(ctx context.Context, profiles []gatewayProfile,
 		return profile, nil
 	}
 	if gov.KeyState == "unreadable" {
-		return gatewayProfile{}, errors.New("LiteLLM governance is enabled but the managed runtime key is unreadable")
+		return gatewayProfile{}, &GovernanceError{Message: "LiteLLM governance is enabled but the managed runtime key is unreadable"}
 	}
 	if gov.Key == "" {
-		return gatewayProfile{}, errors.New("LiteLLM governance is enabled but the managed runtime key is missing")
+		return gatewayProfile{}, &GovernanceError{Message: "LiteLLM governance is enabled but the managed runtime key is missing"}
 	}
 	profile.APIBase = target.APIBase
-	profile.APIKey = gov.Key
+	profile.APIKey = settingscrypto.NormalizeGatewaySecret(gov.Key)
 	profile.GovernanceApplied = true
 	profile.AuthMode = "managed_runtime_key"
 	profile.GovernanceTargetProfileID = target.ID
 	return profile, nil
+}
+
+// ResolveProfile resolves one read-only profile from the authoritative MySQL
+// SystemSetting rows. It is the single entry point the LLM clients use instead
+// of their former per-package normalize/decrypt/governance copies.
+func (c *Client) ResolveProfile(ctx context.Context, kind ProfileKind) (Profile, error) {
+	switch kind {
+	case ProfileEmbedding:
+		return c.resolveEmbedding(ctx)
+	case ProfileRerank:
+		return c.resolveRerank(ctx)
+	default:
+		return c.resolveCompletion(ctx)
+	}
+}
+
+// ResolveProfileFromSettings resolves one profile from a snapshot of the
+// llm_gateway_profiles and litellm_proxy_governance documents, for callers that
+// already hold those rows (the public portal store) instead of a *sql.DB.
+func ResolveProfileFromSettings(kind ProfileKind, profilesJSON, governanceJSON []byte, cfg Config) (Profile, error) {
+	client := &Client{cfg: cfg.defaulted()}
+	settings := client.parseGatewaySettings(profilesJSON)
+	var selected *gatewayProfile
+	switch kind {
+	case ProfileEmbedding:
+		selected = resolveKindProfile(settings, "embedding")
+		if selected == nil {
+			return Profile{}, ErrEmbeddingUnavailable
+		}
+	case ProfileRerank:
+		selected = resolveKindProfile(settings, "rerank")
+		if selected == nil {
+			return Profile{}, ErrRerankUnavailable
+		}
+	default:
+		selected = findGatewayProfile(settings.Profiles, settings.ActiveID)
+		if selected == nil || !selected.Enabled || selected.Model == "" {
+			selected = defaultGatewayProfile(settings.Profiles, "completion")
+		}
+		if selected == nil {
+			return Profile{}, ErrCompletionUnavailable
+		}
+	}
+	resolved, err := client.applyGovernanceState(settings.Profiles, *selected, client.parseGovernance(governanceJSON))
+	if err != nil {
+		return Profile{}, err
+	}
+	resolved.APIBase = settingscrypto.NormalizeGatewayAPIBase(resolved.APIBase)
+	return resolved, nil
 }
 
 func (p gatewayProfile) authMode() string {

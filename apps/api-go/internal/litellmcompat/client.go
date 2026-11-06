@@ -43,6 +43,13 @@ type Client struct {
 // NewClient wires the shared MySQL pool and the request-log writer. A nil writer
 // disables logging only; request behaviour is unchanged.
 func NewClient(db *sql.DB, logs LogWriter, cfg Config) *Client {
+	return &Client{db: db, logs: logs, cfg: cfg.defaulted(), http: &http.Client{}, now: time.Now}
+}
+
+// defaulted fills the environment fallbacks Nest applies under a stored profile.
+// It is shared by NewClient and by the read-only profile resolver so a caller
+// that only has a settings snapshot gets the same defaults as a DB-backed call.
+func (cfg Config) defaulted() Config {
 	if cfg.APIBase == "" {
 		cfg.APIBase = "http://localhost:4001"
 	}
@@ -64,7 +71,7 @@ func NewClient(db *sql.DB, logs LogWriter, cfg Config) *Client {
 	if cfg.DefaultMaxOutputTokens <= 0 {
 		cfg.DefaultMaxOutputTokens = 2048
 	}
-	return &Client{db: db, logs: logs, cfg: cfg, http: &http.Client{}, now: time.Now}
+	return cfg
 }
 
 // WithSettingLoader replaces the SystemSetting reader. It is used by tests and

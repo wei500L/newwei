@@ -7,6 +7,20 @@ import (
 	"strings"
 )
 
+// GovernanceError is a managed-proxy governance misconfiguration: governance is
+// enabled for the selected profile but the managed runtime key is unreadable or
+// missing. Callers keep their own HTTP 503 envelope by matching this type.
+type GovernanceError struct {
+	Message string
+}
+
+func (e *GovernanceError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
 // GuardrailViolationError is a content-safety refusal. Nest stops the fallback
 // chain on this error instead of trying the next model.
 type GuardrailViolationError struct {
