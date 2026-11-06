@@ -7,8 +7,12 @@ import "net/http"
 // handler dispatches on the request path and method itself.
 const LLMGatewayProfilesKey = "/api/system-settings/llm-gateways#profiles"
 
-// WithLLMGatewayProfiles takes over the seven LLM gateway profile routes when
-// mode is go:
+// WithLLMGatewayProfiles registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/llm-gateways
 //	POST   /api/system-settings/llm-gateways
@@ -17,26 +21,6 @@ const LLMGatewayProfilesKey = "/api/system-settings/llm-gateways#profiles"
 //	PUT    /api/system-settings/llm-gateways/rerank-active
 //	PUT    /api/system-settings/llm-gateways/:id
 //	DELETE /api/system-settings/llm-gateways/:id
-//
-// Registration order and shape matter:
-//   - the collection path and the three activation paths are exact rules, so
-//     they win over the dynamic rule by prefix length and are matched by the
-//     handler before any :id lookup;
-//   - the dynamic rule accepts exactly one non-empty path segment and only
-//     PUT/DELETE plus the shared OPTIONS preflight, so GET/POST under :id and
-//     every longer path (proxy-governance/preflight, :id/test, :id/models,
-//     :id/proxy-health, :id/proxy-model-info, :id/proxy-lb-test) keep falling
-//     back to the legacy /api/ prefix.
-//
-// PUT and DELETE /proxy-governance and /proxy-load-balancing are shaped like one
-// dynamic segment, so the wiring detects those two static paths before
-// authentication and forwards them to NestJS unchanged; this function
-// deliberately does not add permanent catch-all exact rules for them, because a
-// future batch that migrates proxy governance must be able to register a more
-// specific rule that wins naturally.
-//
-// An empty or legacy mode adds no rules at all, so the default deployment is
-// unchanged and rollback only flips this one switch.
 func WithLLMGatewayProfiles(rules []Rule) []Rule {
 	base := "/api/system-settings/llm-gateways"
 

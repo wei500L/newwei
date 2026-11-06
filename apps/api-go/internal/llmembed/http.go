@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
@@ -97,32 +96,4 @@ func retryable(status int, callErr error) bool {
 	default:
 		return false
 	}
-}
-
-func normalizeAPIBase(raw string) string {
-	base := strings.TrimSpace(raw)
-	base = strings.TrimRight(base, "/")
-	if base == "" {
-		return ""
-	}
-	lower := strings.ToLower(base)
-	for _, suffix := range []string{
-		"/v1/chat/completions",
-		"/chat/completions",
-		"/v1/embeddings",
-		"/embeddings",
-		"/v1/models",
-		"/models",
-		"/v1/responses",
-		"/responses",
-	} {
-		if strings.HasSuffix(lower, suffix) {
-			base = strings.TrimRight(base[:len(base)-len(suffix)], "/")
-			break
-		}
-	}
-	if strings.HasSuffix(strings.ToLower(base), "/v1") {
-		base = base[:len(base)-len("/v1")]
-	}
-	return strings.TrimRight(base, "/")
 }

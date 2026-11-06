@@ -3,6 +3,7 @@ package llmembed
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -131,15 +132,14 @@ func (c *Client) RuntimeEmbeddingModel(ctx context.Context) (string, bool) {
 // configuration read failure. Archive cache freshness must not treat a MySQL
 // failure as an absent model.
 func (c *Client) RuntimeEmbeddingModelState(ctx context.Context) (string, bool, error) {
-	settings, err := c.loadGatewaySettings(ctx)
+	profile, err := c.sharedResolve(ctx, litellmcompat.ProfileEmbedding)
 	if err != nil {
+		if errors.Is(err, litellmcompat.ErrEmbeddingUnavailable) {
+			return "", false, nil
+		}
 		return "", false, err
 	}
-	selected := selectKind(settings, "embedding")
-	if selected == nil {
-		return "", false, nil
-	}
-	model := strings.TrimSpace(selected.EmbeddingModel)
+	model := strings.TrimSpace(profile.EmbeddingModel)
 	return model, model != "", nil
 }
 
@@ -169,19 +169,18 @@ func (c *Client) RuntimeRerankProfile(ctx context.Context) (string, time.Duratio
 // RuntimeRerankProfileState distinguishes "no rerank profile" from a
 // configuration read failure, like RuntimeEmbeddingModelState.
 func (c *Client) RuntimeRerankProfileState(ctx context.Context) (string, time.Duration, bool, error) {
-	settings, err := c.loadGatewaySettings(ctx)
+	profile, err := c.sharedResolve(ctx, litellmcompat.ProfileRerank)
 	if err != nil {
+		if errors.Is(err, litellmcompat.ErrRerankUnavailable) {
+			return "", 0, false, nil
+		}
 		return "", 0, false, err
 	}
-	selected := selectKind(settings, "rerank")
-	if selected == nil {
+	model := strings.TrimSpace(profile.RerankModel)
+	if model == "" || profile.Timeout <= 0 {
 		return "", 0, false, nil
 	}
-	model := strings.TrimSpace(selected.RerankModel)
-	if model == "" || selected.Timeout <= 0 {
-		return "", 0, false, nil
-	}
-	return model, selected.Timeout, true, nil
+	return model, profile.Timeout, true, nil
 }
 
 // EmbedForArchive embeds one query for the archive search. configuredModel is

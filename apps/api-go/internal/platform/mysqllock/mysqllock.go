@@ -45,6 +45,24 @@ const releaseTimeout = 5 * time.Second
 // the whole fn, including a nested transaction that uses the same context and
 // pool.
 func WithLock(ctx context.Context, db *sql.DB, name string, waitSeconds int, fn func(context.Context) error) error {
+	return withConnLock(ctx, db, name, waitSeconds, func(callbackCtx context.Context, _ *sql.Conn) error {
+		return fn(callbackCtx)
+	})
+}
+
+// WithConnLock is WithLock for callers whose critical section must run on the
+// same pinned connection that holds the advisory lock: multi-statement SQL or a
+// transaction that has to observe the session lock. It shares the acquire and
+// release-failure-eviction path with WithLock, so a failed RELEASE_LOCK evicts
+// the pinned connection instead of returning a still-locked session to the pool.
+func WithConnLock(ctx context.Context, db *sql.DB, name string, waitSeconds int, fn func(context.Context, *sql.Conn) error) error {
+	return withConnLock(ctx, db, name, waitSeconds, fn)
+}
+
+// withConnLock is the shared implementation: pin a connection, take GET_LOCK,
+// run fn on that connection, then release (evicting the connection when the
+// release cannot be confirmed).
+func withConnLock(ctx context.Context, db *sql.DB, name string, waitSeconds int, fn func(context.Context, *sql.Conn) error) error {
 	if db == nil {
 		return ErrUnavailable
 	}
@@ -78,7 +96,7 @@ func WithLock(ctx context.Context, db *sql.DB, name string, waitSeconds int, fn 
 		return ErrNotAcquired
 	}
 	acquired = true
-	return fn(ctx)
+	return fn(ctx, conn)
 }
 
 // release runs RELEASE_LOCK on its own short context derived from ctx values

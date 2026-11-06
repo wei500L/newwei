@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
-	"io"
 	"log"
 	"math"
 	"mime"
@@ -357,26 +356,19 @@ func readJSON(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Body == nil || !jsonContent(r.Header.Get("Content-Type")) {
 		return []byte("{}"), true
 	}
-	limited := http.MaxBytesReader(nil, r.Body, maxJSONBytes)
-	defer limited.Close()
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		var maxBytes *http.MaxBytesError
-		if errors.As(err, &maxBytes) {
-			authhttp.WritePayloadTooLarge(w, r)
-			return nil, false
-		}
-		authhttp.WriteBadRequest(w, r, invalidJSONMessage)
-		return nil, false
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
+	data, err := httpx.ReadJSON(w, r, maxJSONBytes)
+	switch {
+	case err == nil:
+		return data, true
+	case errors.Is(err, httpx.ErrEmptyBody):
 		return []byte("{}"), true
-	}
-	if !json.Valid(data) {
+	case errors.Is(err, httpx.ErrBodyTooLarge):
+		authhttp.WritePayloadTooLarge(w, r)
+		return nil, false
+	default:
 		authhttp.WriteBadRequest(w, r, invalidJSONMessage)
 		return nil, false
 	}
-	return data, true
 }
 
 func jsonContent(header string) bool {

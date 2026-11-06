@@ -11,17 +11,14 @@ import "net/http"
 // configuration routes must not take over the diagnostics, and vice versa.
 const VectorDiagnosticsHandlerKey = "/api/system-settings/vector-service/diagnostics"
 
-// WithVectorDiagnostics takes over exactly one route when mode is go:
+// WithVectorDiagnostics registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET /api/system-settings/vector-service/diagnostics
-//
-// The rule is an exact path with an explicit GET whitelist (appendExactMethods
-// also adds the shared OPTIONS whitelist so a CORS preflight is answered by the
-// Go handler; a non-preflight OPTIONS is sent back to the proxy by the wiring).
-// HEAD, POST/PUT/PATCH/DELETE, the trailing-slash form and every longer path
-// keep falling back to the legacy /api/ rule. An empty or legacy mode adds
-// nothing, so the default deployment is unchanged and rollback only flips this
-// one switch.
 func WithVectorDiagnostics(rules []Rule) []Rule {
 	return appendExactMethods(rules, http.MethodGet, VectorDiagnosticsHandlerKey)
 }

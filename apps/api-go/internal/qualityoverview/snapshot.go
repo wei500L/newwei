@@ -11,7 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // 快照与缓存的键/锁/超时与 NestJS 逐项对齐（observability-snapshot.service.ts
@@ -28,21 +28,6 @@ const (
 	snapshotRenewInterval     = 5 * time.Second
 	snapshotMaxWait           = 20 * time.Second
 	snapshotRetryDelay        = 100 * time.Millisecond
-)
-
-var (
-	releaseLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      end
-      return 0
-    `)
-	renewLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("pexpire", KEYS[1], ARGV[2])
-      end
-      return 0
-    `)
 )
 
 // snapshotStore 负责 MySQL ObservabilitySnapshot 的读写与 Redis 分布式锁，
@@ -75,18 +60,12 @@ func (s *snapshotStore) getOrCreate(ctx context.Context, orgID, scope, variantKe
 
 	key := snapshotKey(orgID, scope, variantKey)
 	lockKey := lockKeyFor(key)
-	token, err := randomToken()
+	lease, err := s.acquireLease(ctx, lockKey, snapshotLockTtl)
 	if err != nil {
 		return nil, err
 	}
-	acquired, err := s.acquireLock(ctx, lockKey, token, snapshotLockTtl)
-	if err != nil {
-		return nil, err
-	}
-	if acquired {
-		stop := s.startAutoRenew(lockKey, token, snapshotLockTtl, snapshotRenewInterval)
-		defer stop()
-		defer s.releaseLock(lockKey, token)
+	if lease != nil {
+		defer releaseLease(lease)
 		if payload, ok, err := s.loadFresh(ctx, orgID, scope, variantKey, time.Now()); err != nil {
 			return nil, err
 		} else if ok {
@@ -186,15 +165,11 @@ func (s *snapshotStore) cacheWrapJSON(ctx context.Context, key string, ttlSecond
 	}
 
 	lockKey := lockKeyFor(key)
-	token, err := randomToken()
+	lease, err := s.acquireLease(ctx, lockKey, opts.lockTtl)
 	if err != nil {
 		return nil, err
 	}
-	acquired, err := s.acquireLock(ctx, lockKey, token, opts.lockTtl)
-	if err != nil {
-		return nil, err
-	}
-	if !acquired {
+	if lease == nil {
 		deadline := time.Now().Add(opts.maxWait)
 		for time.Now().Before(deadline) {
 			if err := sleepContext(ctx, opts.retryDelay); err != nil {
@@ -205,20 +180,18 @@ func (s *snapshotStore) cacheWrapJSON(ctx context.Context, key string, ttlSecond
 			} else if ok {
 				return cached, nil
 			}
-			acquired, err = s.acquireLock(ctx, lockKey, token, opts.lockTtl)
+			lease, err = s.acquireLease(ctx, lockKey, opts.lockTtl)
 			if err != nil {
 				return nil, err
 			}
-			if acquired {
+			if lease != nil {
 				break
 			}
 		}
 	}
 
-	if acquired {
-		stop := s.startAutoRenew(lockKey, token, opts.lockTtl, opts.renewEvery)
-		defer stop()
-		defer s.releaseLock(lockKey, token)
+	if lease != nil {
+		defer releaseLease(lease)
 		value, err := loader()
 		if err != nil {
 			return nil, err
@@ -261,53 +234,31 @@ func (s *snapshotStore) writeCache(ctx context.Context, key string, value json.R
 	_ = s.redis.Set(ctx, key, []byte(value), time.Duration(ttlSeconds)*time.Second).Err()
 }
 
-func (s *snapshotStore) acquireLock(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
+// acquireLease takes the shared Redis lease for the cache rebuild critical
+// section. A nil lease means another process owns it; an error is a Redis
+// failure. cronlock.Acquire starts best-effort renewal while the lease is held.
+func (s *snapshotStore) acquireLease(ctx context.Context, key string, ttl time.Duration) (*cronlock.Lease, error) {
 	if s.redis == nil {
-		return false, errors.New("redis is not configured")
+		return nil, errors.New("redis is not configured")
 	}
-	return s.redis.SetNX(ctx, key, token, ttl).Result()
+	lease, ok, err := cronlock.New(s.redis).Acquire(ctx, key, ttl, cronlock.RenewBestEffort)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return lease, nil
 }
 
-func (s *snapshotStore) releaseLock(key, token string) {
-	if s.redis == nil {
+// releaseLease releases the lease outside the request cancellation.
+func releaseLease(lease *cronlock.Lease) {
+	if lease == nil {
 		return
 	}
-	_, _ = releaseLockScript.Run(context.Background(), s.redis, []string{key}, token).Result()
-}
-
-func (s *snapshotStore) startAutoRenew(key, token string, ttl, interval time.Duration) func() {
-	if s.redis == nil {
-		return func() {}
-	}
-	if interval <= 0 {
-		interval = ttl / 2
-	}
-	if interval < time.Second {
-		interval = time.Second
-	}
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	safego.Go("qualityoverview.snapshot.renewLock", func() {
-		defer close(done)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				_ = safego.Call("qualityoverview.snapshot.renewLock.tick", func() error {
-					_, _ = renewLockScript.Run(context.Background(), s.redis,
-						[]string{key}, token, int(ttl.Milliseconds())).Result()
-					return nil
-				})
-			}
-		}
-	})
-	return func() {
-		close(stop)
-		<-done
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = lease.Release(ctx)
 }
 
 func sleepContext(ctx context.Context, d time.Duration) error {
@@ -319,14 +270,6 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
-}
-
-func randomToken() (string, error) {
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf[:]), nil
 }
 
 // newRowID 写入 Prisma cuid 列（MySQL 没有客户端默认值，必须显式插入；

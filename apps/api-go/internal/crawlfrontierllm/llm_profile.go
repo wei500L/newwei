@@ -3,22 +3,20 @@ package crawlfrontierllm
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
-// llm_profile.go resolves the active LiteLLM gateway profile the same way
-// LiteLlmService.prepareRequest does: the llm_gateway_profiles SystemSetting
-// row, the completion/rerank selection rules and the managed proxy governance
-// key swap. The derivation is copied from the existing publicportal/gateway.go
-// helpers (they are package-private), so both Go paths resolve identical
-// profiles.
+// llm_profile.go resolves the active LiteLLM gateway profile through the shared
+// litellmcompat resolver. It previously carried its own copy of profile
+// normalization, secret decryption, api-base normalization and managed-proxy
+// governance; those now live in exactly one place (litellmcompat/settingscrypto)
+// so the crawl frontier path cannot drift from the other LLM clients.
 
 // LLMGatewayEnv is the LITELLM_* environment Nest merges under a stored
 // profile.
@@ -60,307 +58,72 @@ func (p gatewayProfile) authMode() string {
 	return "profile_key"
 }
 
-// gatewaySettingsReader reads the two SystemSetting rows the gateway uses.
-type gatewaySettingsReader struct {
-	db *sql.DB
-}
-
-func (r gatewaySettingsReader) settings(ctx context.Context) (profiles, governance []byte, err error) {
-	read := func(key string) ([]byte, error) {
-		var raw []byte
-		err := r.db.QueryRowContext(ctx, "SELECT value FROM SystemSetting WHERE `key` = ? LIMIT 1", key).Scan(&raw)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return raw, err
-	}
-	profiles, err = read("llm_gateway_profiles")
-	if err != nil {
-		return nil, nil, err
-	}
-	governance, err = read("litellm_proxy_governance")
-	if err != nil {
-		return nil, nil, err
-	}
-	return profiles, governance, nil
-}
-
-// resolveGatewayProfile selects the completion or rerank profile.
+// resolveGatewayProfile selects the completion or rerank profile through the
+// shared litellmcompat resolver.
 func resolveGatewayProfile(ctx context.Context, db *sql.DB, env LLMGatewayEnv, kind string) (gatewayProfile, error) {
-	profilesJSON, governanceJSON, err := gatewaySettingsReader{db: db}.settings(ctx)
-	if err != nil {
-		return gatewayProfile{}, err
+	cfg := litellmcompat.Config{
+		EncryptionKey: env.EncryptionKey,
+		APIBase:       defaultString(env.APIBase, "http://localhost:4001"),
+		Timeout:       time.Duration(defaultPositive(env.TimeoutMs, 60_000)) * time.Millisecond,
+		MaxRetries:    defaultPositive(env.MaxRetries, 3),
 	}
-	if env.APIBase == "" {
-		env.APIBase = "http://localhost:4001"
-	}
-	if env.TimeoutMs <= 0 {
-		env.TimeoutMs = 60_000
-	}
-	if env.MaxRetries <= 0 {
-		env.MaxRetries = 3
-	}
-	var settings struct {
-		ActiveID       string            `json:"activeId"`
-		RerankActiveID string            `json:"rerankActiveId"`
-		RerankMode     string            `json:"rerankMode"`
-		Profiles       []json.RawMessage `json:"profiles"`
-	}
-	if len(profilesJSON) > 0 {
-		if err := json.Unmarshal(profilesJSON, &settings); err != nil {
-			return gatewayProfile{}, errors.New("model gateway settings are invalid")
-		}
-	}
-	profiles := make([]gatewayProfile, 0, len(settings.Profiles))
-	for _, raw := range settings.Profiles {
-		profile, ok := normalizeGatewayProfile(raw, env)
-		if ok {
-			profiles = append(profiles, profile)
-		}
-	}
-	var selected *gatewayProfile
+	profileKind := litellmcompat.ProfileCompletion
 	if kind == "rerank" {
-		resolvedID := strings.TrimSpace(settings.RerankActiveID)
-		if resolvedID == "" && settings.RerankMode != "use_default" {
-			resolvedID = strings.TrimSpace(settings.ActiveID)
-		}
-		if resolvedID != "" {
-			for index := range profiles {
-				if profiles[index].ID == resolvedID && profiles[index].RerankModel != "" {
-					selected = &profiles[index]
-					break
-				}
-			}
-		}
-		if selected == nil && (settings.RerankMode == "use_default" || resolvedID == "") {
-			for index := range profiles {
-				if profiles[index].RerankModel != "" {
-					selected = &profiles[index]
-					break
-				}
-			}
-		}
-		if selected == nil {
-			return gatewayProfile{}, errors.New("rerank model is not configured")
-		}
-	} else {
-		activeID := strings.TrimSpace(settings.ActiveID)
-		if activeID != "" {
-			for index := range profiles {
-				if profiles[index].ID == activeID && profiles[index].Model != "" {
-					selected = &profiles[index]
-					break
-				}
-			}
-		}
-		if selected == nil {
-			for index := range profiles {
-				if profiles[index].Model != "" {
-					selected = &profiles[index]
-					break
-				}
-			}
-		}
-		if selected == nil {
-			return gatewayProfile{}, errors.New("completion model is not configured")
-		}
+		profileKind = litellmcompat.ProfileRerank
 	}
-	if err := applyGatewayGovernance(selected, profiles, governanceJSON, env.EncryptionKey); err != nil {
-		return gatewayProfile{}, err
-	}
-	selected.APIBase = normalizeAPIBase(selected.APIBase)
-	selected.APIKey = stripBearer(selected.APIKey)
-	return *selected, nil
-}
-
-func normalizeGatewayProfile(raw []byte, env LLMGatewayEnv) (gatewayProfile, bool) {
-	var record map[string]any
-	if err := json.Unmarshal(raw, &record); err != nil {
-		return gatewayProfile{}, false
-	}
-	id := jsonString(record["id"])
-	model := jsonString(record["model"])
-	if id == "" {
-		return gatewayProfile{}, false
-	}
-	switch value := record["enabled"].(type) {
-	case nil:
-	case bool:
-		if !value {
-			return gatewayProfile{}, false
-		}
-	default:
-		return gatewayProfile{}, false
-	}
-	apiBase := jsonString(record["apiBase"])
-	if apiBase == "" {
-		apiBase = env.APIBase
-	}
-	profile := gatewayProfile{
-		ID:                 id,
-		APIBase:            apiBase,
-		APIKey:             profileAPIKey(record["apiKey"], env.EncryptionKey),
-		Model:              model,
-		FallbackModels:     jsonStringList(mustJSONBytes(record["fallbackModels"])),
-		RerankModel:        jsonString(record["rerankModel"]),
-		RerankFallbacks:    jsonStringList(mustJSONBytes(record["rerankFallbackModels"])),
-		Timeout:            time.Duration(positiveIntValue(record["timeoutMs"], env.TimeoutMs)) * time.Millisecond,
-		MaxRetries:         positiveIntValue(record["maxRetries"], env.MaxRetries),
-		SendMetadata:       jsonBool(record["sendMetadata"], true),
-		ResponseFormatMode: jsonString(record["responseFormatMode"]),
-		APISurface:         jsonString(record["apiSurface"]),
-		TopP:               0.9,
-	}
-	if stored, ok := record["topP"]; ok {
-		if number, ok := finiteNumber(stored); ok {
-			profile.TopP = math.Max(0, math.Min(1, number))
-		}
-	}
-	if profile.ResponseFormatMode == "" {
-		profile.ResponseFormatMode = "json_schema"
-	}
-	if profile.APISurface == "" {
-		profile.APISurface = "chat_completions"
-	}
-	return profile, true
-}
-
-func applyGatewayGovernance(selected *gatewayProfile, profiles []gatewayProfile, raw []byte, encryptionKey string) error {
-	if len(raw) == 0 || selected == nil {
-		return nil
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil
-	}
-	if !jsonBool(doc["enabled"], false) {
-		return nil
-	}
-	targetID := jsonString(doc["targetProfileId"])
-	if targetID == "" {
-		return nil
-	}
-	var target *gatewayProfile
-	for index := range profiles {
-		if profiles[index].ID == targetID {
-			target = &profiles[index]
-			break
-		}
-	}
-	if target == nil {
-		return nil
-	}
-	if selected.ID != target.ID || normalizeAPIBase(selected.APIBase) != normalizeAPIBase(target.APIBase) {
-		return nil
-	}
-	state, key := governanceSecret(doc["managedRuntimeKey"], encryptionKey)
-	if state == "unreadable" {
-		return &NestError{Status: http.StatusServiceUnavailable, Message: "LiteLLM governance is enabled but the managed runtime key is unreadable"}
-	}
-	if key == "" {
-		return &NestError{Status: http.StatusServiceUnavailable, Message: "LiteLLM governance is enabled but the managed runtime key is missing"}
-	}
-	selected.APIBase = target.APIBase
-	selected.APIKey = strings.TrimSpace(key)
-	selected.GovernanceApplied = true
-	selected.GovernanceAuthMode = "managed_runtime_key"
-	selected.GovernanceTargetProfileID = target.ID
-	return nil
-}
-
-func governanceSecret(raw any, encryptionKey string) (string, string) {
-	if raw == nil {
-		return "missing", ""
-	}
-	switch value := raw.(type) {
-	case string:
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			return "missing", ""
-		}
-		return "available", trimmed
-	case map[string]any:
-		if value["__enc"] != "system-settings:v1" {
-			return "missing", ""
-		}
-		plain, err := decryptSecret(value, encryptionKey)
-		if err != nil {
-			return "unreadable", ""
-		}
-		plain = strings.TrimSpace(plain)
-		if plain == "" {
-			return "missing", ""
-		}
-		return "available", plain
-	default:
-		return "missing", ""
-	}
-}
-
-func profileAPIKey(raw any, encryptionKey string) string {
-	switch value := raw.(type) {
-	case string:
-		return stripBearer(value)
-	case map[string]any:
-		plain, err := decryptSecret(value, encryptionKey)
-		if err != nil {
-			return ""
-		}
-		return stripBearer(plain)
-	default:
-		return ""
-	}
-}
-
-func decryptSecret(payload map[string]any, encryptionKey string) (string, error) {
-	if payload["__enc"] != settingscrypto.EnvelopeTag || payload["alg"] != settingscrypto.Algorithm {
-		return "", errors.New("not an encrypted setting")
-	}
-	iv := jsonString(payload["iv"])
-	tag := jsonString(payload["tag"])
-	data := jsonString(payload["data"])
-	key, err := settingscrypto.ParseKey(encryptionKey)
+	resolved, err := litellmcompat.NewClient(db, nil, cfg).ResolveProfile(ctx, profileKind)
 	if err != nil {
-		return "", err
+		return gatewayProfile{}, translateCrawlProfileError(kind, err)
 	}
-	plain, err := settingscrypto.Decrypt(settingscrypto.Envelope{
-		Enc:  settingscrypto.EnvelopeTag,
-		Alg:  settingscrypto.Algorithm,
-		IV:   &iv,
-		Tag:  &tag,
-		Data: &data,
-	}, key)
-	if err != nil {
-		return "", err
-	}
-	return plain, nil
+	return gatewayProfileFromShared(resolved), nil
 }
 
-func stripBearer(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "bearer ") {
-		trimmed = strings.TrimSpace(trimmed[7:])
+// translateCrawlProfileError keeps the crawl frontier contract: a missing
+// profile is its historic "not configured" message and a governance
+// misconfiguration keeps the HTTP 503 NestError envelope.
+func translateCrawlProfileError(kind string, err error) error {
+	var governance *litellmcompat.GovernanceError
+	if errors.As(err, &governance) {
+		return &NestError{Status: http.StatusServiceUnavailable, Message: governance.Message}
 	}
-	return trimmed
-}
-
-func normalizeAPIBase(raw string) string {
-	base := strings.TrimRight(strings.TrimSpace(raw), "/")
-	lower := strings.ToLower(base)
-	for _, suffix := range []string{
-		"/v1/chat/completions", "/chat/completions", "/v1/embeddings", "/embeddings",
-		"/v1/models", "/models", "/v1/responses", "/responses",
-	} {
-		if strings.HasSuffix(lower, suffix) {
-			base = strings.TrimRight(base[:len(base)-len(suffix)], "/")
-			lower = strings.ToLower(base)
-			break
+	if kind == "rerank" {
+		if errors.Is(err, litellmcompat.ErrRerankUnavailable) {
+			return errors.New("rerank model is not configured")
 		}
+		return err
 	}
-	if strings.HasSuffix(strings.ToLower(base), "/v1") {
-		base = strings.TrimRight(base[:len(base)-len("/v1")], "/")
+	if errors.Is(err, litellmcompat.ErrCompletionUnavailable) {
+		return errors.New("completion model is not configured")
 	}
-	return base
+	return err
+}
+
+func gatewayProfileFromShared(profile litellmcompat.Profile) gatewayProfile {
+	return gatewayProfile{
+		ID:                        profile.ID,
+		APIBase:                   profile.APIBase,
+		APIKey:                    profile.APIKey,
+		Model:                     profile.Model,
+		FallbackModels:            profile.FallbackModels,
+		RerankModel:               profile.RerankModel,
+		RerankFallbacks:           profile.RerankFallbackModels,
+		Timeout:                   profile.Timeout,
+		MaxRetries:                profile.MaxRetries,
+		SendMetadata:              profile.SendMetadata,
+		ResponseFormatMode:        string(profile.ResponseFormatMode),
+		APISurface:                string(profile.APISurface),
+		TopP:                      profile.TopP,
+		GovernanceApplied:         profile.GovernanceApplied,
+		GovernanceAuthMode:        profile.AuthMode,
+		GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
+	}
+}
+
+func defaultPositive(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func uniqueModels(models []string) []string {
@@ -380,50 +143,10 @@ func uniqueModels(models []string) []string {
 	return out
 }
 
-func jsonString(value any) string {
-	text, _ := value.(string)
-	return strings.TrimSpace(text)
-}
-
-func jsonBool(value any, fallback bool) bool {
-	flag, ok := value.(bool)
-	if !ok {
-		return fallback
-	}
-	return flag
-}
-
 func finiteNumber(value any) (float64, bool) {
 	number, ok := value.(float64)
 	if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
 		return 0, false
 	}
 	return number, true
-}
-
-func positiveIntValue(value any, fallback int) int {
-	number, ok := finiteNumber(value)
-	if !ok || number != math.Trunc(number) || number <= 0 {
-		return fallback
-	}
-	return int(number)
-}
-
-func mustJSONBytes(value any) []byte {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	return encoded
-}
-
-func jsonStringList(raw []byte) []string {
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil
-	}
-	var values []string
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil
-	}
-	return values
 }

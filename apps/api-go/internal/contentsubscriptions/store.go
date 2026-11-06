@@ -13,6 +13,8 @@ import (
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqllock"
 )
 
 var errLockNotAcquired = errors.New("content subscription lock not acquired")
@@ -50,28 +52,16 @@ func (s *Service) withUserLock(ctx context.Context, orgID, userID string, fn fun
 	if s == nil || s.db == nil {
 		return errors.New("content subscription store is not configured")
 	}
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	name := subscriptionLockName(orgID, userID)
-	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, lockTimeoutSeconds).Scan(&acquired); err != nil {
-		return err
-	}
-	if !acquired.Valid || acquired.Int64 != 1 {
+	// WithConnLock pins the connection that holds the advisory lock so the
+	// critical section can run its multi-statement SQL on that same session. A
+	// failed RELEASE_LOCK evicts the connection instead of leaking the lock.
+	err := mysqllock.WithConnLock(ctx, s.db, subscriptionLockName(orgID, userID), lockTimeoutSeconds, fn)
+	if errors.Is(err, mysqllock.ErrNotAcquired) || errors.Is(err, mysqllock.ErrUnavailable) {
+		// Both GET_LOCK 0 (timeout) and NULL (error) keep the historical
+		// "lock not acquired" classification the callers already map to 503.
 		return errLockNotAcquired
 	}
-	defer releaseLock(conn, name)
-	return fn(ctx, conn)
-}
-
-func releaseLock(conn *sql.Conn, name string) {
-	relCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = conn.ExecContext(relCtx, "SELECT RELEASE_LOCK(?)", name)
+	return err
 }
 
 // subscriptionLockName 只由已鉴权的 orgId 与 userId 组成。超过 MySQL

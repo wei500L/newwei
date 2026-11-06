@@ -17,17 +17,15 @@ import (
 )
 
 // wireIdentityOnboarding registers the sixteen registration, invitation and
-// registration-application routes only when
-// API_GO_IDENTITY_ONBOARDING_MODE=go. Every other value (including the default
-// legacy and the empty string) registers nothing, so the routes keep flowing
-// through the NestJS proxy and rollback is a single variable change.
+// registration-application routes. The rules are registered unconditionally;
+// unmatched paths are answered with the Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool, the shared Redis client, the
 // ordinary JWT authenticator and the SMTP_* transport (invitations and the two
 // rejection paths deliver real mail synchronously). It opens no Mongo
 // connection, starts no worker or scheduler and performs no startup network
-// probe: the SMTP connection is established per message, inside the request that
-// needs it.
+// probe: the SMTP connection is established per message, inside the request
+// that needs it.
 func wireIdentityOnboarding(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: identity onboarding go takeover requires mysql, redis, and jwt")

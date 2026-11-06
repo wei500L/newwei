@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/contentsubscriptions"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqllock"
 )
 
 type queryer interface {
@@ -21,27 +22,14 @@ func (s *Service) withUserLock(ctx context.Context, orgID, userID string, fn fun
 	if s == nil || s.db == nil {
 		return errors.New("situation monitor store is not configured")
 	}
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	name := contentsubscriptions.UserLockName(orgID, userID)
-	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, contentsubscriptions.UserLockTimeoutSeconds()).Scan(&acquired); err != nil {
-		return err
-	}
-	if !acquired.Valid || acquired.Int64 != 1 {
+	// WithConnLock keeps the multi-statement critical section on the connection
+	// that owns the advisory lock and evicts that connection when RELEASE_LOCK
+	// cannot be confirmed, so the lock never leaks back into the pool.
+	err := mysqllock.WithConnLock(ctx, s.db, contentsubscriptions.UserLockName(orgID, userID), contentsubscriptions.UserLockTimeoutSeconds(), fn)
+	if errors.Is(err, mysqllock.ErrNotAcquired) || errors.Is(err, mysqllock.ErrUnavailable) {
 		return errLockNotAcquired
 	}
-	defer releaseLock(conn, name)
-	return fn(ctx, conn)
-}
-
-func releaseLock(conn *sql.Conn, name string) {
-	relCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = conn.ExecContext(relCtx, "SELECT RELEASE_LOCK(?)", name)
+	return err
 }
 
 func newRowID() (string, error) {

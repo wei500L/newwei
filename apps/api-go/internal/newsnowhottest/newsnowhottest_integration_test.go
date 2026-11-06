@@ -396,11 +396,11 @@ func TestNewsnowHottestIntegrationLocksAndStatePipeline(t *testing.T) {
 	if second, err := acquireLock(ctx, store, lockTarget, analysisLockTTLMillis); err != nil || second != nil {
 		t.Fatalf("second acquire = %v %v", second, err)
 	}
-	lease.release()
+	releaseLease(lease)
 	if again, err := acquireLock(ctx, store, lockTarget, analysisLockTTLMillis); err != nil || again == nil {
 		t.Fatalf("reacquire = %v %v", again, err)
 	} else {
-		again.release()
+		releaseLease(again)
 	}
 
 	scheduler := &Scheduler{store: store, now: func() time.Time {
@@ -456,5 +456,5 @@ func TestNewsnowHottestIntegrationLocksAndStatePipeline(t *testing.T) {
 	if ttl := client.PTTL(ctx, "lock:"+warmLockKey).Val(); ttl <= 0 || ttl > 55*time.Second {
 		t.Fatalf("warm lock ttl = %v", ttl)
 	}
-	warmLease.release()
+	releaseLease(warmLease)
 }

@@ -9,18 +9,15 @@ const (
 	ExceptionIngestInternalKey = "/api/internal/observability/exception-events"
 )
 
-// WithExceptionIngest takes over the two exception-report POST endpoints when
-// mode is go:
+// WithExceptionIngest registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/observability/exception-events/client
 //	POST /api/internal/observability/exception-events
-//
-// Both are exact path + method allowlist (POST plus preflight OPTIONS, which
-// the wiring forwards to the legacy proxy when it is not a preflight request).
-// Similar paths (for example /api/observability/exception-events/clients) and
-// other methods keep falling through to NestJS; Go never answers its own 404.
-// The default (empty / legacy) appends no rules, and the seven admin log read
-// GETs stay on their own API_GO_ADMIN_LOGS_MODE switch.
 func WithExceptionIngest(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, ExceptionIngestClientKey,
 		"/api/observability/exception-events/client", http.MethodPost)

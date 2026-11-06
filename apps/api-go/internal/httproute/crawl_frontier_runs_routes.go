@@ -8,11 +8,12 @@ import "net/http"
 // through Rule.HandlerKey so one handler can dispatch by URL path.
 const CrawlFrontierRunsKey = "/api/admin/crawl-frontier#runs"
 
-// WithCrawlFrontierRuns registers the eleven routes taken over when mode is
-// go. An empty or legacy mode adds no rules, so every path keeps proxying to
-// NestJS.
+// WithCrawlFrontierRuns registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 //
-// The migrated routes are:
+// Served routes:
 //
 //	GET  /api/admin/crawl-frontier/runs
 //	GET  /api/admin/crawl-frontier/runs/:id
@@ -26,20 +27,8 @@ const CrawlFrontierRunsKey = "/api/admin/crawl-frontier#runs"
 //	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates
 //	GET  /api/admin/crawl-frontier/workflow-runs/:runId/candidates/:candidateId/explanation
 //
-// Only the listed method is registered for each path. Every other method,
-// trailing slash and longer path falls back to the /api/ legacy rule, and Go
-// never answers its own 404 for those requests. GET /runs/cancel deliberately
-// matches the runs/:id rule (id = "cancel") so it returns the same 404 as the
-// NestJS @Get("runs/:id") route.
-//
-// The three write routes (POST /runs, POST /nodes/retry and
-// POST /nodes/:id/retry) are owned by WithCrawlFrontierWrites and
-// API_GO_CRAWL_FRONTIER_WRITES_MODE, never by this switch; creating or retrying
-// a run returns the same run detail as GET /runs/:id, so config.go requires
-// both switches to be go together. POST /workflow-runs/:runId/replay and
-// POST /workflows/:id/trial-run still stay on NestJS and are not registered
-// here. The profiles, workflows, workflow-versions and news-sources subtrees
-// belong to their own switches and are not touched.
+// The write routes (POST /runs, /nodes/retry and /nodes/:id/retry) are owned by
+// WithCrawlFrontierWrites and are not registered here.
 func WithCrawlFrontierRuns(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 	runsPath := base + "/runs"

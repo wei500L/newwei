@@ -8,16 +8,14 @@ import "net/http"
 // path.
 const NewsClusteringLlmBackfillKey = "/api/system-settings/news-events/clustering/failures/llm-backfill"
 
-// WithNewsClusteringLlmBackfill registers exactly one route when mode is go:
+// WithNewsClusteringLlmBackfill registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/system-settings/news-events/clustering/failures/:groupId/llm-backfill
-//
-// It is deliberately separate from WithNewsnowClusteringOps: the nine-route
-// clustering administration switch and the manual LLM backfill switch are
-// independent, so enabling one never takes over the other route. The rule
-// matches one non-empty segment and the exact /llm-backfill tail, so
-// /vector-backfill, /ignore, longer paths and every unlisted method keep
-// falling back to NestJS. The default (empty or legacy) appends no rule.
 func WithNewsClusteringLlmBackfill(rules []Rule) []Rule {
 	return appendSegmentRule(rules, NewsClusteringLlmBackfillKey,
 		"/api/system-settings/news-events/clustering/failures/", true, false, "/llm-backfill",

@@ -193,3 +193,61 @@ func TestReleaseFailureEvictsConnection(t *testing.T) {
 		t.Fatalf("the evicted connection must be replaced, created=%d", created)
 	}
 }
+
+// TestWithConnLockRunsOnPinnedConnection proves the callback receives the same
+// pinned connection that owns the advisory lock, and that a successful release
+// returns it to the pool.
+func TestWithConnLockRunsOnPinnedConnection(t *testing.T) {
+	db, state := newFake(t, int64(1), int64(1))
+	defer db.Close()
+
+	var got *sql.Conn
+	err := WithConnLock(context.Background(), db, "test:conn-lock", 10, func(_ context.Context, conn *sql.Conn) error {
+		got = conn
+		return nil
+	})
+	if err != nil || got == nil {
+		t.Fatalf("err=%v conn=%v", err, got)
+	}
+	if len(state.stmts) < 2 || !strings.Contains(state.stmts[0], "GET_LOCK") || !strings.Contains(state.stmts[1], "RELEASE_LOCK") {
+		t.Fatalf("statements = %v", state.stmts)
+	}
+	if created := state.createdConnections(); created != 1 {
+		t.Fatalf("a successful release must return the connection to the pool, created=%d", created)
+	}
+}
+
+// TestWithConnLockNotAcquired proves a GET_LOCK timeout does not run the
+// callback and surfaces ErrNotAcquired.
+func TestWithConnLockNotAcquired(t *testing.T) {
+	db, _ := newFake(t, int64(0), int64(1))
+	defer db.Close()
+
+	ran := false
+	err := WithConnLock(context.Background(), db, "test:conn-lock", 10, func(context.Context, *sql.Conn) error {
+		ran = true
+		return nil
+	})
+	if !errors.Is(err, ErrNotAcquired) || ran {
+		t.Fatalf("err=%v ran=%t", err, ran)
+	}
+}
+
+// TestWithConnLockReleaseFailureEvictsConnection pins the defect fix: a failed
+// RELEASE_LOCK must evict the pinned connection instead of pooling it.
+func TestWithConnLockReleaseFailureEvictsConnection(t *testing.T) {
+	db, state := newFake(t, int64(1), int64(0))
+	defer db.Close()
+
+	if err := WithConnLock(context.Background(), db, "test:conn-lock", 10, func(context.Context, *sql.Conn) error { return nil }); err != nil {
+		t.Fatalf("a failed release must not surface as an error: %v", err)
+	}
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	if created := state.createdConnections(); created < 2 {
+		t.Fatalf("the evicted connection must be replaced, created=%d", created)
+	}
+}

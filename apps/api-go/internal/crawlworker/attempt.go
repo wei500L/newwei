@@ -21,7 +21,7 @@ import (
 )
 
 // jobTransitions is the BullMQ state-machine subset one attempt drives. The
-// production implementation is *queueRuntime (vendored Lua over Redis); unit
+// production implementation is *queueTransitions (vendored Lua over Redis); unit
 // tests substitute a fake so the decision logic runs without Redis.
 type jobTransitions interface {
 	// UpdateData is Job.updateData (the updateData script).

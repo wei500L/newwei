@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"mime"
 	"net/http"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 )
 
 // The two migrated paths. Both rules are exact path + POST in the proxy route
@@ -130,27 +130,19 @@ func readJSONBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Body == nil || !jsonContentType(r.Header.Get("Content-Type")) {
 		return []byte("{}"), true
 	}
-	limited := http.MaxBytesReader(nil, r.Body, maxJSONBytes)
-	defer limited.Close()
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		var maxBytes *http.MaxBytesError
-		if errors.As(err, &maxBytes) {
-			authhttp.WritePayloadTooLarge(w, r)
-			return nil, false
-		}
-		authhttp.WriteBadRequest(w, r, invalidJSONMessage)
-		return nil, false
-	}
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 {
+	data, err := httpx.ReadJSON(w, r, maxJSONBytes)
+	switch {
+	case err == nil:
+		return bytes.TrimSpace(data), true
+	case errors.Is(err, httpx.ErrEmptyBody):
 		return []byte("{}"), true
-	}
-	if !json.Valid(trimmed) {
+	case errors.Is(err, httpx.ErrBodyTooLarge):
+		authhttp.WritePayloadTooLarge(w, r)
+		return nil, false
+	default:
 		authhttp.WriteBadRequest(w, r, invalidJSONMessage)
 		return nil, false
 	}
-	return trimmed, true
 }
 
 func jsonContentType(header string) bool {

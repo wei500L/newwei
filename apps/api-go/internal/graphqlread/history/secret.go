@@ -1,12 +1,17 @@
 package history
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
+// managedKeyState reports the availability of the managed runtime key of the
+// litellm_proxy_governance document. It delegates envelope detection and
+// decryption to settingscrypto so this read-only capability view shares the one
+// settings-secret implementation.
 func managedKeyState(raw any) string {
 	switch typed := raw.(type) {
 	case string:
@@ -15,11 +20,12 @@ func managedKeyState(raw any) string {
 		}
 		return "available"
 	case map[string]any:
-		if !encryptedSecret(typed) {
+		encoded, err := json.Marshal(typed)
+		if err != nil || !settingscrypto.IsEnvelope(encoded) {
 			return "missing"
 		}
-		plain, err := decryptSecret(typed, os.Getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
-		if err != nil {
+		plain, ok := settingscrypto.DecryptSettingsSecret(encoded, os.Getenv("SYSTEM_SETTINGS_ENCRYPTION_KEY"))
+		if !ok {
 			return "unreadable"
 		}
 		if strings.TrimSpace(plain) == "" {
@@ -29,35 +35,4 @@ func managedKeyState(raw any) string {
 	default:
 		return "missing"
 	}
-}
-
-func encryptedSecret(raw map[string]any) bool {
-	if raw["__enc"] != settingscrypto.EnvelopeTag || raw["alg"] != settingscrypto.Algorithm {
-		return false
-	}
-	_, ivOK := raw["iv"].(string)
-	_, tagOK := raw["tag"].(string)
-	_, dataOK := raw["data"].(string)
-	return ivOK && tagOK && dataOK
-}
-
-func decryptSecret(payload map[string]any, encryptionKey string) (string, error) {
-	iv := payload["iv"].(string)
-	tag := payload["tag"].(string)
-	data := payload["data"].(string)
-	key, err := settingscrypto.ParseKey(encryptionKey)
-	if err != nil {
-		return "", err
-	}
-	plain, err := settingscrypto.Decrypt(settingscrypto.Envelope{
-		Enc:  settingscrypto.EnvelopeTag,
-		Alg:  settingscrypto.Algorithm,
-		IV:   &iv,
-		Tag:  &tag,
-		Data: &data,
-	}, key)
-	if err != nil {
-		return "", err
-	}
-	return plain, nil
 }

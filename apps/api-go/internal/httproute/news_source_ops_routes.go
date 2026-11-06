@@ -7,18 +7,17 @@ import "net/http"
 // path, and every rule below points at it through Rule.HandlerKey.
 const NewsSourceOpsKey = "/__go/news-source-ops"
 
-// WithNewsSourceOps registers the four news-source operations POSTs taken over
-// when API_GO_NEWS_SOURCE_OPS_MODE=go:
+// WithNewsSourceOps registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/admin/news-sources/:id/dispatch
 //	POST /api/admin/news-sources/:id/cancel-queued
 //	POST /api/admin/news-sources/:id/clear-inflight
 //	POST /api/admin/news-sources/:id/retry-latest
-//
-// The rules are method-scoped and tail-scoped, so the news-source CRUD rules
-// (`:id` PATCH/DELETE, `:id/run`, `:id/schedule`), the `:id/preview` GET rule
-// and every longer path keep their existing owners. An empty or legacy mode
-// adds no rules.
 func WithNewsSourceOps(rules []Rule) []Rule {
 	base := "/api/admin/news-sources/"
 	rules = appendSegmentRule(rules, NewsSourceOpsKey, base, true, false, "/dispatch",

@@ -15,10 +15,9 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/runtimesettings"
 )
 
-// wireRuntimeSettings registers the eighteen runtime/governance settings routes
-// only when API_GO_RUNTIME_SETTINGS_MODE=go. Every other value (including the
-// default legacy and the empty string) registers nothing, so the routes keep
-// flowing through the NestJS proxy and rollback is a single variable change.
+// wireRuntimeSettings registers the eighteen runtime/governance settings
+// routes. The rules are registered unconditionally; unmatched paths are
+// answered with the Nest-shaped 404.
 func wireRuntimeSettings(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: runtime settings go takeover requires mysql, redis, and jwt")

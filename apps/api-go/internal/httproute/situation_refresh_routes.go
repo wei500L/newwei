@@ -4,26 +4,14 @@ import "net/http"
 
 // SituationRefreshKey is the handler registration key for
 // POST /api/situation-monitor/refresh. It is deliberately distinct from
-// SituationSignalsKey and SituationInsightsKey: API_GO_SITUATION_REFRESH_MODE is
-// an independent switch, so neither a signals rollout nor an insights rollout
-// may answer the refresh path, and switching refresh back to legacy must not
-// disturb the seven read routes.
+// SituationSignalsKey and SituationInsightsKey, so the refresh path is owned
+// only by this unit; neither the signals nor the insights rules may answer it.
 const SituationRefreshKey = "/api/situation-monitor#refresh"
 
-// WithSituationRefresh takes over exactly POST /api/situation-monitor/refresh
-// when mode is go. The rule is exact and method-scoped, so:
-//
-//   - GET /api/situation-monitor/refresh-runs/:refreshId keeps its own rule
-//     (owned by WithSituationSignals) and is unaffected;
-//   - the seven signal routes, /insights, /monitors and the settings routes keep
-//     their own switches;
-//   - every other method on /refresh, a trailing slash and any longer path such
-//     as /refresh/extra still fall back to NestJS.
-//
-// An empty or legacy mode adds no rules at all, so the default deployment is
-// unchanged and rollback only flips this one variable. The shared rule helper
-// whitelists OPTIONS for the taken-over path, so the CORS preflight is answered
-// by the Go handler instead of reaching NestJS.
+// WithSituationRefresh registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 func WithSituationRefresh(rules []Rule) []Rule {
 	return appendExactKeyed(rules, SituationRefreshKey, "/api/situation-monitor/refresh", http.MethodPost)
 }

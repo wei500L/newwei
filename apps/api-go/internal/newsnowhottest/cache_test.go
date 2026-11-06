@@ -158,7 +158,7 @@ func TestAcquireLockUsesNestPhysicalKey(t *testing.T) {
 	if ttl := store.ttls[store.setNX[0]]; ttl != 45*time.Second {
 		t.Fatalf("lock ttl = %v", ttl)
 	}
-	lease.release()
+	releaseLease(lease)
 	if len(store.evals) != 1 || len(store.evals[0].keys) != 1 ||
 		store.evals[0].keys[0] != "lock:newsnow:hottest:analysis:v1:org:refresh" {
 		t.Fatalf("release eval = %+v", store.evals)

@@ -8,20 +8,14 @@ import "net/http"
 // the classification quality read switch (API_GO_CLASSIFICATION_RSS_OPS_MODE).
 const ClassificationReportsKey = "/api/admin/quality/classification/reports"
 
-// WithClassificationReports registers exactly one route when mode is go:
+// WithClassificationReports registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/admin/quality/classification/reports
-//
-// The existing 13 classification rules are untouched. The GET
-// /reports/:jobId rule owned by WithClassificationRssOps keeps its own switch:
-// with reports=go and rss-ops=legacy, a POST is served by Go while the GET of the
-// job it created keeps proxying to NestJS (and NestJS reads the same Mongo
-// documents, so the report is visible either way).
-//
-// The rule claims POST plus the CORS preflight OPTIONS on the same exact path
-// (appendExactKeyed does that for every migrated exact route). Every other
-// method falls back to NestJS, so the request never sees a Go 404.
-// Default (empty or legacy) appends nothing.
 func WithClassificationReports(rules []Rule) []Rule {
 	return appendExactKeyed(rules, ClassificationReportsKey,
 		"/api/admin/quality/classification/reports", http.MethodPost)

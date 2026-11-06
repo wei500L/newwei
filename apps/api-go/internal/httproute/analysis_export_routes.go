@@ -8,17 +8,15 @@ const (
 	AnalysisExportEventsKey = "/api/analysis/exports/events"
 )
 
-// WithAnalysisExport takes over the two exact POST CSV export routes when mode
-// is go:
+// WithAnalysisExport registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/analysis/exports/items
 //	POST /api/analysis/exports/events
-//
-// Only POST and the matching CORS preflight reach Go. POST
-// /api/analysis/exports/search, every other method and every deeper path fall
-// through to the shorter /api/ rule and stay on NestJS, so the
-// archive-preparing search export and the un-migrated methods are never
-// answered by a partial Go handler.
 func WithAnalysisExport(rules []Rule) []Rule {
 	methods := map[string]bool{http.MethodPost: true, http.MethodOptions: true}
 	return append(rules,

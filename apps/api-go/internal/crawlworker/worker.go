@@ -1,20 +1,29 @@
 package crawlworker
 
 // The Go crawl4ai queue worker. It owns the three BullMQ queues the NestJS
-// CrawlQueueProcessor consumed when API_GO_CRAWL_WORKER_MODE=go:
-// crawl4ai-hot, crawl4ai-normal and the legacy crawl4ai queue.
+// CrawlQueueProcessor consumed: crawl4ai-hot, crawl4ai-normal and the legacy
+// crawl4ai queue.
 //
-// Ownership is whole-process: the switch makes NestJS skip creating its crawl
-// Workers (and its QueueEvents readers), and this worker claims the jobs with
-// the vendored bullmq@5.63.2 Lua state machine. Producers are unchanged: both
-// runtimes write the same job hash, wait/prioritized lists and events stream, so
-// switching back needs no data migration and a short overlap is safe because the
-// BullMQ job lock admits one owner per attempt.
+// Each queue runs on a shared internal/bullmq.Worker, which owns the fetch loop,
+// the lock renewal, the stalled timer, the pull concurrency and the graceful
+// shutdown. This package keeps only what is crawl-specific: the shared strict
+// priority limiter, the O1 settings cache and the C2 concurrency subscriber, the
+// attempt business logic (error classification, the crawl4ai memory pressure
+// fallback and the B1 side effects), and the per-queue BullMQ transitions the
+// attempt drives itself. attempt.run performs the transition and the side
+// effects, then returns bullmq.Handled so the shared worker does not acknowledge
+// the job a second time.
+//
+// Producers are unchanged: jobs are the JSON CrawlJobData document, job options
+// and command arguments are MessagePack, and the vendored bullmq@5.63.2 Lua in
+// scripts/ implements moveToActive, moveToFinished, retryJob, moveToDelayed,
+// moveJobFromActiveToWait, extendLock, moveStalledJobsToWait and updateData.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -23,6 +32,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/bullmq"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlexecution"
 	"github.com/wei500L/newwei/apps/api-go/internal/crawlqueue"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
@@ -68,8 +78,8 @@ type Snapshots interface {
 	SyncQueueCounts(ctx context.Context, orgID, sourceID string) error
 }
 
-// Config carries the environment fallbacks of the migration switch:
-// CRAWL4AI_MAX_CONCURRENCY, CRAWL4AI_TIMEOUT_MS and the O1 settings cache TTL.
+// Config carries the environment fallbacks of the worker: CRAWL4AI_MAX_CONCURRENCY,
+// CRAWL4AI_TIMEOUT_MS and the O1 settings cache TTL.
 type Config struct {
 	// MaxConcurrency is CRAWL4AI_MAX_CONCURRENCY, used when the crawl settings
 	// cannot be read.
@@ -104,7 +114,8 @@ type Options struct {
 	// Snapshots refreshes the news source ops snapshot; optional.
 	Snapshots Snapshots
 	Config    Config
-	// Now is the clock used for BullMQ timestamps and updatedAt; optional.
+	// Now is the clock used for the BullMQ transition timestamps and updatedAt;
+	// optional.
 	Now func() time.Time
 	// Logger receives the structured log lines; optional.
 	Logger func(format string, args ...any)
@@ -126,34 +137,28 @@ type options struct {
 }
 
 // Worker is the process-level crawl queue worker: the shared concurrency
-// limiter, the per-queue runtimes, the C2 subscriber and the lifecycle.
+// limiter, the per-queue shared bullmq.Worker instances, the C2 subscriber and
+// the lifecycle.
 type Worker struct {
 	opts     options
 	scripts  queueScripts
 	limiter  *concurrencyLimiter
 	settings *settingsCache
 	attempt  *attempt
-	tokens   *tokenSource
-	queues   []*queueRuntime
+	workers  []*queueWorker
 
-	fetchCtx      context.Context
-	cancelFetch   context.CancelFunc
-	stalledCtx    context.Context
-	cancelStalled context.CancelFunc
-	jobCtx        context.Context
-	cancelJobs    context.CancelFunc
-
-	fetchWG      sync.WaitGroup
-	stalledWG    sync.WaitGroup
-	jobWG        sync.WaitGroup
-	subscriberWG sync.WaitGroup
+	// concurrency is the shared pull concurrency, limiter capacity and manual
+	// BullMQ limiter unit of every queue worker. It starts from the settings
+	// value and the C2 broadcast updates it at runtime.
+	concurrency atomic.Int64
 
 	mu        sync.Mutex
 	pubsub    *redis.PubSub
-	closing   bool
 	closeErr  error
 	closeOnce sync.Once
 	started   atomic.Bool
+
+	subscriberWG sync.WaitGroup
 }
 
 // New validates the wiring and builds the worker. Start opens the connections
@@ -205,7 +210,6 @@ func New(opts Options) (*Worker, error) {
 		scripts:  scripts,
 		limiter:  newConcurrencyLimiter(1),
 		settings: newSettingsCache(normalized.settingsReader, normalized.config.SettingsTTL, now),
-		tokens:   newTokenSource(),
 	}
 	worker.attempt = &attempt{
 		runner:       normalized.execution,
@@ -223,8 +227,9 @@ func New(opts Options) (*Worker, error) {
 }
 
 // Start reads the initial concurrency, writes the BullMQ meta concurrency,
-// starts one worker per configured queue and subscribes the C2 broadcast. It
-// returns once the loops are running; Close performs the ordered drain.
+// starts one shared bullmq.Worker per configured queue and subscribes the C2
+// broadcast. It returns once the loops are running; Close performs the ordered
+// drain.
 func (w *Worker) Start(ctx context.Context) error {
 	if w == nil {
 		return fmt.Errorf("crawlworker: worker is nil")
@@ -242,39 +247,36 @@ func (w *Worker) Start(ctx context.Context) error {
 	}
 
 	concurrency := w.applyStartupConcurrency(ctx)
-	w.fetchCtx, w.cancelFetch = context.WithCancel(context.Background())
-	w.stalledCtx, w.cancelStalled = context.WithCancel(context.Background())
-	w.jobCtx, w.cancelJobs = context.WithCancel(context.Background())
-
 	includeLegacy := w.shouldStartLegacyWorker(ctx)
 	for _, spec := range queueSpecs() {
 		if spec.Legacy && !includeLegacy {
 			w.logf("crawlworker: legacy crawl queue holds no waiting/active/delayed/paused job; not starting its worker")
 			continue
 		}
-		runtime, err := w.newQueueRuntime(spec)
+		queue, err := w.newQueueWorker(spec, concurrency)
 		if err != nil {
 			w.abortStart()
 			return err
 		}
-		// The per-queue pull concurrency starts at the settings value and follows
-		// the C2 broadcast afterwards.
-		runtime.setConcurrency(concurrency)
-		w.queues = append(w.queues, runtime)
-		runtime.start(w.fetchCtx, w.stalledCtx)
+		if err := queue.inner.Start(ctx); err != nil {
+			w.abortStart()
+			return fmt.Errorf("crawlworker: start queue %s: %w", spec.Name, err)
+		}
+		w.workers = append(w.workers, queue)
 	}
 	w.subscribeWorkerConcurrency()
-	w.logf("crawlworker: started queues=%d concurrency=%d legacy=%t", len(w.queues), concurrency, includeLegacy)
+	w.logf("crawlworker: started queues=%d concurrency=%d legacy=%t", len(w.workers), concurrency, includeLegacy)
 	return nil
 }
 
-// Close stops claiming jobs, drains the in-flight attempts while their locks keep
-// renewing, then stops the stalled checkers and the C2 subscription and closes
-// the dedicated blocking connections. The shared command client stays open.
+// Close stops claiming jobs on every queue, drains the in-flight attempts while
+// their locks keep renewing, then stops the C2 subscription and refuses the
+// remaining limiter waiters. The shared command client stays open.
 //
-// An attempt still running at the deadline is canceled: it leaves its job in the
-// active list, the lock expires and BullMQ stalled recovery hands the job to the
-// next attempt. This is the itempipeline.Worker.Close contract.
+// The three queue workers close concurrently so no queue keeps claiming while
+// another drains. An attempt still running at the deadline is canceled by its
+// bullmq.Worker: it leaves the job active, the lock expires and BullMQ stalled
+// recovery hands it to the next attempt.
 func (w *Worker) Close(ctx context.Context) error {
 	if w == nil {
 		return nil
@@ -283,63 +285,42 @@ func (w *Worker) Close(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	w.closeOnce.Do(func() {
-		w.mu.Lock()
-		w.closing = true
-		w.mu.Unlock()
-		if w.cancelFetch != nil {
-			w.cancelFetch()
+		var group sync.WaitGroup
+		errs := make([]error, len(w.workers))
+		for index, queue := range w.workers {
+			group.Add(1)
+			go func(index int, queue *queueWorker) {
+				defer group.Done()
+				errs[index] = queue.inner.Close(ctx)
+			}(index, queue)
 		}
-		// The fetch loops are the only goroutines that start attempts, so wait for
-		// them before waiting on the attempt group.
-		w.fetchWG.Wait()
-		drained := make(chan struct{})
-		go func() {
-			w.jobWG.Wait()
-			close(drained)
-		}()
-		select {
-		case <-drained:
-		case <-ctx.Done():
-			if w.cancelJobs != nil {
-				w.cancelJobs()
-			}
-			graceCtx, cancelGrace := context.WithTimeout(context.Background(), 5*time.Second)
-			select {
-			case <-drained:
-			case <-graceCtx.Done():
-				w.closeErr = fmt.Errorf("crawlworker: in-flight crawl jobs did not stop before the shutdown deadline")
-			}
-			cancelGrace()
-		}
-		if w.cancelStalled != nil {
-			w.cancelStalled()
-		}
-		if w.cancelJobs != nil {
-			w.cancelJobs()
-		}
-		w.stalledWG.Wait()
+		group.Wait()
+		// The C2 subscription and the limiter close after the drain: no attempt
+		// is left waiting for a slot, and no broadcast can revive a closed queue.
 		w.closeSubscriber()
 		w.limiter.close()
-		for _, runtime := range w.queues {
-			runtime.close()
-		}
-		w.queues = nil
+		w.workers = nil
+		w.closeErr = errors.Join(errs...)
 	})
 	return w.closeErr
 }
 
 // ApplyConcurrency is the C2 broadcast effect: change the shared limiter
-// capacity and the pull concurrency of every running queue worker, then
-// invalidate the O1 settings cache so the next attempt re-reads the document.
+// capacity, the manual BullMQ limiter and the pull concurrency of every running
+// queue worker, then invalidate the O1 settings cache so the next attempt
+// re-reads the document.
 func (w *Worker) ApplyConcurrency(concurrency int) {
 	if w == nil {
 		return
 	}
 	capacity := maxInt(1, jsRound(float64(concurrency)))
+	w.concurrency.Store(int64(capacity))
 	w.limiter.setCapacity(capacity)
 	w.settings.Invalidate()
-	for _, runtime := range w.queues {
-		runtime.setConcurrency(capacity)
+	limiter := &bullmq.Limiter{Max: resolveManualLimiterMax(capacity), Duration: 1_000}
+	for _, queue := range w.workers {
+		queue.inner.SetConcurrency(capacity)
+		queue.inner.SetLimiter(limiter)
 	}
 }
 
@@ -358,6 +339,7 @@ func (w *Worker) applyStartupConcurrency(ctx context.Context) int {
 		}
 	}
 	concurrency := resolveInitialWorkerConcurrency(configured, w.opts.config.MaxConcurrency)
+	w.concurrency.Store(int64(concurrency))
 	w.limiter.setCapacity(concurrency)
 	return concurrency
 }
@@ -392,46 +374,87 @@ func (w *Worker) shouldStartLegacyWorker(ctx context.Context) bool {
 	return total > 0
 }
 
-// newQueueRuntime builds one queue worker and its dedicated blocking connection.
-func (w *Worker) newQueueRuntime(spec queueSpec) (*queueRuntime, error) {
+// newQueueWorker builds one queue consumer: its shared bullmq.Worker, the
+// per-queue transitions the attempt drives and the stalled side-effect hook.
+func (w *Worker) newQueueWorker(spec queueSpec, concurrency int) (*queueWorker, error) {
 	blocking := w.opts.newBlockingClient()
 	if blocking == nil {
 		return nil, fmt.Errorf("crawlworker: blocking redis client factory returned nil for %s", spec.Name)
 	}
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelPing()
-	if err := blocking.Ping(pingCtx).Err(); err != nil {
-		_ = blocking.Close()
-		return nil, fmt.Errorf("crawlworker: blocking redis ping for %s failed: %w", spec.Name, err)
+	transitions := &queueTransitions{
+		worker:  w,
+		spec:    spec,
+		keys:    newKeys(spec.Name),
+		scripts: w.scripts,
+		client:  w.opts.client,
+		now:     w.opts.now,
 	}
-	return &queueRuntime{
-		worker:   w,
-		spec:     spec,
-		keys:     newKeys(spec.Name),
-		scripts:  w.scripts,
-		client:   w.opts.client,
-		blocking: blocking,
-		wake:     make(chan struct{}, 1),
-	}, nil
+	inner, err := bullmq.NewWorker(w.opts.client, blocking, spec.Name, w.buildProcessor(spec, transitions), bullmq.WorkerOptions{
+		Concurrency:            concurrency,
+		LockDuration:           lockDuration,
+		StalledInterval:        stalledInterval,
+		MaxStalledCount:        maxStalledCount,
+		DrainDelay:             drainDelay,
+		Limiter:                &bullmq.Limiter{Max: resolveManualLimiterMax(concurrency), Duration: 1_000},
+		ProcessDeferredFailure: true,
+		OnStalled: func(ctx context.Context, jobIDs []string) {
+			w.handleStalled(ctx, spec, transitions, jobIDs)
+		},
+		Logger: w.logf,
+	})
+	if err != nil {
+		_ = blocking.Close()
+		return nil, fmt.Errorf("crawlworker: build queue worker %s: %w", spec.Name, err)
+	}
+	return &queueWorker{spec: spec, inner: inner}, nil
+}
+
+// buildProcessor adapts an attempt into a bullmq.Processor. The attempt always
+// performs its own BullMQ transition (or deliberately leaves the job active) and
+// the B1 side effects, so the processor returns bullmq.Handled in every path and
+// the shared worker never acknowledges the job a second time.
+func (w *Worker) buildProcessor(spec queueSpec, transitions *queueTransitions) bullmq.Processor {
+	target := queueTarget{Name: spec.Name, Class: spec.Class, Transitions: transitions}
+	return func(ctx context.Context, job *bullmq.Job) (json.RawMessage, error) {
+		claimed, err := claimedJobFromBullmq(job)
+		if err != nil {
+			w.logf("crawlworker: failed to decode crawl job queue=%s jobId=%s: %v; leaving it to stalled recovery", spec.Name, job.ID, err)
+			return nil, bullmq.Handled(nil)
+		}
+		var outcome attemptOutcome
+		_ = safego.Call("crawlworker.process", func() error {
+			outcome = w.attempt.run(ctx, target, claimed)
+			return nil
+		})
+		w.logf("crawlworker: crawl attempt finished queue=%s jobId=%s taskId=%s outcome=%s",
+			spec.Name, job.ID, claimed.Data.TaskID, outcome.String())
+		return nil, bullmq.Handled(nil)
+	}
+}
+
+// handleStalled applies the B1 'stalled' side effect for every job id one
+// stalled-recovery pass recovered on this queue, including the jobs stamped with
+// a deferred failure.
+func (w *Worker) handleStalled(ctx context.Context, spec queueSpec, transitions *queueTransitions, jobIDs []string) {
+	for _, jobID := range jobIDs {
+		data, err := transitions.loadJobData(ctx, jobID)
+		if err != nil {
+			w.logf("crawlworker: failed to read the data of stalled job queue=%s jobId=%s: %v", spec.Name, jobID, err)
+			continue
+		}
+		w.attempt.stalledSideEffects(ctx, spec.Name, jobID, data)
+	}
 }
 
 // abortStart releases the resources of a partially started worker.
 func (w *Worker) abortStart() {
-	if w.cancelFetch != nil {
-		w.cancelFetch()
+	for _, queue := range w.workers {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = queue.inner.Close(closeCtx)
+		cancel()
 	}
-	if w.cancelStalled != nil {
-		w.cancelStalled()
-	}
-	if w.cancelJobs != nil {
-		w.cancelJobs()
-	}
-	w.fetchWG.Wait()
-	w.stalledWG.Wait()
-	for _, runtime := range w.queues {
-		runtime.close()
-	}
-	w.queues = nil
+	w.workers = nil
+	w.closeSubscriber()
 	w.limiter.close()
 }
 
@@ -505,18 +528,19 @@ func (w *Worker) rateLimitAllQueues(ctx context.Context, cooldownMs int64) error
 	return nil
 }
 
+// currentConcurrency reads the shared pull concurrency, floored at one.
+func (w *Worker) currentConcurrency() int {
+	concurrency := int(w.concurrency.Load())
+	if concurrency < 1 {
+		return 1
+	}
+	return concurrency
+}
+
 // logf writes one structured line.
 func (w *Worker) logf(format string, args ...any) {
 	if w == nil || w.opts.logger == nil {
 		return
 	}
 	w.opts.logger(format, args...)
-}
-
-// closing reports whether Close already started. The fetch loops check it before
-// starting another attempt.
-func (w *Worker) closingState() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.closing
 }

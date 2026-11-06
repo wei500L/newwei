@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqllock"
 )
 
 const (
@@ -288,30 +289,14 @@ func (s *Service) RefreshOrg(ctx context.Context, orgID string) (refreshResponse
 }
 
 // withOrgLock 在专用连接上持有 GET_LOCK（会话锁），整个 refreshOrg 完成后
-// RELEASE_LOCK，与 situation-monitor 的用户锁模式一致。
+// RELEASE_LOCK，与 situation-monitor 的用户锁模式一致。WithConnLock 复用同一
+// 获取/释放逻辑，并在 RELEASE_LOCK 失败时逐出连接，避免持锁会话回流连接池。
 func (s *Service) withOrgLock(ctx context.Context, orgID string, fn func(context.Context, *sql.Conn) error) error {
-	conn, err := s.db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	name := orgLockName(orgID)
-	var acquired sql.NullInt64
-	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", name, lockTimeoutSeconds).Scan(&acquired); err != nil {
-		return err
-	}
-	if !acquired.Valid || acquired.Int64 != 1 {
+	err := mysqllock.WithConnLock(ctx, s.db, orgLockName(orgID), lockTimeoutSeconds, fn)
+	if errors.Is(err, mysqllock.ErrNotAcquired) || errors.Is(err, mysqllock.ErrUnavailable) {
 		return errLockNotAcquired
 	}
-	defer releaseLock(conn, name)
-	return fn(ctx, conn)
-}
-
-func releaseLock(conn *sql.Conn, name string) {
-	relCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = conn.ExecContext(relCtx, "SELECT RELEASE_LOCK(?)", name)
+	return err
 }
 
 // orgLockName 锁名规则：ni:<orgId>；超过 MySQL 64 字符上限时用

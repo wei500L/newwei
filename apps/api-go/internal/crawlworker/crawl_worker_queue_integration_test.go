@@ -129,15 +129,19 @@ func TestCrawlWorkerIntegrationStalledRequeue(t *testing.T) {
 		defer cancel()
 		_ = worker.Close(closeCtx)
 	}()
-	// One stalled pass, without the 30s BullMQ interval: the worker runtime owns
+	// One stalled pass, without the 30s BullMQ interval: the shared worker owns
 	// the checker, but the test drives a single run so the assertion does not
 	// wait for the timer.
-	runtime, err := worker.newQueueRuntime(queueSpec{Name: crawlqueue.QueueNormal, Class: crawlqueue.PriorityClassNormal})
+	queue, err := worker.newQueueWorker(queueSpec{Name: crawlqueue.QueueNormal, Class: crawlqueue.PriorityClassNormal}, 1)
 	if err != nil {
-		t.Fatalf("build the crawl queue runtime: %v", err)
+		t.Fatalf("build the crawl queue worker: %v", err)
 	}
-	defer runtime.close()
-	runtime.checkStalled(harness.ctx)
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = queue.inner.Close(closeCtx)
+	}()
+	queue.inner.CheckStalled(harness.ctx)
 
 	task := harness.readTask(t, taskID)
 	if task.Status != "queued" {
@@ -238,9 +242,9 @@ func TestCrawlWorkerIntegrationLegacyQueueWorker(t *testing.T) {
 
 // crawlQueueNames lists the queue workers a started worker runs.
 func crawlQueueNames(worker *Worker) []string {
-	names := make([]string, 0, len(worker.queues))
-	for _, runtime := range worker.queues {
-		names = append(names, runtime.spec.Name)
+	names := make([]string, 0, len(worker.workers))
+	for _, queue := range worker.workers {
+		names = append(names, queue.spec.Name)
 	}
 	return names
 }

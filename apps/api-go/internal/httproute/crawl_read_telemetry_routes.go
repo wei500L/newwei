@@ -8,8 +8,12 @@ import "net/http"
 // Rule.HandlerKey so one handler can dispatch by URL path.
 const CrawlReadTelemetryKey = "/__go/crawl-read-telemetry"
 
-// WithCrawlReadTelemetry registers the seven exact routes taken over when mode
-// is go:
+// WithCrawlReadTelemetry registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/crawl-tasks
 //	GET  /api/crawl-tasks/:id
@@ -19,14 +23,7 @@ const CrawlReadTelemetryKey = "/__go/crawl-read-telemetry"
 //	POST /api/search-telemetry
 //	GET  /api/admin/search-telemetry/summary
 //
-// Every rule also allows OPTIONS so CORS preflight is answered by Go. The two
-// one/two segment rules require the dynamic tail to be exactly one segment, so
-// /api/crawl-tasks/:id never swallows a longer path. Because the crawl task
-// detail rule is GET-only, POST /api/crawl-tasks and POST
-// /api/crawl-tasks/metadata keep falling back to the /api/ legacy prefix, and
 // DELETE /api/crawl-tasks/:id plus POST /api/crawl-tasks/:id/retry never match.
-// /api/admin/crawl4ai/queue* is not registered here at all and stays on NestJS.
-// An empty or legacy mode adds no rules.
 func WithCrawlReadTelemetry(rules []Rule) []Rule {
 	// The media asset path has two dynamic segments (:assetId/:mode).
 	rules = appendSegmentRule(rules, CrawlReadTelemetryKey, "/api/crawl-media-assets/", false, true, "",
@@ -39,7 +36,7 @@ func WithCrawlReadTelemetry(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, CrawlReadTelemetryKey, "/api/admin/search-telemetry/summary", http.MethodGet)
 	rules = appendExactKeyed(rules, CrawlReadTelemetryKey, "/api/search-telemetry", http.MethodPost)
 	// The crawl task detail rule is GET-only and one segment, and the list rule
-	// is an exact GET, so the crawl task write queue stays on NestJS.
+	// is an exact GET, so the crawl task write routes are not matched here.
 	rules = appendSegmentRule(rules, CrawlReadTelemetryKey, "/api/crawl-tasks/", true, false, "",
 		http.MethodGet)
 	return appendExactKeyed(rules, CrawlReadTelemetryKey, "/api/crawl-tasks", http.MethodGet)

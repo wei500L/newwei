@@ -8,8 +8,12 @@ import "net/http"
 // path segments.
 const ClassificationRssOpsKey = "/api/admin/quality/classification"
 
-// WithClassificationRssOps registers the 13 exact route rules owned by the
-// classification/RSS ops migration when mode is go:
+// WithClassificationRssOps registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/admin/quality/classification/summary
 //	GET  /api/admin/quality/classification/sources/:sourceId/items
@@ -25,15 +29,7 @@ const ClassificationRssOpsKey = "/api/admin/quality/classification"
 //	POST /api/system-settings/rss-diagnostics/backfill-source-id
 //	GET  /api/system-settings/rss-translation/metrics
 //
-// Every rule pins one HTTP method (plus OPTIONS for CORS preflight). Paths with
-// a dynamic segment accept exactly one non-empty segment: ":sourceId", ":reviewId"
-// and ":jobId" therefore cannot swallow a longer path such as
-// /reports/:jobId/results or /reviews/queue/detail.
-//
 // POST /api/admin/quality/classification/reports is deliberately absent: it
-// enqueues a BullMQ job, so it keeps falling back to NestJS. The same applies to
-// unlisted methods and longer paths — Go never answers with its own 404.
-// Default (empty or legacy) appends nothing.
 func WithClassificationRssOps(rules []Rule) []Rule {
 	qualityBase := "/api/admin/quality/classification"
 	diagBase := "/api/system-settings/rss-diagnostics"

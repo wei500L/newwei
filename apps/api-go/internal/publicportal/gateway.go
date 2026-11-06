@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
-	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // StatusError 是要按 Nest HTTP 异常原样返回的失败。
@@ -468,289 +467,85 @@ func completionText(raw []byte, surface string) string {
 	}
 }
 
+// resolveCompletionProfile resolves the active completion profile through the
+// shared litellmcompat resolver so the public portal no longer keeps its own
+// copy of profile normalization, secret decryption, governance and API-base
+// normalization. The package-private completionProfile shape is kept because the
+// completion surfaces read its fields directly.
 func resolveCompletionProfile(profilesJSON, governanceJSON []byte, env GatewayEnv) (completionProfile, error) {
-	if env.APIBase == "" {
-		env.APIBase = "http://localhost:4001"
+	cfg := litellmcompat.Config{
+		EncryptionKey:          env.EncryptionKey,
+		APIBase:                defaultString(env.APIBase, "http://localhost:4001"),
+		Timeout:                time.Duration(defaultPositive(env.TimeoutMs, 60_000)) * time.Millisecond,
+		MaxRetries:             defaultPositive(env.MaxRetries, 3),
+		DefaultTemperature:     defaultFloat(env.Temperature, 0.2),
+		DefaultTopP:            defaultFloat(env.TopP, 0.9),
+		DefaultMaxOutputTokens: defaultPositive(env.MaxOutputTokens, 2_048),
 	}
-	if env.TimeoutMs <= 0 {
-		env.TimeoutMs = 60_000
+	profile, err := litellmcompat.ResolveProfileFromSettings(litellmcompat.ProfileCompletion, profilesJSON, governanceJSON, cfg)
+	if err != nil {
+		return completionProfile{}, translateProfileError(err)
 	}
-	if env.MaxRetries <= 0 {
-		env.MaxRetries = 3
-	}
-	if env.TopP <= 0 {
-		env.TopP = 0.9
-	}
-	if env.Temperature <= 0 {
-		env.Temperature = 0.2
-	}
-	if env.MaxOutputTokens <= 0 {
-		env.MaxOutputTokens = 2_048
-	}
-	var settings struct {
-		ActiveID string            `json:"activeId"`
-		Profiles []json.RawMessage `json:"profiles"`
-	}
-	if len(profilesJSON) > 0 {
-		if err := json.Unmarshal(profilesJSON, &settings); err != nil {
-			return completionProfile{}, errors.New("completion model is not configured")
-		}
-	}
-	profiles := make([]completionProfile, 0, len(settings.Profiles))
-	for _, raw := range settings.Profiles {
-		profile, ok := normalizeProfile(raw, env)
-		if ok {
-			profiles = append(profiles, profile)
-		}
-	}
-	var selected *completionProfile
-	activeID := strings.TrimSpace(settings.ActiveID)
-	if activeID != "" {
-		for i := range profiles {
-			if profiles[i].ID == activeID {
-				selected = &profiles[i]
-				break
-			}
-		}
-	}
-	if selected == nil {
-		if len(profiles) == 0 {
-			return completionProfile{}, errors.New("completion model is not configured")
-		}
-		selected = &profiles[0]
-	}
-	if err := applyGovernance(selected, profiles, governanceJSON, env.EncryptionKey); err != nil {
-		return completionProfile{}, err
-	}
-	selected.APIBase = normalizeAPIBase(selected.APIBase)
-	selected.APIKey = stripBearer(selected.APIKey)
-	if selected.Model == "" || selected.APIBase == "" {
+	if profile.Model == "" || profile.APIBase == "" {
 		return completionProfile{}, errors.New("completion model is not configured")
 	}
-	return *selected, nil
+	return completionProfileFromShared(profile), nil
 }
 
-func normalizeProfile(raw []byte, env GatewayEnv) (completionProfile, bool) {
-	var record map[string]any
-	if err := json.Unmarshal(raw, &record); err != nil {
-		return completionProfile{}, false
+// translateProfileError maps the shared resolver errors onto the public portal
+// contract: a missing profile is the historic "not configured" message and a
+// governance misconfiguration keeps the HTTP 503 StatusError envelope.
+func translateProfileError(err error) error {
+	var governance *litellmcompat.GovernanceError
+	if errors.As(err, &governance) {
+		return &StatusError{Code: http.StatusServiceUnavailable, Message: governance.Message, Name: "Service Unavailable"}
 	}
-	id := jsonString(record["id"])
-	model := jsonString(record["model"])
-	if id == "" || model == "" {
-		return completionProfile{}, false
+	if errors.Is(err, litellmcompat.ErrCompletionUnavailable) {
+		return errors.New("completion model is not configured")
 	}
-	// Nest normalizeEnabled: a real boolean is kept; undefined/null default to
-	// enabled; any other JSON type disables the profile.
-	switch value := record["enabled"].(type) {
-	case nil:
-	case bool:
-		if !value {
-			return completionProfile{}, false
-		}
-	default:
-		return completionProfile{}, false
-	}
-	apiBase := jsonString(record["apiBase"])
-	if apiBase == "" {
-		apiBase = env.APIBase
-	}
-	profile := completionProfile{
-		ID:                 id,
-		APIBase:            apiBase,
-		APIKey:             profileAPIKey(record["apiKey"], env.EncryptionKey),
-		Model:              model,
-		FallbackModels:     jsonStringList(mustJSON(record["fallbackModels"])),
-		Timeout:            time.Duration(positiveInt(record["timeoutMs"], env.TimeoutMs)) * time.Millisecond,
-		MaxRetries:         positiveInt(record["maxRetries"], env.MaxRetries),
-		SendMetadata:       jsonBool(record["sendMetadata"], true),
-		ResponseFormatMode: jsonString(record["responseFormatMode"]),
-		APISurface:         jsonString(record["apiSurface"]),
-	}
-	// Nest clamps a stored topP to 0..1 and otherwise keeps the env default.
-	profile.TopP = env.TopP
-	if storedTopP, ok := record["topP"]; ok {
-		if number, ok := finiteNumber(storedTopP); ok {
-			profile.TopP = math.Max(0, math.Min(1, number))
-		}
-	}
-	// The analysis stream must use the profile sampling values, not the brief's
-	// hard-coded request. Normalization mirrors normalizeProfile in
-	// llm-gateway-settings.service.ts: clamp 0..2 and keep positive integers.
-	profile.Temperature = env.Temperature
-	if storedTemperature, ok := record["temperature"]; ok {
-		if number, ok := finiteNumber(storedTemperature); ok {
-			profile.Temperature = math.Max(0, math.Min(2, number))
-		}
-	}
-	profile.MaxOutputTokens = env.MaxOutputTokens
-	if storedMax, ok := record["maxOutputTokens"]; ok {
-		if number, ok := finiteNumber(storedMax); ok && number == math.Trunc(number) && number > 0 {
-			profile.MaxOutputTokens = int(number)
-		}
-	}
-	if profile.ResponseFormatMode == "" {
-		profile.ResponseFormatMode = "json_schema"
-	}
-	if profile.APISurface == "" {
-		profile.APISurface = "chat_completions"
-	}
-	return profile, true
+	return err
 }
 
-func applyGovernance(selected *completionProfile, profiles []completionProfile, raw []byte, encryptionKey string) error {
-	if len(raw) == 0 || selected == nil {
-		return nil
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil
-	}
-	if !jsonBool(doc["enabled"], false) {
-		return nil
-	}
-	targetID := jsonString(doc["targetProfileId"])
-	if targetID == "" {
-		return nil
-	}
-	var target *completionProfile
-	for i := range profiles {
-		if profiles[i].ID == targetID {
-			target = &profiles[i]
-			break
-		}
-	}
-	if target == nil {
-		return nil
-	}
-	if selected.ID != target.ID || normalizeAPIBase(selected.APIBase) != normalizeAPIBase(target.APIBase) {
-		return nil
-	}
-	state, key := governanceSecret(doc["managedRuntimeKey"], encryptionKey)
-	if state == "unreadable" {
-		return &StatusError{
-			Code:    http.StatusServiceUnavailable,
-			Message: "LiteLLM governance is enabled but the managed runtime key is unreadable",
-			Name:    "Service Unavailable",
-		}
-	}
-	if key == "" {
-		return &StatusError{
-			Code:    http.StatusServiceUnavailable,
-			Message: "LiteLLM governance is enabled but the managed runtime key is missing",
-			Name:    "Service Unavailable",
-		}
-	}
-	selected.APIBase = target.APIBase
-	selected.APIKey = strings.TrimSpace(key)
-	// Nest records these on the resolved config: the request used the managed
-	// runtime key and the governance target profile id is written to the LLM
-	// request log.
-	selected.GovernanceApplied = true
-	selected.GovernanceAuthMode = "managed_runtime_key"
-	selected.GovernanceTargetProfileID = target.ID
-	return nil
-}
-
-func governanceSecret(raw any, encryptionKey string) (string, string) {
-	if raw == nil {
-		return "missing", ""
-	}
-	switch value := raw.(type) {
-	case string:
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			return "missing", ""
-		}
-		return "available", trimmed
-	case map[string]any:
-		if value["__enc"] != "system-settings:v1" {
-			return "missing", ""
-		}
-		plain, err := decryptSecret(value, encryptionKey)
-		if err != nil {
-			return "unreadable", ""
-		}
-		plain = strings.TrimSpace(plain)
-		if plain == "" {
-			return "missing", ""
-		}
-		return "available", plain
-	default:
-		return "missing", ""
+func completionProfileFromShared(profile litellmcompat.Profile) completionProfile {
+	return completionProfile{
+		ID:                        profile.ID,
+		APIBase:                   profile.APIBase,
+		APIKey:                    profile.APIKey,
+		Model:                     profile.Model,
+		FallbackModels:            profile.FallbackModels,
+		Timeout:                   profile.Timeout,
+		MaxRetries:                profile.MaxRetries,
+		SendMetadata:              profile.SendMetadata,
+		ResponseFormatMode:        string(profile.ResponseFormatMode),
+		APISurface:                string(profile.APISurface),
+		TopP:                      profile.TopP,
+		Temperature:               profile.Temperature,
+		MaxOutputTokens:           profile.MaxOutputTokens,
+		GovernanceApplied:         profile.GovernanceApplied,
+		GovernanceAuthMode:        profile.AuthMode,
+		GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
 	}
 }
 
-func profileAPIKey(raw any, encryptionKey string) string {
-	switch value := raw.(type) {
-	case string:
-		return stripBearer(value)
-	case map[string]any:
-		plain, err := decryptSecret(value, encryptionKey)
-		if err != nil {
-			return ""
-		}
-		return stripBearer(plain)
-	default:
-		return ""
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
 	}
+	return value
 }
 
-func decryptSecret(payload map[string]any, encryptionKey string) (string, error) {
-	if payload["__enc"] != settingscrypto.EnvelopeTag || payload["alg"] != settingscrypto.Algorithm {
-		return "", errors.New("not an encrypted setting")
+func defaultPositive(value, fallback int) int {
+	if value <= 0 {
+		return fallback
 	}
-	iv := jsonString(payload["iv"])
-	tag := jsonString(payload["tag"])
-	data := jsonString(payload["data"])
-	key, err := settingscrypto.ParseKey(encryptionKey)
-	if err != nil {
-		return "", err
-	}
-	plain, err := settingscrypto.Decrypt(settingscrypto.Envelope{
-		Enc:  settingscrypto.EnvelopeTag,
-		Alg:  settingscrypto.Algorithm,
-		IV:   &iv,
-		Tag:  &tag,
-		Data: &data,
-	}, key)
-	if err != nil {
-		return "", err
-	}
-	return plain, nil
+	return value
 }
 
-func stripBearer(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if len(trimmed) >= 7 && strings.EqualFold(trimmed[:7], "bearer ") {
-		trimmed = strings.TrimSpace(trimmed[7:])
+func defaultFloat(value, fallback float64) float64 {
+	if value <= 0 {
+		return fallback
 	}
-	return trimmed
-}
-
-func normalizeAPIBase(raw string) string {
-	base := strings.TrimRight(strings.TrimSpace(raw), "/")
-	lower := strings.ToLower(base)
-	for _, suffix := range []string{
-		"/v1/chat/completions",
-		"/chat/completions",
-		"/v1/embeddings",
-		"/embeddings",
-		"/v1/models",
-		"/models",
-		"/v1/responses",
-		"/responses",
-	} {
-		if strings.HasSuffix(lower, suffix) {
-			base = strings.TrimRight(base[:len(base)-len(suffix)], "/")
-			lower = strings.ToLower(base)
-			break
-		}
-	}
-	if strings.HasSuffix(strings.ToLower(base), "/v1") {
-		base = strings.TrimRight(base[:len(base)-len("/v1")], "/")
-	}
-	return base
+	return value
 }
 
 func uniqueModels(models []string) []string {
@@ -781,22 +576,6 @@ func jsonBool(value any, fallback bool) bool {
 		return fallback
 	}
 	return flag
-}
-
-func positiveInt(value any, fallback int) int {
-	number, ok := value.(float64)
-	if !ok || number != float64(int(number)) || int(number) <= 0 {
-		return fallback
-	}
-	return int(number)
-}
-
-func mustJSON(value any) []byte {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	return raw
 }
 
 func briefResponseFormat(mode string) any {

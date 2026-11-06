@@ -11,7 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // Snapshot / lock timings mirror ObservabilitySnapshotService and CacheService:
@@ -22,21 +22,6 @@ const (
 	snapshotRenewInterval = 5 * time.Second
 	snapshotMaxWait       = 20 * time.Second
 	snapshotRetryDelay    = 100 * time.Millisecond
-)
-
-var (
-	snapshotReleaseLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      end
-      return 0
-    `)
-	snapshotRenewLockScript = redis.NewScript(`
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("pexpire", KEYS[1], ARGV[2])
-      end
-      return 0
-    `)
 )
 
 // snapshotStore owns the MySQL ObservabilitySnapshot rows and the Redis
@@ -73,18 +58,12 @@ func (s *snapshotStore) getOrCreateJSON(
 
 	key := snapshotCacheKey(orgID, scope, variantKey)
 	lockKey := "lock:" + key
-	token, err := randomToken()
+	lease, err := s.acquireLease(ctx, lockKey, snapshotLockTTL)
 	if err != nil {
 		return nil, err
 	}
-	acquired, err := s.acquireLock(ctx, lockKey, token, snapshotLockTTL)
-	if err != nil {
-		return nil, err
-	}
-	if acquired {
-		stop := s.startAutoRenew(lockKey, token, snapshotLockTTL, snapshotRenewInterval)
-		defer stop()
-		defer s.releaseLock(lockKey, token)
+	if lease != nil {
+		defer releaseLease(lease)
 		if payload, ok, err := s.loadFresh(ctx, orgID, scope, variantKey, time.Now()); err != nil {
 			return nil, err
 		} else if ok {
@@ -167,61 +146,31 @@ ON DUPLICATE KEY UPDATE
 	return payload, nil
 }
 
-// acquireLock takes the Redis lock with a TTL.
-func (s *snapshotStore) acquireLock(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
+// acquireLease takes the shared Redis lease for the snapshot rebuild critical
+// section. A nil lease means another process owns it; an error is a Redis
+// failure. cronlock.Acquire starts best-effort renewal while the lease is held.
+func (s *snapshotStore) acquireLease(ctx context.Context, key string, ttl time.Duration) (*cronlock.Lease, error) {
 	if s.redis == nil {
-		return false, fmt.Errorf("%w: redis is not configured", errRedis)
+		return nil, fmt.Errorf("%w: redis is not configured", errRedis)
 	}
-	acquired, err := s.redis.SetNX(ctx, key, token, ttl).Result()
+	lease, ok, err := cronlock.New(s.redis).Acquire(ctx, key, ttl, cronlock.RenewBestEffort)
 	if err != nil {
-		return false, fmt.Errorf("%w: %v", errRedis, err)
+		return nil, fmt.Errorf("%w: %v", errRedis, err)
 	}
-	return acquired, nil
+	if !ok {
+		return nil, nil
+	}
+	return lease, nil
 }
 
-// releaseLock deletes the lock only when the token still matches.
-func (s *snapshotStore) releaseLock(key, token string) {
-	if s.redis == nil {
+// releaseLease releases the lease outside the request cancellation.
+func releaseLease(lease *cronlock.Lease) {
+	if lease == nil {
 		return
 	}
-	_, _ = snapshotReleaseLockScript.Run(context.Background(), s.redis, []string{key}, token).Result()
-}
-
-// startAutoRenew periodically extends the lock TTL until the returned stop
-// function is called.
-func (s *snapshotStore) startAutoRenew(key, token string, ttl, interval time.Duration) func() {
-	if s.redis == nil {
-		return func() {}
-	}
-	if interval <= 0 {
-		interval = ttl / 2
-	}
-	if interval < time.Second {
-		interval = time.Second
-	}
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	safego.Go("crawlreadtelemetry.snapshot.renewLock", func() {
-		defer close(done)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				_ = safego.Call("crawlreadtelemetry.snapshot.renewLock.tick", func() error {
-					_, _ = snapshotRenewLockScript.Run(context.Background(), s.redis,
-						[]string{key}, token, int(ttl.Milliseconds())).Result()
-					return nil
-				})
-			}
-		}
-	})
-	return func() {
-		close(stop)
-		<-done
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = lease.Release(ctx)
 }
 
 // sleepContext waits for d or until the context is cancelled.
@@ -234,15 +183,6 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
-}
-
-// randomToken returns the hex lock token.
-func randomToken() (string, error) {
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf[:]), nil
 }
 
 // newSnapshotRowID writes a Prisma cuid-shaped id (c + 24 hex chars).

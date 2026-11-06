@@ -1,10 +1,7 @@
 package crawlmetadata
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -12,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
+	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 )
 
 // MetadataPath is the exact POST path served by the Go takeover. The same path
@@ -131,26 +129,22 @@ func readJSONBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Body == nil || !jsonContentType(r.Header.Get("Content-Type")) {
 		return []byte("{}"), true
 	}
-	limited := http.MaxBytesReader(nil, r.Body, maxRequestBodyBytes)
-	defer func() { _ = limited.Close() }()
-	data, err := io.ReadAll(limited)
-	if err != nil {
-		var maxBytes *http.MaxBytesError
-		if errors.As(err, &maxBytes) {
-			authhttp.WritePayloadTooLarge(w, r)
-			return nil, false
-		}
+	data, err := httpx.ReadJSON(w, r, maxRequestBodyBytes)
+	switch {
+	case err == nil:
+		return data, true
+	case errors.Is(err, httpx.ErrEmptyBody):
+		return []byte("{}"), true
+	case errors.Is(err, httpx.ErrBodyTooLarge):
+		authhttp.WritePayloadTooLarge(w, r)
+		return nil, false
+	case errors.Is(err, httpx.ErrReadBody):
 		authhttp.WriteHTTPException(w, r, http.StatusBadRequest, "Unexpected end of JSON input")
 		return nil, false
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return []byte("{}"), true
-	}
-	if !json.Valid(data) {
+	default:
 		authhttp.WriteHTTPException(w, r, http.StatusBadRequest, invalidJSONMessage)
 		return nil, false
 	}
-	return data, true
 }
 
 // jsonContentType reports an application/json content type, ignoring
