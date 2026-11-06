@@ -9,19 +9,14 @@ import "net/http"
 // be go on its own.
 const StorageDiagnosticsKey = "/api/admin/settings/storage#test"
 
-// WithStorageDiagnostics takes over exactly one route when mode is go:
+// WithStorageDiagnostics registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/admin/settings/storage/test
-//
-// The rule is an exact path with an explicit method whitelist (plus the shared
-// OPTIONS whitelist for CORS preflight), so GET/HEAD/PATCH/DELETE on the path,
-// the trailing-slash form and every longer path keep falling back to the
-// legacy /api/ rule. An empty or legacy mode adds nothing, so the default
-// deployment is unchanged and rollback only flips this one switch.
-//
-// The route intentionally stays off WithInfrastructureSettings: enabling the
-// seven configuration routes must not silently enable the real S3 calls, and
-// enabling the diagnostics must not take over any configuration route.
 func WithStorageDiagnostics(rules []Rule) []Rule {
 	return appendExactKeyed(rules, StorageDiagnosticsKey, "/api/admin/settings/storage/test",
 		http.MethodPost)

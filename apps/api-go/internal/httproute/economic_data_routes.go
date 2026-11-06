@@ -6,15 +6,16 @@ import "net/http"
 // admin routes. The path itself is static, so no dynamic segment is involved.
 const EconomicDataKey = "/api/admin/akshare"
 
-// WithEconomicData takes over exactly these three paths when mode is go:
+// WithEconomicData registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/admin/akshare/version
 //	GET  /api/admin/akshare/status
 //	POST /api/admin/akshare/upgrade
-//
-// The GraphQL mutations share API_GO_ECONOMIC_DATA_MODE but are routed through
-// the /graphql handler, not through this rule set. Every other method, trailing
-// slash and similar path falls back to NestJS.
 func WithEconomicData(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, EconomicDataKey, "/api/admin/akshare/version", http.MethodGet)
 	rules = appendExactKeyed(rules, EconomicDataKey, "/api/admin/akshare/status", http.MethodGet)

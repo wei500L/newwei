@@ -8,16 +8,15 @@ import "net/http"
 // handler can dispatch by URL path.
 const SearchReindexKey = "/__go/search-reindex"
 
-// WithSearchReindex registers the two routes taken over when the search reindex
-// mode is go:
+// WithSearchReindex registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	POST /api/admin/search/reindex
 //	GET  /api/admin/search/reindex/:jobId
-//
-// Only those methods are registered: every other method, the trailing-slash
-// path, longer paths and the parent path keep falling back to the /api/ legacy
-// rule, so Go never answers its own 404 for them. Both rules also allow OPTIONS
-// so CORS preflight is answered by Go. An empty or legacy mode adds no rules.
 func WithSearchReindex(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, SearchReindexKey, "/api/admin/search/reindex", http.MethodPost)
 	return appendSegmentRule(rules, SearchReindexKey, "/api/admin/search/reindex/", true, false, "", http.MethodGet)

@@ -8,27 +8,19 @@ import "net/http"
 // handler can dispatch by URL path.
 const CrawlFrontierWritesKey = "/api/admin/crawl-frontier#writes"
 
-// WithCrawlFrontierWrites registers the three write routes taken over when mode
-// is go. An empty or legacy mode adds no rules, so every path keeps proxying to
-// NestJS.
+// WithCrawlFrontierWrites registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 //
-// The migrated routes are:
+// Served routes:
 //
 //	POST /api/admin/crawl-frontier/runs
 //	POST /api/admin/crawl-frontier/nodes/retry
 //	POST /api/admin/crawl-frontier/nodes/:id/retry
 //
-// Only POST plus the CORS preflight is registered for each path. Every other
-// method, trailing slash and longer path falls back to the /api/ legacy rule,
-// and Go never answers its own 404 for those requests. The switch is only
-// meaningful together with API_GO_CRAWL_FRONTIER_RUNS_MODE=go: the create and
-// retry responses are the same getRun run detail as GET /runs/:id, so reads and
-// writes must be served by one side (config.go enforces the pair).
-//
-// POST /runs/:id/retry is not a NestJS route, so no rule claims it.
+// POST /runs/:id/retry is not a registered route, so no rule claims it.
 // POST /workflow-runs/:runId/replay and POST /workflows/:id/trial-run belong to
-// the workflows / workflow-trial switches and are untouched here; the profiles,
-// workflow-versions and news-sources subtrees belong to their own switches too.
 func WithCrawlFrontierWrites(rules []Rule) []Rule {
 	base := "/api/admin/crawl-frontier"
 

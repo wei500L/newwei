@@ -7,20 +7,17 @@ import "net/http"
 // real request path.
 const CrawlQueueOpsKey = "/__go/crawl-queue-ops"
 
-// WithCrawlQueueOps registers the four queue administration routes taken over
-// when API_GO_CRAWL_QUEUE_OPS_MODE=go:
+// WithCrawlQueueOps registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/admin/crawl4ai/queue
 //	POST /api/admin/crawl4ai/queue/pause
 //	POST /api/admin/crawl4ai/queue/resume
 //	POST /api/admin/crawl4ai/queue/concurrency
-//
-// Only these methods are registered. Every other method, a trailing slash and
-// longer paths keep falling back to the /api/ legacy rule, so Go never answers
-// its own 404 for them. The quality routes under /api/admin/crawl4ai/quality
-// belong to API_GO_CRAWL_READ_TELEMETRY_MODE and are untouched.
-//
-// An empty or legacy mode adds no rules.
 func WithCrawlQueueOps(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, CrawlQueueOpsKey, "/api/admin/crawl4ai/queue", http.MethodGet)
 	rules = appendExactKeyed(rules, CrawlQueueOpsKey, "/api/admin/crawl4ai/queue/pause", http.MethodPost)

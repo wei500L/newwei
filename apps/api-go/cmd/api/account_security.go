@@ -15,17 +15,17 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httproute"
 )
 
-// wireAccountSecurity registers the eight account/session/machine-token routes
-// only when API_GO_ACCOUNT_SECURITY_MODE=go. Every other value (including the
-// default legacy and the empty string) registers nothing, so the routes keep
-// flowing through the NestJS proxy and rollback is a single variable change.
+// wireAccountSecurity registers the eight account/session/machine-token
+// routes. The rules are registered unconditionally; unmatched paths are
+// answered with the Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool, the shared Redis client and JWT
 // verification. It deliberately opens no Mongo connection and performs no
 // startup network probe: the eight routes read and write MySQL and Redis only.
 // It reuses the same JWTAudience/JWTIssuer/JWTSecret configuration as the
 // ordinary authhttp chain but keeps its own authenticator because the machine
-// (mtk_) token path and the verified jti/exp metadata are specific to this unit.
+// (mtk_) token path and the verified jti/exp metadata are specific to this
+// unit.
 func wireAccountSecurity(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, auth *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: account security go takeover requires mysql and redis")

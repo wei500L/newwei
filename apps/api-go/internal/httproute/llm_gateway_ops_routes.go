@@ -7,8 +7,12 @@ import "net/http"
 // request path and method itself.
 const LLMGatewayOpsKey = "/api/system-settings/llm-gateways#ops"
 
-// WithLLMGatewayOps takes over the twelve governance/diagnostics routes when mode
-// is go:
+// WithLLMGatewayOps registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/llm-gateways/proxy-governance
 //	PUT    /api/system-settings/llm-gateways/proxy-governance
@@ -22,19 +26,6 @@ const LLMGatewayOpsKey = "/api/system-settings/llm-gateways#ops"
 //	GET    /api/system-settings/llm-gateways/:id/proxy-health
 //	GET    /api/system-settings/llm-gateways/:id/proxy-model-info
 //	POST   /api/system-settings/llm-gateways/:id/proxy-lb-test
-//
-// Why these rules are more specific than the profile ones:
-//   - the five static paths are exact rules whose prefixes are longer than the
-//     profile dynamic prefix, so the longest-prefix match picks them first and a
-//     PUT/DELETE on /proxy-governance can never be read as a profile id;
-//   - the five profile sub-resources are one-segment rules with a fixed tail, so
-//     they match exactly one more path segment and every longer path keeps
-//     falling back to the legacy /api/ prefix.
-//
-// This function never registers a rule for the collection path, the three
-// activation paths or the bare :id item, which stay owned by
-// WithLLMGatewayProfiles. An empty or legacy mode adds nothing, so the default
-// deployment is unchanged and rollback only flips this one switch.
 func WithLLMGatewayOps(rules []Rule) []Rule {
 	base := "/api/system-settings/llm-gateways"
 

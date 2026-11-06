@@ -6,17 +6,15 @@ import "net/http"
 // reading REST routes.
 const ItemsReadingKey = "/api/items"
 
-// WithItemsReading takes over the two exact item reading GET routes when mode is
-// go:
+// WithItemsReading registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET /api/items      (exact)
 //	GET /api/items/:id  (exactly one path segment)
-//
-// Only GET (and the matching CORS preflight) reaches Go. POST /api/items, any
-// other method and any deeper path fall through to the shorter /api/ rule and
-// stay on NestJS, so the un-migrated methods are never answered with a Go 405.
-// The five migrated GraphQL roots are decided by API_GO_GRAPHQL_READ_MODE and
-// API_GO_ITEMS_READING_MODE inside the /graphql executor, not by this table.
 func WithItemsReading(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, ItemsReadingKey, "/api/items", http.MethodGet)
 	return appendSegmentRule(rules, ItemsReadingKey, "/api/items/", true, false, "", http.MethodGet)

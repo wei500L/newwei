@@ -8,9 +8,10 @@ import "net/http"
 // itemsingest.
 const ItemsIngestKey = "/api/items"
 
-// WithItemsIngest takes over exactly POST /api/items when mode is go. GET,
-// OPTIONS and longer paths are controlled by WithItemsReading or stay on
-// NestJS.
+// WithItemsIngest registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 func WithItemsIngest(rules []Rule) []Rule {
 	return appendExactKeyed(rules, ItemsIngestKey, "/api/items", http.MethodPost)
 }

@@ -10,7 +10,12 @@ import "net/http"
 // share a registration.
 const AuthFactorsKey = "/api/auth#factors"
 
-// WithAuthFactors takes over exactly these seven routes when mode is go:
+// WithAuthFactors registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/auth/mfa
 //	POST /api/auth/mfa/enroll
@@ -20,20 +25,8 @@ const AuthFactorsKey = "/api/auth#factors"
 //	GET  /api/auth/admin/oidc-config
 //	PUT  /api/auth/admin/oidc-config
 //
-// Every rule is an exact path with an explicit method whitelist, so nothing is
-// registered for a whole prefix: HEAD, unlisted methods, trailing slashes,
-// similar prefixes and any longer path keep falling back to the legacy /api/
-// rule. In particular the public MFA login and forced-enrollment challenges
-// (POST /api/auth/mfa/verify-login, POST /api/auth/mfa/enrollment/start,
 // POST /api/auth/mfa/enrollment/complete) and the whole OIDC login chain
-// (GET /api/auth/sso/oidc/start, GET /api/auth/oidc/callback,
 // POST /api/auth/sso/handoff/exchange) are never taken over.
-//
-// An empty or legacy mode adds nothing, so the default deployment is unchanged
-// and rollback only flips this one switch. The shared rule helper also
-// whitelists OPTIONS for these paths, so CORS preflight is answered by the Go
-// handler instead of reaching NestJS; a non-preflight OPTIONS request is sent
-// back to the proxy by the wiring.
 func WithAuthFactors(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, AuthFactorsKey, "/api/auth/mfa", http.MethodGet)
 	rules = appendExactKeyed(rules, AuthFactorsKey, "/api/auth/mfa/enroll", http.MethodPost)

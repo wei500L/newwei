@@ -16,10 +16,8 @@ import (
 )
 
 // wireInfrastructureSettings registers the seven infrastructure connection and
-// crawl-credential settings routes only when
-// API_GO_INFRASTRUCTURE_SETTINGS_MODE=go. Every other value (including the
-// default legacy and the empty string) registers nothing, so the routes keep
-// flowing through the NestJS proxy and rollback is a single variable change.
+// crawl-credential settings routes. The rules are registered unconditionally;
+// unmatched paths are answered with the Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool, the shared Redis client and the
 // ordinary JWT authenticator. It deliberately creates no S3 or vector HTTP

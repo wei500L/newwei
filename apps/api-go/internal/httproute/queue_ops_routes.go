@@ -6,8 +6,12 @@ import "net/http"
 // console. The key is synthetic and never collides with a real request path.
 const QueueOpsKey = "/__go/queue-ops"
 
-// WithQueueOps registers the twelve queue operations console routes taken over
-// when API_GO_QUEUE_OPS_MODE=go:
+// WithQueueOps registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/admin/queue-ops/queues
 //	GET  /api/admin/queue-ops/jobs
@@ -21,17 +25,6 @@ const QueueOpsKey = "/__go/queue-ops"
 //	POST /api/admin/queue-ops/queues/resume
 //	POST /api/admin/queue-ops/dlq/replay
 //	POST /api/admin/queue-ops/dlq/delete
-//
-// Every path is exact: the queue name and the job id travel in the query string
-// or the request body, because a BullMQ job id may contain "/" and ":", which no
-// dynamic-segment rule can express. appendExactKeyed adds OPTIONS to each rule so
-// a CORS preflight reaches the Go handler (which forwards a preflight without
-// CORS headers back to NestJS).
-//
-// These paths are new: NestJS never served /api/admin/queue-ops, so with
-// API_GO_QUEUE_OPS_MODE=legacy this function adds no rule at all and the requests
-// keep falling through to the /api/ legacy fallback, where Nest answers 404.
-// /admin/queues (Bull Board) is untouched and keeps proxying to NestJS.
 func WithQueueOps(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, QueueOpsKey, "/api/admin/queue-ops/queues",
 		http.MethodGet)

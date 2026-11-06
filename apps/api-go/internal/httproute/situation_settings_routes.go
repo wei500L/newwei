@@ -8,19 +8,17 @@ import "net/http"
 // the three units never share a handler.
 const SituationSettingsKey = "/api/system-settings/situation-monitor#settings"
 
-// WithSituationSettings takes over the four situation-monitor settings HTTP
-// routes when mode is go:
+// WithSituationSettings registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/situation-monitor
 //	PUT    /api/system-settings/situation-monitor
 //	DELETE /api/system-settings/situation-monitor
 //	DELETE /api/system-settings/situation-monitor/telegram-auth
-//
-// The longer telegram-auth exact path is registered first. POST
-// telegram-auth/start, POST telegram-auth/complete, POST external-snapshot/refresh
-// and every other sub-path or method stay on NestJS, because no exact rule
-// matches them and they fall back to the legacy /api/ proxy. The default
-// (empty or legacy) adds no rules at all.
 func WithSituationSettings(rules []Rule) []Rule {
 	base := "/api/system-settings/situation-monitor"
 	rules = appendExactKeyed(rules, SituationSettingsKey, base+"/telegram-auth", http.MethodDelete)

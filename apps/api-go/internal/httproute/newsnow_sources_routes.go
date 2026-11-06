@@ -7,17 +7,15 @@ import "net/http"
 // same handler.
 const NewsnowSourcesKey = "/api/news-aggregator/source"
 
-// WithNewsnowSources registers, only when mode is go, exactly two routes:
+// WithNewsnowSources registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/news-aggregator/source
 //	POST /api/news-aggregator/sources/batch
-//
-// Every other NewsNow path keeps its current owner: metadata/resolve/order,
-// domestic-opinion-index and clustering stay on WithNewsnowClusteringOps,
-// hottest-analysis and recommended belong to WithNewsnowHottest (their own
-// independent switch; NestJS while it is legacy), and unknown methods or longer
-// paths fall through to the legacy proxy. The default (empty or legacy) appends
-// no rule at all, so rollback is a single variable change.
 func WithNewsnowSources(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, NewsnowSourcesKey, "/api/news-aggregator/source", http.MethodGet)
 	return appendExactKeyed(rules, NewsnowSourcesKey, "/api/news-aggregator/sources/batch", http.MethodPost)
