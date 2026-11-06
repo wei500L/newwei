@@ -7,13 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/safego"
+	"github.com/wei500L/newwei/apps/api-go/internal/cronlock"
 )
 
 // Store is the narrow Redis surface this package uses: the compatible cache,
@@ -120,10 +118,40 @@ func (s *redisStore) Eval(ctx context.Context, script string, keys []string, arg
 	return s.client.Eval(ctx, script, keys, arguments...).Int64()
 }
 
-// CacheService.withLock scripts. The physical key is `lock:` + key and the value
-// is a random v4 UUID, so NestJS and Go exclude each other on the same lease.
+// The physical key is "lock:" + key; the lease (token-checked release, TTL and
+// best-effort renewal) is the shared cronlock implementation.
 const lockKeyPrefix = "lock:"
 
+// acquireLock takes the physical lease. A nil lease means another process owns
+// it; an error is a Redis failure. cronlock.Acquire starts best-effort renewal
+// while the lease is held, matching CacheService.startAutoRenew.
+func acquireLock(ctx context.Context, store Store, key string, ttlMillis int) (*cronlock.Lease, error) {
+	if ttlMillis < 1000 {
+		ttlMillis = 1000
+	}
+	lease, ok, err := cronlock.NewStore(store).Acquire(ctx, lockKeyPrefix+key, time.Duration(ttlMillis)*time.Millisecond, cronlock.RenewBestEffort)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return lease, nil
+}
+
+// releaseLease releases the lease outside the request cancellation.
+func releaseLease(lease *cronlock.Lease) {
+	if lease == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = lease.Release(ctx)
+}
+
+// lockReleaseScript is the token-checked release used by the active-org cache
+// claim in scheduler.go, which keeps its own SET NX lease outside the rebuild
+// lock path.
 var lockReleaseScript = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
         return redis.call("del", KEYS[1])
@@ -131,83 +159,8 @@ var lockReleaseScript = `
       return 0
     `
 
-var lockExtendScript = `
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("pexpire", KEYS[1], ARGV[2])
-      end
-      return 0
-    `
-
-// lockLease is one held lease.
-type lockLease struct {
-	store Store
-	key   string
-	token string
-	ttl   time.Duration
-}
-
-// acquireLock takes the physical lock. A nil lease means another process owns
-// it; an error is a Redis failure.
-func acquireLock(ctx context.Context, store Store, key string, ttlMillis int) (*lockLease, error) {
-	if ttlMillis < 1000 {
-		ttlMillis = 1000
-	}
-	ttl := time.Duration(ttlMillis) * time.Millisecond
-	token, err := newLockToken()
-	if err != nil {
-		return nil, err
-	}
-	acquired, err := store.SetNX(ctx, lockKeyPrefix+key, token, ttl)
-	if err != nil {
-		return nil, err
-	}
-	if !acquired {
-		return nil, nil
-	}
-	return &lockLease{store: store, key: lockKeyPrefix + key, token: token, ttl: ttl}, nil
-}
-
-// startAutoRenew extends the lease every third of its TTL until the returned
-// stop function is called, matching CacheService.startAutoRenew.
-func (l *lockLease) startAutoRenew() func() {
-	if l == nil {
-		return func() {}
-	}
-	interval := l.ttl / 3
-	if interval < 500*time.Millisecond {
-		interval = 500 * time.Millisecond
-	}
-	stop := make(chan struct{})
-	var once sync.Once
-	safego.Go("newsnowhottest.cache.renewLock", func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				_ = safego.Call("newsnowhottest.cache.renewLock.tick", func() error {
-					_, _ = l.store.Eval(context.Background(), lockExtendScript, []string{l.key},
-						l.token, strconv.FormatInt(l.ttl.Milliseconds(), 10))
-					return nil
-				})
-			}
-		}
-	})
-	return func() { once.Do(func() { close(stop) }) }
-}
-
-// release drops the lease only while the token still matches.
-func (l *lockLease) release() {
-	if l == nil {
-		return
-	}
-	_, _ = l.store.Eval(context.Background(), lockReleaseScript, []string{l.key}, l.token)
-}
-
 // newLockToken produces a random version 4 UUID, the shape Node's randomUUID
-// gives the CacheService lease token.
+// gives the CacheService lease token. Used by the active-org cache claim.
 func newLockToken() (string, error) {
 	buffer := make([]byte, 16)
 	if _, err := rand.Read(buffer); err != nil {

@@ -257,10 +257,8 @@ func (s *Scheduler) refreshOrg(ctx context.Context, orgID string, snapshot *Glob
 		s.logf("newsnowhottest: skipped organization refresh because the previous run is still in progress orgId=%s", orgID)
 		return orgRunSkipped
 	}
-	stopRenew := lease.startAutoRenew()
 	_, refreshErr := s.service.RefreshProjectionForOrg(ctx, orgID, snapshot)
-	stopRenew()
-	lease.release()
+	releaseLease(lease)
 	if refreshErr != nil {
 		s.logf("newsnowhottest: organization refresh failed orgId=%s err=%v", orgID, refreshErr)
 		return orgRunFailed
@@ -497,11 +495,7 @@ func (s *WarmScheduler) runTick(ctx context.Context) error {
 		s.logf("newsnowhottest: skipped source warm tick because the previous tick is still in progress")
 		return nil
 	}
-	stopRenew := lease.startAutoRenew()
-	defer func() {
-		stopRenew()
-		lease.release()
-	}()
+	defer releaseLease(lease)
 	sourceIDs := s.registry.GetAllActiveSourceIDs()
 	if len(sourceIDs) == 0 {
 		return nil

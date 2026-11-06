@@ -229,10 +229,8 @@ func (s *Service) refreshAnalysisWithLock(ctx context.Context, input analysisInp
 		return s.staleAnalysisFallback(ctx, staleKey, err)
 	}
 	if lease != nil {
-		stopRenew := lease.startAutoRenew()
 		value, runErr := refresh()
-		stopRenew()
-		lease.release()
+		releaseLease(lease)
 		if runErr != nil {
 			return s.staleAnalysisFallback(ctx, staleKey, runErr)
 		}
@@ -351,10 +349,8 @@ func (s *Service) refreshGlobalSnapshotWithLock(
 		return s.staleSnapshotFallback(ctx, staleKey, err)
 	}
 	if lease != nil {
-		stopRenew := lease.startAutoRenew()
 		value, runErr := refresh()
-		stopRenew()
-		lease.release()
+		releaseLease(lease)
 		if runErr != nil {
 			return s.staleSnapshotFallback(ctx, staleKey, runErr)
 		}
