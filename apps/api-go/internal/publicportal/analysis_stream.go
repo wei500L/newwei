@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
 // AnalysisMessage is one chat message of an analysis prompt. The analysis
@@ -153,7 +155,7 @@ func (g *gatewayClient) StreamAnalysis(ctx context.Context, req AnalysisStreamRe
 	// RSS surfaces keep their existing behavior; this fallback is local to the
 	// analysis stream.
 	if profile.APIKey == "" {
-		profile.APIKey = stripBearer(g.env.APIKey)
+		profile.APIKey = settingscrypto.NormalizeGatewaySecret(g.env.APIKey)
 	}
 	models := uniqueModels(append([]string{profile.Model}, profile.FallbackModels...))
 	if len(models) == 0 {
