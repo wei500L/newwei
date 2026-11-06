@@ -108,8 +108,16 @@ func TestReadJSONClassifiesErrors(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("   "))
 		request.Header.Set("Content-Type", "application/json")
 		_, err := ReadJSON(httptest.NewRecorder(), request, 1<<20)
-		if !errors.Is(err, ErrInvalidJSON) {
-			t.Fatalf("err = %v, want ErrInvalidJSON", err)
+		if !errors.Is(err, ErrEmptyBody) {
+			t.Fatalf("err = %v, want ErrEmptyBody", err)
+		}
+	})
+	t.Run("nil body", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodPost, "/", nil)
+		request.Header.Set("Content-Type", "application/json")
+		_, err := ReadJSON(httptest.NewRecorder(), request, 1<<20)
+		if !errors.Is(err, ErrEmptyBody) {
+			t.Fatalf("err = %v, want ErrEmptyBody", err)
 		}
 	})
 	t.Run("body too large", func(t *testing.T) {

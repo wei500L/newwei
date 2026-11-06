@@ -17,10 +17,17 @@ import (
 var (
 	// ErrBodyTooLarge reports a body over the caller's limit.
 	ErrBodyTooLarge = errors.New("httpx: request body too large")
+	// ErrEmptyBody reports a missing or whitespace-only body. Callers that
+	// treated an empty body as `{}` map it back to their default document.
+	ErrEmptyBody = errors.New("httpx: empty request body")
 	// ErrInvalidJSON reports a body that is not valid JSON.
 	ErrInvalidJSON = errors.New("httpx: invalid JSON body")
 	// ErrUnsupportedMediaType reports a non-JSON request Content-Type.
 	ErrUnsupportedMediaType = errors.New("httpx: unsupported media type")
+	// ErrReadBody reports a transport-level failure while reading the body
+	// (other than the size limit). Callers that distinguished it from a JSON
+	// syntax error keep their own wording.
+	ErrReadBody = errors.New("httpx: request body read failed")
 )
 
 // WriteRawJSON writes an already-encoded JSON body with the JSON content type.
@@ -36,12 +43,13 @@ func WriteRawJSON(w http.ResponseWriter, status int, body []byte) {
 // ReadJSON reads and validates a JSON request body. maxBytes is supplied by the
 // caller because the per-route limits differ (for example rbacapi uses 10 MiB).
 //
-// The returned error is one of ErrBodyTooLarge, ErrInvalidJSON or
-// ErrUnsupportedMediaType. Callers are expected to write the response itself so
-// the exact status/message contract of each route is preserved.
+// The returned error is one of ErrBodyTooLarge, ErrEmptyBody, ErrInvalidJSON,
+// ErrUnsupportedMediaType or ErrReadBody. Callers are expected to write the
+// response itself so the exact status/message contract of each route is
+// preserved.
 func ReadJSON(w http.ResponseWriter, r *http.Request, maxBytes int64) ([]byte, error) {
 	if r.Body == nil {
-		return nil, ErrInvalidJSON
+		return nil, ErrEmptyBody
 	}
 	if !IsJSONContentType(r.Header.Get("Content-Type")) {
 		return nil, ErrUnsupportedMediaType
@@ -53,10 +61,10 @@ func ReadJSON(w http.ResponseWriter, r *http.Request, maxBytes int64) ([]byte, e
 		if errors.As(err, &maxBytesErr) {
 			return nil, ErrBodyTooLarge
 		}
-		return nil, ErrInvalidJSON
+		return nil, ErrReadBody
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		return nil, ErrInvalidJSON
+		return nil, ErrEmptyBody
 	}
 	if !json.Valid(data) {
 		return nil, ErrInvalidJSON
