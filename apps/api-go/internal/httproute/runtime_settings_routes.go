@@ -7,8 +7,12 @@ import "net/http"
 // handler dispatches on the request path and method itself.
 const RuntimeSettingsKey = "/api/system-settings"
 
-// WithRuntimeSettings takes over the eighteen runtime/governance settings HTTP
-// routes when mode is go:
+// WithRuntimeSettings registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/rate-limit-policies
 //	POST   /api/system-settings/rate-limit-policies
@@ -28,21 +32,6 @@ const RuntimeSettingsKey = "/api/system-settings"
 //	GET    /api/system-settings/newsnow-personalization
 //	PUT    /api/system-settings/newsnow-personalization
 //	GET    /api/system-settings/newsnow-personalization/metrics
-//
-// Registration order and shape matter. The metrics route is a longer exact
-// path than the personalization settings route, so it must be declared before
-// it to win the longest-prefix match; `:feature` is exactly one non-empty path
-// segment, so `/rate-limit-policies` itself and any longer path never fall into
-// the dynamic rule.
-//
-// Every other /api/system-settings route (security, email, task-logs,
-// llm-gateways, vector-service, archive-preparation, assistant-quota,
-// assistant-safety, ...) keeps falling back to the legacy /api/ prefix and is
-// proxied to NestJS. An empty or legacy mode adds no rules at all, so the
-// default deployment is unchanged and rollback only flips this one switch.
-//
-// The shared rule helpers also whitelist OPTIONS for the taken-over paths, so
-// CORS preflight is answered by the Go handler instead of reaching NestJS.
 func WithRuntimeSettings(rules []Rule) []Rule {
 	base := "/api/system-settings"
 

@@ -16,15 +16,14 @@ import (
 )
 
 // wireDataRuntimeSettings registers the nine data runtime settings and archive
-// status routes only when API_GO_DATA_RUNTIME_SETTINGS_MODE=go. Every other value
-// (including the default legacy and the empty string) registers nothing, so the
-// routes keep flowing through the NestJS proxy and rollback is a single variable
-// change.
+// status routes. The rules are registered unconditionally; unmatched paths are
+// answered with the Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool, the shared Redis client and the
-// ordinary JWT authenticator. It deliberately creates no OAuth, signal-collector,
-// geocoding, embedding or model client and performs no startup network probe: the
-// routes only read and write configuration and the derived archive status index.
+// ordinary JWT authenticator. It deliberately creates no OAuth,
+// signal-collector, geocoding, embedding or model client and performs no
+// startup network probe: the routes only read and write configuration and the
+// derived archive status index.
 func wireDataRuntimeSettings(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: data runtime settings go takeover requires mysql, redis, and jwt")

@@ -16,14 +16,12 @@ import (
 )
 
 // wireLLMGatewayProfiles registers the seven LLM gateway configuration-control
-// routes only when API_GO_LLM_GATEWAY_PROFILES_MODE=go. Every other value
-// (including the default legacy and the empty string) registers nothing, so the
-// routes keep flowing through the NestJS proxy and rollback is a single variable
-// change.
+// routes. The rules are registered unconditionally; unmatched paths are
+// answered with the Nest-shaped 404.
 //
-// The takeover needs MySQL (settings, governance and security rows), Redis (the
-// read cache) and the JWT authenticator. It does not need Mongo, an outbound
-// model HTTP client or any model upstream probe.
+// The takeover needs MySQL (settings, governance and security rows), Redis
+// (the read cache) and the JWT authenticator. It does not need Mongo, an
+// outbound model HTTP client or any model upstream probe.
 func wireLLMGatewayProfiles(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client, authenticator *authhttp.Authenticator) error {
 	if db == nil || redisClient == nil || authenticator == nil {
 		return fmt.Errorf("api-go: llm gateway profiles go takeover requires mysql, redis, and jwt")

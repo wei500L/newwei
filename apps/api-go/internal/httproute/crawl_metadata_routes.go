@@ -7,14 +7,13 @@ import "net/http"
 // request path.
 const CrawlMetadataKey = "/__go/crawl-metadata"
 
-// WithCrawlMetadata registers the exact POST /api/crawl-tasks/metadata route
-// plus its CORS preflight when mode is go.
+// WithCrawlMetadata registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 //
-// Only this method and path are taken over. GET /api/crawl-tasks/metadata keeps
-// the existing GET /api/crawl-tasks/:id ownership, and POST /api/crawl-tasks,
+// Served routes:
 // POST /api/crawl-tasks/:id/retry, DELETE /api/crawl-tasks/:id and every other
-// crawl task route keep falling back to NestJS. An empty or legacy mode adds no
-// rules.
 func WithCrawlMetadata(rules []Rule) []Rule {
 	return appendExactKeyed(rules, CrawlMetadataKey, "/api/crawl-tasks/metadata", http.MethodPost)
 }

@@ -9,8 +9,12 @@ import "net/http"
 // not overlap.
 const PlatformGovernanceSettingsKey = "/api/system-settings#platform-governance"
 
-// WithPlatformGovernanceSettings takes over the sixteen platform governance
-// settings HTTP routes when mode is go:
+// WithPlatformGovernanceSettings registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/security
 //	PUT    /api/system-settings/security
@@ -28,25 +32,6 @@ const PlatformGovernanceSettingsKey = "/api/system-settings#platform-governance"
 //	PUT    /api/system-settings/llm-request-logs
 //	DELETE /api/system-settings/llm-request-logs
 //	POST   /api/system-settings/llm-request-logs/metadata-policy/reset
-//
-// Registration order and shape matter. A longer exact path must be declared
-// before the path it extends so it can never be shadowed:
-// /assistant-safety/metrics before /assistant-safety, and
-// /llm-request-logs/metadata-policy/reset before /llm-request-logs.
-//
-// Everything else under /api/system-settings keeps falling back to NestJS,
-// including GET /assistant-safety/diagnostics, the email, archive-preparation,
-// realtime-signals, vector-service and situation-monitor groups, every
-// unlisted method on the sixteen paths (for example POST /security) and any
-// path with a trailing slash or an extra segment (for example /task-logs/x).
-// The four situation-monitor settings entries (GET/PUT/DELETE on
-// /api/system-settings/situation-monitor and DELETE on its /telegram-auth) are
-// independent and owned by WithSituationSettings.
-//
-// An empty or legacy mode adds no rules at all, so the default deployment is
-// unchanged and rollback only flips this one switch. The shared rule helper also
-// whitelists OPTIONS for the taken-over paths, so CORS preflight is answered by
-// the Go handler instead of reaching NestJS.
 func WithPlatformGovernanceSettings(rules []Rule) []Rule {
 	base := "/api/system-settings"
 

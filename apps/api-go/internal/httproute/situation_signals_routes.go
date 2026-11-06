@@ -9,8 +9,12 @@ import "net/http"
 // A single key is enough because the handler dispatches on path and method.
 const SituationSignalsKey = "/api/situation-monitor#signals"
 
-// WithSituationSignals takes over exactly seven situation monitor routes when
-// mode is go:
+// WithSituationSignals registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/situation-monitor/catalog                  (items.read)
 //	POST /api/situation-monitor/feedback                 (items.write, 201)
@@ -19,22 +23,6 @@ const SituationSignalsKey = "/api/situation-monitor#signals"
 //	GET  /api/situation-monitor/oref-alerts              (items.read)
 //	GET  /api/situation-monitor/oref-history             (items.read)
 //	GET  /api/situation-monitor/live-hls-proxy-config    (items.read)
-//
-// Registration order and shape matter. The three exact paths that extend
-// "/api/situation-monitor/monitors" do not exist here, but "/api/situation-monitor/"
-// is also the prefix of the monitors rules, which is why every rule below is an
-// exact path or an exact one-segment rule and none of them can shadow the
-// monitors handler.
-//
-// Everything else keeps falling back to NestJS under the shared /api/ prefix:
-// /insights, /monitors** (owned by API_GO_SITUATION_MONITORS_MODE), POST
-// /refresh, /api/system-settings/realtime-signals/runtime, every other method on
-// the seven paths, a trailing slash and any longer path such as
-// /refresh-runs/x/y. An empty or legacy mode adds no rules at all, so the default
-// deployment is unchanged and rollback only flips this one switch.
-//
-// The shared rule helpers also whitelist OPTIONS for the taken-over paths, so CORS
-// preflight is answered by the Go handler instead of reaching NestJS.
 func WithSituationSignals(rules []Rule) []Rule {
 	base := "/api/situation-monitor"
 	rules = appendExactKeyed(rules, SituationSignalsKey, base+"/catalog", http.MethodGet)

@@ -11,18 +11,14 @@ const PipelineRecoveryKey = "/api/admin/quality/pipeline/runs"
 // replay and rollback by URL path.
 const PipelineRecoveryWriteKey = "/__go/pipeline-recovery-write"
 
-// WithPipelineRecovery registers exactly one route when mode is go:
+// WithPipelineRecovery registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET /api/admin/quality/pipeline/runs
-//
-// The rule claims GET plus the CORS preflight OPTIONS on the same exact path
-// (appendExactKeyed registers both for the PipelineRecoveryKey handler).
-// The two write routes are registered separately by
-// API_GO_PIPELINE_RECOVERY_WRITE_MODE (see WithPipelineRecoveryWrite), so the
-// read and write ownership can be switched independently. Because the rule pins
-// GET, a POST to the same prefix is not swallowed by this handler.
-//
-// Default (empty or legacy) appends nothing.
 func WithPipelineRecovery(rules []Rule) []Rule {
 	return appendExactKeyed(rules, PipelineRecoveryKey,
 		"/api/admin/quality/pipeline/runs", http.MethodGet)
@@ -34,8 +30,8 @@ func WithPipelineRecovery(rules []Rule) []Rule {
 //	POST /api/admin/quality/pipeline/rollback
 //
 // Both are exact paths with their own method; OPTIONS is registered for CORS.
-// GET on either path, longer paths and the parent path keep falling back to
-// NestJS, and the runs read keeps its own switch.
+// GET on either path, longer paths and the parent path are answered with the
+// unmatched-route 404; the runs read is registered by WithPipelineRecovery.
 func WithPipelineRecoveryWrite(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, PipelineRecoveryWriteKey,
 		"/api/admin/quality/pipeline/replay", http.MethodPost)

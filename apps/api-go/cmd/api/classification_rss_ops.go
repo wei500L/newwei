@@ -16,10 +16,10 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 )
 
-// wireClassificationRssOps registers the handler for the classification quality
-// workbench, the RSS chain diagnostics and the RSS translation metrics only when
-// API_GO_CLASSIFICATION_RSS_OPS_MODE=go. In legacy mode (including the empty
-// string) nothing is registered and every path keeps proxying to NestJS.
+// wireClassificationRssOps registers the handler for the classification
+// quality workbench, the RSS chain diagnostics and the RSS translation metrics
+// only when API_GO_CLASSIFICATION_RSS_OPS_MODE=go. The rules are registered
+// unconditionally; unmatched paths are answered with the Nest-shaped 404.
 //
 // The takeover needs MySQL, Redis, the JWT authenticator and Mongo: the five
 // classification* collections, processeditems and tasklogs all live in Mongo,

@@ -8,7 +8,12 @@ import "net/http"
 // itself.
 const InfrastructureSettingsKey = "/api/system-settings#infrastructure"
 
-// WithInfrastructureSettings takes over the seven exact routes when mode is go:
+// WithInfrastructureSettings registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/vector-service
 //	PUT    /api/system-settings/vector-service
@@ -18,21 +23,8 @@ const InfrastructureSettingsKey = "/api/system-settings#infrastructure"
 //	GET    /api/system-settings/news-source-runtime-secrets
 //	PUT    /api/system-settings/news-source-runtime-secrets
 //
-// Every rule is an exact path with an explicit method whitelist, so nothing is
-// registered for a whole prefix: HEAD, unlisted methods, trailing slashes,
-// similar prefixes and any longer path keep falling back to the legacy /api/
-// rule. An empty or legacy mode adds nothing, so the default deployment is
-// unchanged and rollback only flips this one switch.
-//
-// The routes that stay outside this switch even in go mode include
 // GET /api/system-settings/vector-service/diagnostics (its own
-// API_GO_VECTOR_DIAGNOSTICS_MODE, see WithVectorDiagnostics) and
 // POST /api/admin/settings/storage/test (real S3 calls, its own
-// API_GO_STORAGE_DIAGNOSTICS_MODE, see WithStorageDiagnostics).
-//
-// The shared rule helper also whitelists OPTIONS for these paths, so CORS
-// preflight is answered by the Go handler instead of reaching NestJS; a
-// non-preflight OPTIONS request is sent back to the proxy by the wiring.
 func WithInfrastructureSettings(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, InfrastructureSettingsKey, "/api/system-settings/vector-service",
 		http.MethodGet, http.MethodPut, http.MethodDelete)

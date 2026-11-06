@@ -16,10 +16,8 @@ import (
 )
 
 // wireAuthFactors registers the seven authenticated MFA management and
-// organization OIDC configuration routes only when API_GO_AUTH_FACTORS_MODE=go.
-// Every other value (including the default legacy and the empty string)
-// registers nothing, so the routes keep flowing through the NestJS proxy and
-// rollback is a single variable change.
+// organization OIDC configuration routes. The rules are registered
+// unconditionally; unmatched paths are answered with the Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool, the shared Redis client and the
 // ordinary JWT authenticator. It deliberately creates no HTTP client and

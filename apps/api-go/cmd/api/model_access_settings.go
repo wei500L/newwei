@@ -15,21 +15,19 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
 )
 
-// wireModelAccessSettings registers the ten model access settings routes only when
-// API_GO_MODEL_ACCESS_SETTINGS_MODE=go. Every other value (including the default
-// legacy and the empty string) registers nothing, so the routes keep flowing
-// through the NestJS proxy and rollback is a single variable change.
+// wireModelAccessSettings registers the ten model access settings routes. The
+// rules are registered unconditionally; unmatched paths are answered with the
+// Nest-shaped 404.
 //
-// go mode requires the shared MySQL pool, the shared Redis client and the ordinary
-// JWT authenticator. It deliberately does NOT require:
+// go mode requires the shared MySQL pool, the shared Redis client and the
+// ordinary JWT authenticator. It deliberately does NOT require:
 //
-//   - LITELLM_CONFIG_INTERNAL_TOKEN: a missing token is the 403 contract of the
-//     two internal endpoints, never a startup failure;
-//   - SYSTEM_SETTINGS_ENCRYPTION_KEY: its absence selects the fail-closed
-//     production policy at write time;
-//   - MONGO_URI: this batch reads no Mongo collection;
-//   - any model upstream client: there is no outbound model HTTP call, no startup
-//     probe and no model API request in this batch.
+// - LITELLM_CONFIG_INTERNAL_TOKEN: a missing token is the 403 contract of the
+// two internal endpoints, never a startup failure; -
+// SYSTEM_SETTINGS_ENCRYPTION_KEY: its absence selects the fail-closed
+// production policy at write time; - MONGO_URI: this batch reads no Mongo
+// collection; - any model upstream client: there is no outbound model HTTP
+// call, no startup probe and no model API request in this batch.
 func wireModelAccessSettings(
 	gateway *httproute.Router,
 	cfg config.Config,

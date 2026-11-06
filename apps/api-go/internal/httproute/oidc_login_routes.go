@@ -8,20 +8,16 @@ import "net/http"
 // login routes belong to /api/auth#login.
 const OIDCLoginKey = "/api/auth#oidc-login"
 
-// WithOIDCLogin takes over exactly these public routes when mode is go:
+// WithOIDCLogin registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET  /api/auth/sso/oidc/start
 //	GET  /api/auth/oidc/callback
 //	POST /api/auth/sso/handoff/exchange
-//
-// Each rule is an exact path with a method whitelist. Other methods, trailing
-// slashes, similar prefixes and every other /api/auth path keep falling back to
-// the generic NestJS proxy. The shared rule helper also whitelists OPTIONS so a
-// CORS preflight reaches the Go handler; a non-preflight OPTIONS request is sent
-// back to the proxy by the wiring.
-//
-// The empty and legacy values add nothing, so the default deployment is
-// unchanged and rollback is one variable.
 func WithOIDCLogin(rules []Rule) []Rule {
 	rules = appendExactKeyed(rules, OIDCLoginKey, "/api/auth/sso/oidc/start", http.MethodGet)
 	rules = appendExactKeyed(rules, OIDCLoginKey, "/api/auth/oidc/callback", http.MethodGet)

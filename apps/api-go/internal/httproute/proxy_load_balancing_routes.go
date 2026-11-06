@@ -7,26 +7,17 @@ import "net/http"
 // dispatches on the request path and method itself.
 const ProxyLoadBalancingKey = "/api/system-settings/llm-gateways#proxy-load-balancing"
 
-// WithProxyLoadBalancing takes over the four LiteLLM proxy load balancing
-// configuration and distribution routes when mode is go:
+// WithProxyLoadBalancing registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
+//
+// Served routes:
 //
 //	GET    /api/system-settings/llm-gateways/proxy-load-balancing
 //	PUT    /api/system-settings/llm-gateways/proxy-load-balancing
 //	DELETE /api/system-settings/llm-gateways/proxy-load-balancing
 //	GET    /api/internal/litellm/proxy-load-balancing
-//
-// Both paths are EXACT rules, so the two static paths can never be captured by
-// the llm-gateways :id profile route (PR #59): that rule matches one dynamic
-// segment under /api/system-settings/llm-gateways/, which is a shorter prefix
-// and therefore loses to these exact rules. No other method, trailing slash,
-// longer path or sibling llm-gateways route is registered here, so
-// proxy-governance, the profile CRUD routes and every unmigrated settings route
-// keep falling back to the legacy /api/ proxy.
-//
-// OPTIONS is whitelisted on each taken-over path so CORS preflight is answered
-// by the Go handler; a non-preflight OPTIONS keeps the previous proxy
-// destination. An empty or legacy mode adds nothing, so the default deployment
-// is unchanged and rollback is a single environment variable change.
 func WithProxyLoadBalancing(rules []Rule) []Rule {
 
 	rules = appendExactKeyed(rules, ProxyLoadBalancingKey,

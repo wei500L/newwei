@@ -7,16 +7,10 @@ import "net/http"
 // and SituationMonitorsKey: the three switches are independent.
 const SituationInsightsKey = "/api/situation-monitor/insights"
 
-// WithSituationInsights takes over exactly GET /api/situation-monitor/insights
-// when mode is go. The rule is exact and method-scoped, so:
-//
-//   - the longer monitors routes remain owned by WithSituationMonitors;
-//   - the seven signal routes remain owned by WithSituationSignals;
-//   - POST /refresh, the settings routes and every longer path still fall back
-//     to NestJS under the shared /api/ prefix.
-//
-// Sorting by prefix length means the exact insights rule wins over /api/, and
-// no existing rule shares this prefix.
+// WithSituationInsights registers the Go router rules for this unit. Every rule is
+// method-scoped and registered unconditionally by the always-on Go router;
+// a path, method or segment that no rule claims is answered with the
+// unmatched-route 404 (the Nest-shaped contract). No request is proxied.
 func WithSituationInsights(rules []Rule) []Rule {
 	return appendExactKeyed(rules, SituationInsightsKey, "/api/situation-monitor/insights", http.MethodGet)
 }

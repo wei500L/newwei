@@ -16,18 +16,17 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/oidclogin"
 )
 
-// wireOIDCLogin registers the three public organization-SSO routes only when
-// API_GO_OIDC_LOGIN_MODE=go. Every other value (including the default legacy and
-// the empty string) registers nothing, so the routes keep flowing through the
-// NestJS proxy and rollback is one variable change.
+// wireOIDCLogin registers the three public organization-SSO routes. The rules
+// are registered unconditionally; unmatched paths are answered with the
+// Nest-shaped 404.
 //
 // The takeover needs the shared MySQL pool and Redis client: the trusted-login
 // core re-derives the user/membership/MFA state from MySQL and signs the local
 // session, while Redis holds the state/discovery/JWKS caches. It deliberately
-// does not require MONGO_URI, SMTP delivery, AUTH_LOGIN/AUTH_FACTORS go modes or
-// a GraphQL executor. The reused authlogin service is constructed with the same
-// configuration the login batch uses, but this unit only calls the trusted
-// login entry, which never sends mail.
+// does not require MONGO_URI, SMTP delivery, AUTH_LOGIN/AUTH_FACTORS go modes
+// or a GraphQL executor. The reused authlogin service is constructed with the
+// same configuration the login batch uses, but this unit only calls the
+// trusted login entry, which never sends mail.
 func wireOIDCLogin(gateway *httproute.Router, cfg config.Config, db *sql.DB, redisClient *redis.Client) error {
 	if db == nil || redisClient == nil {
 		return fmt.Errorf("api-go: oidc login go takeover requires mysql and redis")
