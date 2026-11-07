@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
+	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 )
 
 // llm.go is the LiteLLM gateway client for the two Frontier LLM chains. It
@@ -397,7 +397,9 @@ type rerankResult struct {
 	Score float64
 }
 
-// rerank ports LiteLlmService.rerank.
+// rerank ports LiteLlmService.rerank. The model/fallback/retry/parse engine and
+// the transport live in litellmcompat.Client.Rerank; this wrapper keeps the
+// Frontier profile resolver override and the per-attempt frontier request log.
 func (c *LLMClient) rerank(ctx context.Context, orgID string, model *string, query string, documents []string, topN int, metadata *Object) ([]rerankResult, error) {
 	if len(documents) == 0 {
 		return nil, errors.New("LiteLLM rerank documents are required")
@@ -423,103 +425,78 @@ func (c *LLMClient) rerank(ctx context.Context, orgID string, model *string, que
 	if len(models) == 0 {
 		return nil, errors.New("LiteLLM rerank model is not configured")
 	}
-	var lastErr error
-	for _, candidate := range models {
-		results, callErr := c.rerankModel(ctx, profile, candidate, orgID, trimmedQuery, documents, topN, metadata)
-		if callErr == nil {
-			return results, nil
-		}
-		var nested *NestError
-		if errors.As(callErr, &nested) {
-			return nil, callErr
-		}
-		lastErr = callErr
-	}
-	lastMessage := "unknown upstream error"
-	if lastErr != nil {
-		lastMessage = lastErr.Error()
-	}
-	return nil, fmt.Errorf("LiteLLM rerank unavailable: all configured rerank models failed (%s). Last error: %s", strings.Join(models, ", "), lastMessage)
-}
-
-func (c *LLMClient) rerankModel(ctx context.Context, profile gatewayProfile, model, orgID, query string, documents []string, topN int, metadata *Object) ([]rerankResult, error) {
-	attempts := profile.MaxRetries
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := time.Second
-	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		started := c.now()
-		results, status, callErr := c.postRerank(ctx, profile, model, query, documents, topN, metadata)
-		latency := c.now().Sub(started)
-		if callErr == nil {
-			c.writeLog(ctx, RequestLogEntry{
-				OrgID: orgID, RequestType: "rerank", Model: model, Status: "success",
-				Latency: latency, Feature: featureToken(metadata), GatewayProfileID: profile.ID,
-				GovernanceApplied: boolPointer(profile.GovernanceApplied), AuthMode: profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				APISurface:                "rerank", Metadata: metadata, OccurredAt: c.now(),
-			})
-			return results, nil
-		}
-		c.writeLog(ctx, RequestLogEntry{
-			OrgID: orgID, RequestType: "rerank", Model: model, Status: "error",
-			Error: callErr.Error(), Latency: latency, Feature: featureToken(metadata),
-			GatewayProfileID: profile.ID, GovernanceApplied: boolPointer(profile.GovernanceApplied),
-			AuthMode: profile.authMode(), GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			APISurface: "rerank", Metadata: metadata, OccurredAt: c.now(),
-		})
-		lastErr = callErr
-		if !isRetryableStatus(status) || attempt+1 >= attempts {
-			return nil, callErr
-		}
-		if sleepErr := sleepContext(ctx, delay); sleepErr != nil {
-			return nil, sleepErr
-		}
-		delay *= 2
-		if delay > 10*time.Second {
-			delay = 10 * time.Second
-		}
-	}
-	return nil, lastErr
-}
-
-func (c *LLMClient) postRerank(ctx context.Context, profile gatewayProfile, model, query string, documents []string, topN int, metadata *Object) ([]rerankResult, int, error) {
-	payload := NewObject()
-	payload.SetString("model", model)
-	payload.SetString("query", query)
-	payload.Set("documents", documents)
-	limit := topN
-	if limit <= 0 {
-		limit = len(documents)
-	}
-	payload.SetNumber("top_n", float64(limit))
+	var requestMetadata litellmcompat.Metadata
 	if profile.SendMetadata && metadata != nil {
-		payload.SetRaw("metadata", mustJSON(metadata))
+		requestMetadata = frontierMetadata{object: metadata}
 	}
-	body, err := payload.MarshalJSON()
+	client := litellmcompat.NewSettingsClient(nil, nil, litellmcompat.Config{}).WithHTTP(c.http)
+	response, err := client.RerankWithProfile(ctx, crawlSharedProfile(profile), litellmcompat.RerankRequest{
+		OrgID:     orgID,
+		Model:     requested,
+		Query:     trimmedQuery,
+		Documents: documents,
+		TopN:      topN,
+		Metadata:  requestMetadata,
+		Observer:  crawlRerankAttemptAdapter{client: c, metadata: metadata},
+	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	status, raw, _, err := c.post(ctx, profile, "/v1/rerank", body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, _, err = c.post(ctx, profile, "/rerank", body)
+	results := make([]rerankResult, 0, len(response.Results))
+	for _, result := range response.Results {
+		results = append(results, rerankResult{Index: result.Index, Score: result.Score})
 	}
-	if err != nil {
-		return nil, status, err
+	return results, nil
+}
+
+// frontierMetadata adapts the ordered Frontier metadata object onto the shared
+// Metadata interface so the rerank payload keeps its exact JSON bytes.
+type frontierMetadata struct {
+	object *Object
+}
+
+func (m frontierMetadata) JSONValue() any {
+	if m.object == nil {
+		return nil
 	}
-	if status < 200 || status >= 300 {
-		return nil, status, fmt.Errorf("model gateway rerank failed with status %d", status)
+	return json.RawMessage(mustJSON(m.object))
+}
+
+func (m frontierMetadata) LogFields() []llmlogs.ModelRequestMetadataField { return nil }
+
+// crawlRerankAttemptAdapter writes the per-attempt frontier request log from the
+// shared attempt record.
+type crawlRerankAttemptAdapter struct {
+	client   *LLMClient
+	metadata *Object
+}
+
+func (a crawlRerankAttemptAdapter) ObserveAttempt(ctx context.Context, attempt litellmcompat.Attempt) {
+	if a.client == nil {
+		return
 	}
-	results, parseErr := parseRerankResults(raw)
-	if parseErr != nil {
-		return nil, status, parseErr
+	entry := RequestLogEntry{
+		OrgID:                     attempt.OrgID,
+		RequestType:               "rerank",
+		Model:                     attempt.Model,
+		Status:                    "success",
+		Latency:                   attempt.Latency,
+		Feature:                   featureToken(a.metadata),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         boolPointer(attempt.GovernanceApplied),
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		APISurface:                "rerank",
+		Metadata:                  a.metadata,
+		OccurredAt:                a.client.now(),
 	}
-	if len(results) == 0 {
-		return nil, status, errors.New("LiteLLM rerank returned no usable results")
+	if !attempt.Success {
+		entry.Status = "error"
+		if attempt.Err != nil {
+			entry.Error = attempt.Err.Error()
+		}
 	}
-	return results, status, nil
+	a.client.writeLog(ctx, entry)
 }
 
 func (c *LLMClient) writeLog(ctx context.Context, entry RequestLogEntry) {
@@ -532,14 +509,6 @@ func (c *LLMClient) writeLog(ctx context.Context, entry RequestLogEntry) {
 // errGuardrailBlocked marks a LiteLLM guardrail refusal; Nest stops the model
 // fallback chain on it.
 var errGuardrailBlocked = errors.New("model gateway blocked the request by guardrails")
-
-func isRetryableStatus(status int) bool {
-	switch status {
-	case 0, 408, 409, 423, 425, 429, 500, 502, 503, 504:
-		return true
-	}
-	return false
-}
 
 func sleepContext(ctx context.Context, delay time.Duration) error {
 	timer := time.NewTimer(delay)
@@ -758,58 +727,6 @@ func usageFromObject(object *Object) ModelUsage {
 		usage.TotalTokens = &total
 	}
 	return usage
-}
-
-// parseRerankResults ports normalizeRerankResults and sorts by score desc.
-func parseRerankResults(raw []byte) ([]rerankResult, error) {
-	var document map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &document); err != nil {
-		return nil, err
-	}
-	rawResults, ok := document["results"]
-	if !ok {
-		rawResults = document["data"]
-	}
-	if len(rawResults) == 0 {
-		return nil, nil
-	}
-	var entries []json.RawMessage
-	if err := json.Unmarshal(rawResults, &entries); err != nil {
-		return nil, err
-	}
-	results := make([]rerankResult, 0, len(entries))
-	for _, entry := range entries {
-		record, ok := ParseObject(entry)
-		if !ok {
-			continue
-		}
-		index, ok := record.Number("index")
-		if !ok || index != roundToFixed(index, 0) {
-			continue
-		}
-		scoreRaw, ok := firstPresent(record, "relevance_score", "relevanceScore", "score", "similarity")
-		if !ok {
-			continue
-		}
-		score, ok := toFiniteNumber(scoreRaw)
-		if !ok {
-			continue
-		}
-		results = append(results, rerankResult{Index: int(index), Score: score})
-	}
-	sort.SliceStable(results, func(left, right int) bool {
-		return results[left].Score > results[right].Score
-	})
-	return results, nil
-}
-
-func firstPresent(object *Object, keys ...string) (json.RawMessage, bool) {
-	for _, key := range keys {
-		if raw, ok := object.Raw(key); ok && !isEmptyJSON(raw) {
-			return raw, true
-		}
-	}
-	return nil, false
 }
 
 func boolPointer(value bool) *bool {

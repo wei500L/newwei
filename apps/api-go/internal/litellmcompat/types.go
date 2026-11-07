@@ -25,6 +25,11 @@ type APISurface string
 const (
 	APISurfaceChat      APISurface = "chat_completions"
 	APISurfaceResponses APISurface = "responses"
+	// APISurfaceEmbedding and APISurfaceRerank label the non-chat calls in the
+	// per-attempt observer so a caller can persist the same apiSurface token the
+	// request log stores.
+	APISurfaceEmbedding APISurface = "embeddings"
+	APISurfaceRerank    APISurface = "rerank"
 )
 
 // ResponseFormatMode is the stored response-format policy.
@@ -127,6 +132,10 @@ type RerankRequest struct {
 	Documents []string
 	TopN      int
 	Metadata  Metadata
+	// Observer, when set, receives one record per real attempt. Callers that
+	// already resolve the profile themselves (the crawl frontier client) use it
+	// to keep their per-attempt request log.
+	Observer AttemptObserver
 }
 
 // RerankResult is one rerank hit.

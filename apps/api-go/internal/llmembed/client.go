@@ -9,6 +9,10 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
+	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 )
 
 // Hit 是一条 rerank 命中。Index 相对本次 documents。
@@ -66,6 +70,7 @@ func NewClient(db *sql.DB) *Client {
 }
 
 // Embed 调用当前 embedding profile。失败返回通用错误，不返回空向量冒充成功。
+// 传输、重试与响应解析由共享的 litellmcompat.Client.Embedding 负责。
 func (c *Client) Embed(ctx context.Context, orgID string, texts []string) ([][]float64, string, error) {
 	if len(texts) == 0 {
 		return [][]float64{}, "", nil
@@ -73,46 +78,37 @@ func (c *Client) Embed(ctx context.Context, orgID string, texts []string) ([][]f
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
-	_ = orgID
-	profile, err := c.resolveEmbedding(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, "", ctx.Err()
-		}
-		return nil, "", errEmbeddingUnavailable
+	request := litellmcompat.EmbeddingRequest{
+		OrgID:    orgID,
+		Input:    texts,
+		Metadata: embeddingMetadataFromContext(ctx),
 	}
-	model := strings.TrimSpace(profile.EmbeddingModel)
 	if override := modelFromContext(ctx); override != "" {
-		model = override
+		request.Model = override
 	}
-	if model == "" {
-		return nil, "", errEmbeddingUnavailable
-	}
-	payload := map[string]any{
-		"model": model,
-		"input": texts,
-	}
-	if meta := metadataPayload(ctx, profile.SendMetadata); meta != nil {
-		payload["metadata"] = meta
-	}
-	raw, err := c.postWithRetry(ctx, profile, "/v1/embeddings", "/embeddings", payload)
+	response, err := c.sharedClient().Embedding(ctx, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
 		return nil, "", errEmbeddingUnavailable
 	}
-	vectors, responseModel, err := parseEmbeddings(raw, len(texts))
-	if err != nil {
-		return nil, "", errEmbeddingUnavailable
+	vectors := make([][]float64, len(texts))
+	for _, row := range response.Rows {
+		if row.Index < 0 || row.Index >= len(texts) {
+			continue
+		}
+		vectors[row.Index] = row.Embedding
 	}
+	responseModel := strings.TrimSpace(response.Model)
 	if responseModel == "" {
-		responseModel = model
+		responseModel = strings.TrimSpace(request.Model)
 	}
 	return vectors, responseModel, nil
 }
 
 // Rerank 按 profile 的 rerank 模型与 fallback 依次尝试。越界 index 不会返回。
+// 模型/回退/重试链路由共享的 litellmcompat.Client.Rerank 负责。
 func (c *Client) Rerank(ctx context.Context, orgID, query string, documents []string) ([]Hit, error) {
 	if len(documents) == 0 {
 		return nil, errRerankUnavailable
@@ -124,42 +120,60 @@ func (c *Client) Rerank(ctx context.Context, orgID, query string, documents []st
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	_ = orgID
-	profile, err := c.resolveRerank(ctx)
+	response, err := c.sharedClient().Rerank(ctx, litellmcompat.RerankRequest{
+		OrgID:     orgID,
+		Query:     query,
+		Documents: documents,
+		TopN:      len(documents),
+		Metadata:  embeddingMetadataFromContext(ctx),
+	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, errRerankUnavailable
 	}
-	models := uniqueModels(append([]string{profile.RerankModel}, profile.RerankFallbacks...))
-	if len(models) == 0 {
-		return nil, errRerankUnavailable
+	hits := make([]Hit, 0, len(response.Results))
+	for _, result := range response.Results {
+		hits = append(hits, Hit{Index: result.Index, Score: result.Score})
 	}
-	for _, model := range models {
-		payload := map[string]any{
-			"model":     model,
-			"query":     query,
-			"documents": documents,
-			"top_n":     len(documents),
-		}
-		if meta := metadataPayload(ctx, profile.SendMetadata); meta != nil {
-			payload["metadata"] = meta
-		}
-		raw, callErr := c.postWithRetry(ctx, profile, "/v1/rerank", "/rerank", payload)
-		if callErr != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			continue
-		}
-		hits, parseErr := parseRerank(raw, len(documents))
-		if parseErr != nil || len(hits) == 0 {
-			continue
-		}
-		return hits, nil
+	return hits, nil
+}
+
+// sharedClient builds a litellmcompat client over the same MySQL pool and HTTP
+// client so Embed/Rerank share profile resolution, transport and parsing.
+func (c *Client) sharedClient() *litellmcompat.Client {
+	env := gatewayEnv()
+	cfg := litellmcompat.Config{
+		EncryptionKey: env.EncryptionKey,
+		APIBase:       env.APIBase,
+		Timeout:       time.Duration(env.TimeoutMs) * time.Millisecond,
+		MaxRetries:    env.MaxRetries,
 	}
-	return nil, errRerankUnavailable
+	return litellmcompat.NewClient(c.db, nil, cfg).WithHTTP(c.http)
+}
+
+// embeddingMetadata adapts the per-call source/stage tokens onto the shared
+// Metadata interface. It is only sent when the resolved profile enables
+// sendMetadata.
+type embeddingMetadata struct {
+	Source string
+	Stage  string
+}
+
+func (m embeddingMetadata) JSONValue() any { return requestMeta{Source: m.Source, Stage: m.Stage} }
+
+func (m embeddingMetadata) LogFields() []llmlogs.ModelRequestMetadataField { return nil }
+
+func embeddingMetadataFromContext(ctx context.Context) litellmcompat.Metadata {
+	if ctx == nil {
+		return nil
+	}
+	meta, ok := ctx.Value(metaContextKey{}).(requestMeta)
+	if !ok || (meta.Source == "" && meta.Stage == "") {
+		return nil
+	}
+	return embeddingMetadata{Source: meta.Source, Stage: meta.Stage}
 }
 
 func modelFromContext(ctx context.Context) string {
@@ -168,17 +182,6 @@ func modelFromContext(ctx context.Context) string {
 	}
 	model, _ := ctx.Value(modelContextKey{}).(string)
 	return strings.TrimSpace(model)
-}
-
-func metadataPayload(ctx context.Context, send bool) any {
-	if !send || ctx == nil {
-		return nil
-	}
-	meta, ok := ctx.Value(metaContextKey{}).(requestMeta)
-	if !ok || (meta.Source == "" && meta.Stage == "") {
-		return nil
-	}
-	return meta
 }
 
 func uniqueModels(models []string) []string {
@@ -196,31 +199,6 @@ func uniqueModels(models []string) []string {
 		out = append(out, model)
 	}
 	return out
-}
-
-func parseEmbeddings(raw []byte, count int) ([][]float64, string, error) {
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, "", errEmbeddingUnavailable
-	}
-	vectors := make([][]float64, count)
-	rows, _ := doc["data"].([]any)
-	for _, row := range rows {
-		record, ok := row.(map[string]any)
-		if !ok {
-			continue
-		}
-		index, ok := integerIndex(record["index"])
-		if !ok || index < 0 || index >= count {
-			continue
-		}
-		vector := floatSlice(record["embedding"])
-		if len(vector) == 0 {
-			continue
-		}
-		vectors[index] = vector
-	}
-	return vectors, jsonString(doc["model"]), nil
 }
 
 func parseRerank(raw []byte, docCount int) ([]Hit, error) {

@@ -14,11 +14,7 @@ const (
 	retryDelayMax   = 10 * time.Second
 )
 
-func (c *Client) postWithRetry(ctx context.Context, profile runtimeProfile, primary, fallback string, payload any) ([]byte, error) {
-	return c.postWithRetryOptions(ctx, profile, primary, fallback, payload, 0, profile.MaxRetries)
-}
-
-// postWithRetryOptions is postWithRetry with a per-request timeout and retry
+// postWithRetryOptions posts one request with a per-request timeout and retry
 // budget. A zero timeout keeps profile.Timeout and a non-positive maxRetries
 // keeps at least one attempt, so the shared callers are unaffected.
 func (c *Client) postWithRetryOptions(
