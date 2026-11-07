@@ -84,6 +84,44 @@ func (c *Client) WithSettingLoader(loader SettingLoader) *Client {
 	return c
 }
 
+// WithHTTP replaces the outbound HTTP client. It lets a caller that already owns
+// one connection pool (e.g. the public portal gateway) reuse it for RunCompletion
+// instead of opening another.
+func (c *Client) WithHTTP(httpClient *http.Client) *Client {
+	if c == nil {
+		return nil
+	}
+	if httpClient != nil {
+		c.http = httpClient
+	}
+	return c
+}
+
+// NewSettingsClient builds a Client over already-read llm_gateway_profiles and
+// litellm_proxy_governance snapshots instead of a live *sql.DB. Callers that
+// already hold those rows (the public portal store, the crawl frontier client)
+// use it so profile resolution and RunCompletion stay in one place.
+func NewSettingsClient(profilesJSON, governanceJSON []byte, cfg Config) *Client {
+	client := &Client{cfg: cfg.defaulted(), http: &http.Client{}, now: time.Now}
+	client.loadRow = func(_ context.Context, key string) (json.RawMessage, bool, error) {
+		switch key {
+		case gatewaySettingsKey:
+			if len(profilesJSON) == 0 {
+				return nil, false, nil
+			}
+			return json.RawMessage(profilesJSON), true, nil
+		case governanceSettingsKey:
+			if len(governanceJSON) == 0 {
+				return nil, false, nil
+			}
+			return json.RawMessage(governanceJSON), true, nil
+		default:
+			return nil, false, nil
+		}
+	}
+	return client
+}
+
 // Completion runs acompletion: primary model then configured fallbacks, with
 // per-model retries, guardrail termination and compatibility classification.
 func (c *Client) Completion(ctx context.Context, req CompletionRequest) (CompletionResponse, error) {
@@ -425,15 +463,26 @@ func (c *Client) rerankModel(ctx context.Context, profile gatewayProfile, model,
 // --- HTTP ---
 
 func (c *Client) post(ctx context.Context, profile gatewayProfile, primary, fallback string, body []byte, timeout time.Duration) (int, []byte, http.Header, error) {
-	status, raw, header, err := c.postOnce(ctx, profile, primary, body, timeout)
+	return c.postWithLimit(ctx, profile, primary, fallback, body, timeout, responseLimit)
+}
+
+// postWithLimit is post with an explicit response-body cap, used by callers whose
+// historic maxBody differs from the package default (the public portal and crawl
+// frontier chains capped at 2MB).
+func (c *Client) postWithLimit(ctx context.Context, profile gatewayProfile, primary, fallback string, body []byte, timeout time.Duration, maxBody int64) (int, []byte, http.Header, error) {
+	status, raw, header, err := c.postOnceLimit(ctx, profile, primary, body, timeout, maxBody)
 	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) && fallback != "" {
-		return c.postOnce(ctx, profile, fallback, body, timeout)
+		return c.postOnceLimit(ctx, profile, fallback, body, timeout, maxBody)
 	}
 	return status, raw, header, err
 }
 
 func (c *Client) postOnce(ctx context.Context, profile gatewayProfile, path string, body []byte, timeout time.Duration) (int, []byte, http.Header, error) {
-	return PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, responseLimit)
+	return c.postOnceLimit(ctx, profile, path, body, timeout, responseLimit)
+}
+
+func (c *Client) postOnceLimit(ctx context.Context, profile gatewayProfile, path string, body []byte, timeout time.Duration, maxBody int64) (int, []byte, http.Header, error) {
+	return PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, maxBody)
 }
 
 // PostOnce performs one outbound JSON POST against a LiteLLM-compatible gateway

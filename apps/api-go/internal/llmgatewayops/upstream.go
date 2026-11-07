@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // This file is the outbound HTTP layer shared by the LiteLLM management calls
@@ -92,9 +94,60 @@ func (c upstreamClient) get(ctx context.Context, path string) (upstreamResponse,
 
 // postBody performs one POST with an already marshalled JSON body. Callers
 // marshal their own named payload type, so no loosely typed body crosses this
-// boundary.
+// boundary. Management calls keep the shared do() transport.
 func (c upstreamClient) postBody(ctx context.Context, path string, body []byte) (upstreamResponse, error) {
 	return c.do(ctx, http.MethodPost, path, body)
+}
+
+// postBodyOnce performs one probe POST through litellmcompat.PostOnce so the
+// diagnostic transport (request build, bearer auth, deadline, response cap)
+// lives in exactly one place, then rebuilds the same upstreamResponse/
+// upstreamError the diagnostic contract expects.
+func (c upstreamClient) postBodyOnce(ctx context.Context, path string, body []byte) (upstreamResponse, error) {
+	target, err := c.endpoint(path)
+	if err != nil {
+		return upstreamResponse{}, err
+	}
+	if _, parseErr := url.Parse(target); parseErr != nil {
+		return upstreamResponse{}, &upstreamError{message: "apiBase is not a valid URL"}
+	}
+	requestPath := path
+	if !strings.HasPrefix(requestPath, "/") {
+		requestPath = "/" + requestPath
+	}
+	status, raw, header, callErr := litellmcompat.PostOnce(ctx, c.http, c.baseURL, c.apiKey, requestPath, body, c.timeout, maxUpstreamBodyBytes)
+	if callErr != nil {
+		return upstreamResponse{}, classifyPostOnceError(ctx, callErr, c.timeout)
+	}
+	result := upstreamResponse{status: status, header: header, body: raw}
+	if status >= http.StatusOK && status <= 299 {
+		return result, nil
+	}
+	statusText := http.StatusText(status)
+	requestID := extractRequestID(header)
+	if requestID == "" {
+		requestID = extractRequestIDFromBody(raw)
+	}
+	return upstreamResponse{}, &upstreamError{
+		status:     status,
+		statusText: statusText,
+		detail:     extractUpstreamDetail(raw, status, statusText),
+		requestID:  requestID,
+		body:       raw,
+	}
+}
+
+// classifyPostOnceError maps a PostOnce transport failure onto the axios-shaped
+// upstreamError. A deadline keeps the ECONNABORTED class and the axios timeout
+// text so the diagnostic message is unchanged.
+func classifyPostOnceError(ctx context.Context, err error, timeout time.Duration) error {
+	text := err.Error()
+	code := transportErrorCode(err)
+	if errors.Is(err, context.DeadlineExceeded) || (ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+		text = fmt.Sprintf("timeout of %dms exceeded", timeout.Milliseconds())
+		code = timeoutErrorCode
+	}
+	return &upstreamError{code: code, message: text, detail: sanitizeUpstreamErrorText(text, 500)}
 }
 
 // getWithFallback retries the short path ONLY on 404/405. Every other failure,
@@ -112,9 +165,9 @@ func (c upstreamClient) getWithFallback(ctx context.Context, primary, fallback s
 // bytes are sent again, so the retry can never become a different request.
 func (c upstreamClient) postBodyWithFallback(ctx context.Context, primary, fallback string, body []byte) (upstreamResponse, error) {
 	return c.withFallback(ctx, func() (upstreamResponse, error) {
-		return c.postBody(ctx, primary, body)
+		return c.postBodyOnce(ctx, primary, body)
 	}, func() (upstreamResponse, error) {
-		return c.postBody(ctx, fallback, body)
+		return c.postBodyOnce(ctx, fallback, body)
 	})
 }
 

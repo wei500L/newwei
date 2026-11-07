@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // This file adds the RSS translation completion surface. It reuses the gateway
@@ -106,13 +108,6 @@ func NewRssTranslationCompleter(settings BriefSettingsReader, env GatewayEnv) Rs
 	return newGateway(settings, env)
 }
 
-// rssCompletionOutcome is one successful model HTTP exchange.
-type rssCompletionOutcome struct {
-	Content string
-	Model   string
-	Usage   RssTranslationUsage
-}
-
 // errRssContentBlocked marks an upstream guardrail refusal that arrived either
 // as a successful response with no usable choice or as a non-2xx error whose
 // body carries a guardrail signal. Nest stops the fallback chain on this error,
@@ -131,7 +126,7 @@ func (e *rssCompatibilityError) Error() string { return e.message }
 // PrimaryModel resolves the active completion profile and returns its
 // configured model. A missing/invalid profile is an error.
 func (g *gatewayClient) PrimaryModel(ctx context.Context) (string, error) {
-	profile, err := g.resolveRssProfile(ctx)
+	profile, _, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -139,120 +134,91 @@ func (g *gatewayClient) PrimaryModel(ctx context.Context) (string, error) {
 }
 
 // CompleteText walks the primary model followed by the configured fallback
-// models and performs one HTTP attempt per model. observer, when not nil,
-// receives one record per real attempt.
+// models through the shared completion engine, one attempt per model. observer,
+// when not nil, receives one record per real attempt.
 func (g *gatewayClient) CompleteText(ctx context.Context, req RssTranslationCompletionRequest) (RssTranslationCompletionResult, error) {
-	profile, err := g.resolveRssProfile(ctx)
+	profile, client, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return RssTranslationCompletionResult{}, err
-	}
-	models := uniqueModels(append([]string{profile.Model}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return RssTranslationCompletionResult{}, errors.New("completion model is not configured")
 	}
 	metadata := RssTranslationMetadata{
 		Source:         rssTranslationMetadataSource,
 		TargetLanguage: req.TargetLanguage,
 	}
-	var last error
-	for index, model := range models {
-		outcome, attemptErr := g.completeRssModel(ctx, profile, model, index+1, req, metadata)
-		if attemptErr == nil {
-			return RssTranslationCompletionResult{Content: outcome.Content, Model: outcome.Model, Usage: outcome.Usage}, nil
-		}
-		if isRssStopError(attemptErr) {
-			return RssTranslationCompletionResult{}, attemptErr
-		}
-		last = attemptErr
+	plan := litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     uniqueModels(append([]string{profile.Model}, profile.FallbackModels...)),
+		MaxRetries: 1,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildRssPayload(profile, model, req, metadata)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseRssCompletion(profile, status, header, raw, model)
+		},
+		Stop:     isRssStopError,
+		Observer: rssAttemptAdapter{next: req.Observer, metadata: metadata},
 	}
-	if last == nil {
-		last = errors.New("LiteLLM completion failed")
+	response, err := client.RunCompletion(ctx, profile, plan)
+	if err != nil {
+		return RssTranslationCompletionResult{}, err
 	}
-	return RssTranslationCompletionResult{}, last
+	return RssTranslationCompletionResult{Content: response.Content, Model: response.Model, Usage: rssUsageFromBrief(briefUsageFromShared(response.Usage))}, nil
 }
 
-func (g *gatewayClient) resolveRssProfile(ctx context.Context) (completionProfile, error) {
-	profiles, governance, err := g.store.GatewaySettings(ctx)
-	if err != nil {
-		return completionProfile{}, err
-	}
-	return resolveCompletionProfile(profiles, governance, g.env)
-}
-
-// completeRssModel performs exactly one attempt for one model. The single
-// attempt mirrors the caller's maxRetries=1 (LiteLLM treats maxRetries as the
-// attempt count, not as an extra retry), while the model fallback loop above
-// still runs.
-func (g *gatewayClient) completeRssModel(ctx context.Context, profile completionProfile, model string, modelIndex int, req RssTranslationCompletionRequest, metadata RssTranslationMetadata) (rssCompletionOutcome, error) {
-	started := time.Now()
-	outcome, _, err := g.postRssCompletion(ctx, profile, model, req, metadata)
-	attemptModel := outcome.Model
-	if attemptModel == "" {
-		// A failed attempt reports no response model; Nest logs the requested
-		// model in that case.
-		attemptModel = model
-	}
-	if req.Observer != nil {
-		req.Observer.ObserveRssTranslationAttempt(ctx, RssTranslationAttempt{
-			OrgID:                     req.OrgID,
-			Model:                     attemptModel,
-			APISurface:                profile.APISurface,
-			GatewayProfileID:          profile.ID,
-			GovernanceApplied:         profile.GovernanceApplied,
-			AuthMode:                  profile.authMode(),
-			GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			ModelIndex:                modelIndex,
-			Success:                   err == nil,
-			Err:                       err,
-			Latency:                   time.Since(started),
-			Usage:                     outcome.Usage,
-			Metadata:                  metadata,
-		})
-	}
-	if err != nil {
-		return rssCompletionOutcome{}, err
-	}
-	return outcome, nil
-}
-
-func (g *gatewayClient) postRssCompletion(ctx context.Context, profile completionProfile, model string, req RssTranslationCompletionRequest, metadata RssTranslationMetadata) (rssCompletionOutcome, int, error) {
-	body, primary, fallback, err := buildRssPayload(profile, model, req, metadata)
-	if err != nil {
-		return rssCompletionOutcome{}, 0, err
-	}
-	status, raw, header, err := g.post(ctx, profile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = g.post(ctx, profile, fallback, body)
-	}
-	if err != nil {
-		return rssCompletionOutcome{}, status, err
-	}
+func parseRssCompletion(profile litellmcompat.Profile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
 	if status < 200 || status >= 300 {
 		detail := rssErrorDetail(raw)
 		if rssGuardrailSignal(detail) {
-			return rssCompletionOutcome{}, status, errRssContentBlocked
+			return litellmcompat.CompletionResponse{}, errRssContentBlocked
 		}
-		if issue, ok := rssCompatibilityIssue(status, detail, profile.APISurface); ok {
-			return rssCompletionOutcome{}, status, &rssCompatibilityError{message: issue}
+		if issue, ok := rssCompatibilityIssue(status, detail, string(profile.APISurface)); ok {
+			return litellmcompat.CompletionResponse{}, &rssCompatibilityError{message: issue}
 		}
-		return rssCompletionOutcome{}, status, errors.New(rssHTTPErrorMessage(status, detail))
+		return litellmcompat.CompletionResponse{}, errors.New(rssHTTPErrorMessage(status, detail))
 	}
 	if isGuardrailBlockedResponse(raw) {
-		return rssCompletionOutcome{}, status, errRssContentBlocked
+		return litellmcompat.CompletionResponse{}, errRssContentBlocked
 	}
-	content := strings.TrimSpace(completionText(raw, profile.APISurface))
-	usage := rssUsageFromBrief(completionUsage(raw, profile.APISurface))
+	content := strings.TrimSpace(completionText(raw, string(profile.APISurface)))
+	usage := completionUsage(raw, string(profile.APISurface))
 	if cost, ok := extractCostHeader(header); ok {
 		usage.CostUSD = &cost
 	}
-	// An empty content is a successful exchange: Nest logs it as success and
-	// the RSS service turns it into a per-text failure without trying another
-	// model, so it is not converted into a fallback-triggering error here.
-	return rssCompletionOutcome{
-		Content: content,
-		Model:   rssResponseModel(raw, model),
-		Usage:   usage,
-	}, status, nil
+	// An empty content is a successful exchange: Nest logs it as success and the
+	// RSS service turns it into a per-text failure without trying another model.
+	return litellmcompat.CompletionResponse{Content: content, Model: rssResponseModel(raw, model), Usage: briefUsageToShared(usage)}, nil
+}
+
+// rssAttemptAdapter maps the shared attempt record onto the RSS attempt type.
+type rssAttemptAdapter struct {
+	next     RssTranslationObserver
+	metadata RssTranslationMetadata
+}
+
+func (a rssAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
+	}
+	model := attempt.ResponseModel
+	if model == "" {
+		model = attempt.Model
+	}
+	a.next.ObserveRssTranslationAttempt(context.Background(), RssTranslationAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		ModelIndex:                attempt.ModelIndex,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     rssUsageFromBrief(briefUsageFromShared(attempt.Usage)),
+		Metadata:                  a.metadata,
+	})
 }
 
 // rssChatMessage is one OpenAI-compatible message. The responses surface reuses
@@ -297,7 +263,7 @@ type rssResponsesPayload struct {
 // or json_schema profile omits the field while json_object sends the explicit
 // json_object marker. Nothing else about the provider configuration is
 // changed.
-func buildRssPayload(profile completionProfile, model string, req RssTranslationCompletionRequest, metadata RssTranslationMetadata) ([]byte, string, string, error) {
+func buildRssPayload(profile litellmcompat.Profile, model string, req RssTranslationCompletionRequest, metadata RssTranslationMetadata) ([]byte, string, string, error) {
 	messages := []rssChatMessage{
 		{Role: "system", Content: req.System},
 		{Role: "user", Content: req.User},
@@ -312,7 +278,7 @@ func buildRssPayload(profile completionProfile, model string, req RssTranslation
 	}
 	var payload any
 	var primary, fallback string
-	if profile.APISurface == "responses" {
+	if profile.APISurface == litellmcompat.APISurfaceResponses {
 		responses := rssResponsesPayload{
 			Model:           model,
 			Input:           messages,
@@ -321,7 +287,7 @@ func buildRssPayload(profile completionProfile, model string, req RssTranslation
 			MaxOutputTokens: maxTokens,
 			Metadata:        metadataPayload,
 		}
-		if profile.ResponseFormatMode == "json_object" {
+		if profile.ResponseFormatMode == litellmcompat.ResponseFormatJSONObject {
 			responses.Text = &rssResponsesText{Format: &rssResponseFormat{Type: "json_object"}}
 		}
 		payload = responses
@@ -336,7 +302,7 @@ func buildRssPayload(profile completionProfile, model string, req RssTranslation
 			Stream:      false,
 			Metadata:    metadataPayload,
 		}
-		if profile.ResponseFormatMode == "json_object" {
+		if profile.ResponseFormatMode == litellmcompat.ResponseFormatJSONObject {
 			chat.ResponseFormat = &rssResponseFormat{Type: "json_object"}
 		}
 		payload = chat
