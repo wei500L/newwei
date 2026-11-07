@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**pr_open（`-a` 步骤 1：profile 与密钥统一）**；步骤 2/5 与 `-b` 见剩余问题。
+- 状态：**部分合入**（`-a` 步骤 1 #176，经整合 #180 → `dba96962`，main CI success）。剩余拆为两段依次执行：**`-a2`** = 步骤 2（同步补全上收 `Completion`）+ 步骤 5（探针）；**`-b`** = 步骤 3（`CompletionStream`）+ 步骤 4（Embedding/Rerank 上收），`-b` 等 `-a2` 合入后再开。REFACTOR-HTTP-CLIENT-001 等这两段都合入。
 - 规划基线：`origin/main = 67f31754`；规划时间：2026-11-06。
 - 来源：第一轮 REFACTOR 交付记录中的“剩余问题”（见总计划“第一轮结果与第二轮候选”）。
 - 前置：无（第二轮 A 波）；并行：与 CRAWLWORKER、CLEANUP 并行。
@@ -19,3 +19,21 @@
 - 实际范围 / 排除项：**本 PR 只做 `-a` 的步骤 1（profile 与密钥只保留一份）**——导出 `litellmcompat.Profile`/`ProfileKind`/`ResolveProfile`/`ResolveProfileFromSettings` 与 `GovernanceError`，统一 publicportal / crawlfrontierllm / llmembed / graphqlread-history 各自的 `normalizeProfile`/`profileAPIKey`/`decryptSecret`/`normalizeAPIBase`/`applyGovernance` 副本，并在解析后统一 `NormalizeGatewayAPIBase`。**排除（留待后续 PR）**：步骤 2（publicportal 各 completion 表面与 crawlfrontierllm `complete` 上收 `Completion`）、步骤 5（llmgatewayops/llmlogs 探针改调 `PostOnce`/`Probe`）、`-b`（流式 `CompletionStream` 与 llmembed/crawlfrontierllm 的 Embedding/Rerank 上收）。
 - 有意行为变更：governance 托管密钥取值统一 `NormalizeGatewaySecret`（剥离 Bearer 前缀）；litellmcompat DB 解析补做 apiBase 归一化（修 bug）。对外 HTTP/GraphQL 状态码与文案、请求体、Redis/Mongo/MySQL 存储、BullMQ wire 格式不变（差异逐条见 PR 差异处理表）。
 - 剩余问题：步骤 2、步骤 5、`-b` 未做；本机未安装依赖、未运行 `go build`/`go test`/`go vet`/Docker，运行证据仅为精确 head 的普通 CI，未连接真实 LiteLLM/MySQL/Redis/Mongo。
+
+## 交付记录 -a2（编码窗口填写：步骤 2 + 步骤 5）
+
+- 分支 / PR / Ready：
+- 最终 head SHA：
+- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：
+- 实际范围 / 排除项：
+- 有意行为变更：
+- 剩余问题：
+
+## 交付记录 -b（编码窗口填写：步骤 3 + 步骤 4）
+
+- 分支 / PR / Ready：
+- 最终 head SHA：
+- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：
+- 实际范围 / 排除项：
+- 有意行为变更：
+- 剩余问题：

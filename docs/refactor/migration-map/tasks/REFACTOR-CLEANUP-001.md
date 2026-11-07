@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**pr_open**（-a #175 / -b #177 / -c #179 三个 Ready PR；静待合入）。
+- 状态：**merged**（-a #175 / -b #177 / -c #179，经整合 #180 → `dba96962`；2026-11-07 规划窗口核实，main 普通 CI success）。剩余：5 份独特 readJSON、writeError 无可合并副本、`toInt64` 等未收敛、`cmd/api` 约 132 处事实性 Nest 参照，均不再派发。
 - 规划基线：`origin/main = 67f31754`；规划时间：2026-11-06。
 - 来源：第一轮 REFACTOR 交付记录中的“剩余问题”（见总计划“第一轮结果与第二轮候选”）。
 - 前置：无（第二轮 A 波）；并行：与 LLM-CLIENT、CRAWLWORKER 并行。

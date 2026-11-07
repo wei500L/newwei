@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**pr_open**（#178 Ready；代码 head CI success，待规划窗口回填 merged）。
+- 状态：**merged**（PR #178，经整合 #180 → `dba96962`；2026-11-07 规划窗口核实，main 普通 CI success）。
 - 规划基线：`origin/main = 67f31754`；规划时间：2026-11-06。
 - 来源：第一轮 REFACTOR 交付记录中的“剩余问题”（见总计划“第一轮结果与第二轮候选”）。
 - 前置：无（第二轮 A 波）；并行：与 LLM-CLIENT、CLEANUP 并行。
