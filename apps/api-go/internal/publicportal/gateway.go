@@ -412,32 +412,6 @@ func extractCostHeader(header http.Header) (float64, bool) {
 	return 0, false
 }
 
-func retryable(status int, err error) bool {
-	if err == nil {
-		return false
-	}
-	if status == 0 {
-		return true
-	}
-	switch status {
-	case 408, 409, 423, 425, 429, 500, 502, 503, 504:
-		return true
-	default:
-		return false
-	}
-}
-
-func sleep(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
 func completionText(raw []byte, surface string) string {
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {

@@ -361,16 +361,28 @@ func (c *Client) Embedding(ctx context.Context, req EmbeddingRequest) (Embedding
 
 // Rerank runs the primary rerank model followed by its configured fallbacks.
 func (c *Client) Rerank(ctx context.Context, req RerankRequest) (RerankResponse, error) {
+	profile, err := c.resolveRerank(ctx)
+	if err != nil {
+		return RerankResponse{}, err
+	}
+	return c.rerank(ctx, profile, req)
+}
+
+// RerankWithProfile is the profile-injected form of Rerank. Callers that resolve
+// the profile themselves (so they can keep their own resolver override and
+// per-attempt request log) still share the model/fallback/retry/parse engine
+// here instead of re-implementing it.
+func (c *Client) RerankWithProfile(ctx context.Context, profile Profile, req RerankRequest) (RerankResponse, error) {
+	return c.rerank(ctx, profile, req)
+}
+
+func (c *Client) rerank(ctx context.Context, profile gatewayProfile, req RerankRequest) (RerankResponse, error) {
 	if len(req.Documents) == 0 {
 		return RerankResponse{}, errors.New("LiteLLM rerank documents are required")
 	}
 	query := strings.TrimSpace(req.Query)
 	if query == "" {
 		return RerankResponse{}, errors.New("LiteLLM rerank query is required")
-	}
-	profile, err := c.resolveRerank(ctx)
-	if err != nil {
-		return RerankResponse{}, err
 	}
 	models := uniqueModels(append([]string{trimOr(req.Model, profile.RerankModel)}, profile.RerankFallbackModels...))
 	if len(models) == 0 {
@@ -382,7 +394,7 @@ func (c *Client) Rerank(ctx context.Context, req RerankRequest) (RerankResponse,
 	}
 	var lastErr error
 	for index, model := range models {
-		response, err := c.rerankModel(ctx, profile, model, query, req, topN)
+		response, err := c.rerankModel(ctx, profile, model, index+1, query, req, topN)
 		if err == nil {
 			if response.Model == "" {
 				response.Model = model
@@ -408,7 +420,7 @@ func (c *Client) Rerank(ctx context.Context, req RerankRequest) (RerankResponse,
 	)
 }
 
-func (c *Client) rerankModel(ctx context.Context, profile gatewayProfile, model, query string, req RerankRequest, topN int) (RerankResponse, error) {
+func (c *Client) rerankModel(ctx context.Context, profile gatewayProfile, model string, modelIndex int, query string, req RerankRequest, topN int) (RerankResponse, error) {
 	payload := rerankJSON{
 		Model:     model,
 		Query:     query,
@@ -429,21 +441,39 @@ func (c *Client) rerankModel(ctx context.Context, profile gatewayProfile, model,
 		started := c.now()
 		status, raw, header, callErr := c.post(ctx, profile, "/v1/rerank", "/rerank", body, c.timeout(profile, 0))
 		latency := c.now().Sub(started)
+		var response RerankResponse
 		if callErr == nil && status >= 200 && status < 300 {
-			response, parseErr := parseRerankResponse(raw, len(req.Documents), model, header)
-			if parseErr != nil {
-				c.log(ctx, profile, "rerank", model, req.OrgID, req.Metadata, latency, Usage{}, parseErr)
-				return RerankResponse{}, parseErr
+			response, callErr = parseRerankResponse(raw, len(req.Documents), model, header)
+		} else {
+			detail := extractUpstreamErrorText(status, raw, callErr)
+			if compatibility := detectCompatibilityIssue(status, detail, APISurfaceChat); compatibility != nil {
+				callErr = compatibility
+			} else {
+				callErr = statusError(status, detail, callErr)
 			}
+		}
+		if req.Observer != nil {
+			req.Observer.ObserveAttempt(ctx, Attempt{
+				OrgID:                     req.OrgID,
+				Model:                     model,
+				ResponseModel:             response.Model,
+				ModelIndex:                modelIndex,
+				Attempt:                   attempt + 1,
+				Success:                   callErr == nil,
+				Err:                       callErr,
+				Latency:                   latency,
+				Usage:                     response.Usage,
+				APISurface:                APISurfaceRerank,
+				GatewayProfileID:          profile.ID,
+				GovernanceApplied:         profile.GovernanceApplied,
+				AuthMode:                  profile.authMode(),
+				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
+			})
+		}
+		if callErr == nil {
 			c.log(ctx, profile, "rerank", model, req.OrgID, req.Metadata, latency, response.Usage, nil)
 			return response, nil
 		}
-		detail := extractUpstreamErrorText(status, raw, callErr)
-		if compatibility := detectCompatibilityIssue(status, detail, APISurfaceChat); compatibility != nil {
-			c.log(ctx, profile, "rerank", model, req.OrgID, req.Metadata, latency, Usage{}, compatibility)
-			return RerankResponse{}, compatibility
-		}
-		callErr = statusError(status, detail, callErr)
 		c.log(ctx, profile, "rerank", model, req.OrgID, req.Metadata, latency, Usage{}, callErr)
 		lastErr = callErr
 		if attempt+1 >= attempts || !retryableStatus(status, callErr) {
