@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**部分合入**（`-a` 步骤 1 #176，经整合 #180 → `dba96962`，main CI success）。剩余拆为两段依次执行：**`-a2`** = 步骤 2（同步补全上收 `Completion`）+ 步骤 5（探针）；**`-b`** = 步骤 3（`CompletionStream`）+ 步骤 4（Embedding/Rerank 上收），`-b` 等 `-a2` 合入后再开。REFACTOR-HTTP-CLIENT-001 等这两段都合入。
+- 状态：**部分合入**（`-a` 步骤 1 #176，经整合 #180 → `dba96962`，main CI success）。剩余拆为两段依次执行：**`-a2`**（步骤 2 同步补全上收 + 步骤 5 探针）已提交 [PR #181](https://github.com/wei500L/newwei/pull/181) Ready（head `503a191c`，普通 CI success），待合入；**`-b`** = 步骤 3（`CompletionStream`）+ 步骤 4（Embedding/Rerank 上收），`-b` 等 `-a2` 合入后再开。REFACTOR-HTTP-CLIENT-001 等这两段都合入。
 - 规划基线：`origin/main = 67f31754`；规划时间：2026-11-06。
 - 来源：第一轮 REFACTOR 交付记录中的“剩余问题”（见总计划“第一轮结果与第二轮候选”）。
 - 前置：无（第二轮 A 波）；并行：与 CRAWLWORKER、CLEANUP 并行。
@@ -22,12 +22,12 @@
 
 ## 交付记录 -a2（编码窗口填写：步骤 2 + 步骤 5）
 
-- 分支 / PR / Ready：
-- 最终 head SHA：
-- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：
-- 实际范围 / 排除项：
-- 有意行为变更：
-- 剩余问题：
+- 分支 / PR / Ready：`codex/refactor-llm-client-a2` / [#181](https://github.com/wei500L/newwei/pull/181) / Ready（非 draft）。
+- 最终 head SHA：`503a191c3d8b59575254452049c1a1c28d4c2257`（其后仅追加本交付记录的文档提交）。
+- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：run [42369322352](https://github.com/wei500L/newwei/actions/runs/42369322352)，event `pull_request`，head `503a191c`，`conclusion=success`；`verify` / `vector-integration` / `api-go-user-settings-integration` / `globe-vendor` 均 success，`contract-baseline-regen` / `go-modules-regen` skipped（skipped 不算通过）。
+- 实际范围 / 排除项：**步骤 2** 在 `internal/litellmcompat/run.go` 新增共享完成引擎 `Attempt`/`AttemptObserver`/`CompletionPlan`/`(*Client).RunCompletion`（主模型→fallback→每模型重试/指数退避→每尝试回调；`Stop` 错误终止整链），并新增 `NewSettingsClient`（从已读快照解析 profile）/`WithHTTP`/`postWithLimit`。publicportal 的 `brief`、`KG`、`rss 翻译`、`hottest`、`clustering`、`assistant`（非流式 `Complete`）与 `crawlfrontierllm.complete` 均改为经 `ResolveProfile` + `RunCompletion`，删除各自重复的 fallback/retry/observer 循环；请求体构造与响应/错误解析保留在各表面，observer 经适配器继续产出原 typed attempt（model/modelIndex/attempt/success/err/latency/usage/apSurface/governance/authMode/targetProfileID 不变，含 `x-litellm-response-cost` 头解析）。**步骤 5** `llmgatewayops` 探针 POST 改走 `postBodyOnce`（`litellmcompat.PostOnce`），管理类 POST 仍走原 `do()`，重建同一 `upstreamResponse`/`upstreamError`（状态码/耗时/错误文案不变）；`llmlogs/probe.go` 为纯 Mongo 日志写入器，无 chat-completions HTTP 或 profile 解密，本步无需修改。**排除**：步骤 3 流式 `CompletionStream` 与步骤 4 Embedding/Rerank 留待 `-b`；`assistant_stream.go` 流式路径未改。
+- 有意行为变更：无对外 HTTP/GraphQL/Socket 契约变更。细节：crawl 多 choice 响应仅取首个 choice 的 content（请求从不请求 n>1）；probe POST 不再发送 `Accept: application/json, text/plain, */*`（`PostOnce` 仅设 `Content-Type`/`Authorization`）。
+- 剩余问题：`-b`（流式 + Embedding/Rerank，含 assistant 流式与非流式统一）未做；本机具备 Go module cache，已对受影响包执行 `go build`/`go vet`/`go test ./...` 作补充自检并通过，但最终运行证据以精确 head 的普通 CI 为准；未连接真实 LiteLLM/MySQL/Redis/Mongo，未部署、未实网验证。
 
 ## 交付记录 -b（编码窗口填写：步骤 3 + 步骤 4）
 
