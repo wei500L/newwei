@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // This file adds the NewsNow hottest cluster-insight completion surface. It
@@ -88,130 +90,91 @@ func NewHottestClusterCompleter(settings BriefSettingsReader, env GatewayEnv) Ho
 	return newGateway(settings, env)
 }
 
-type hottestClusterOutcome struct {
-	Content string
-	Model   string
-	Usage   HottestClusterUsage
-}
-
 // CompleteHottestClusterInsights walks the primary model followed by the
-// configured fallbacks and performs one HTTP attempt per configured retry.
+// configured fallbacks through the shared completion engine, one attempt per
+// configured retry.
 func (g *gatewayClient) CompleteHottestClusterInsights(ctx context.Context, req HottestClusterRequest) (HottestClusterResult, error) {
-	profile, err := g.resolveRssProfile(ctx)
+	profile, client, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return HottestClusterResult{}, err
 	}
-	models := uniqueModels(append([]string{profile.Model}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return HottestClusterResult{}, errors.New("completion model is not configured")
-	}
 	metadata := HottestClusterMetadata{Feature: hottestClusterFeature, Clusters: req.ClusterCount}
-	var last error
-	for modelIndex, model := range models {
-		attempts := profile.MaxRetries
-		if attempts < 1 {
-			attempts = 1
-		}
-		delay := time.Second
-		for attempt := 1; attempt <= attempts; attempt++ {
-			outcome, status, attemptErr := g.completeHottestClusterModel(ctx, profile, model, modelIndex+1, attempt, req, metadata)
-			if attemptErr == nil {
-				return HottestClusterResult{
-					Content: outcome.Content,
-					Model:   outcome.Model,
-					Usage:   outcome.Usage,
-				}, nil
-			}
-			if isRssStopError(attemptErr) {
-				return HottestClusterResult{}, attemptErr
-			}
-			last = attemptErr
-			if !retryable(status, attemptErr) || attempt >= attempts {
-				break
-			}
-			if sleepErr := sleep(ctx, delay); sleepErr != nil {
-				return HottestClusterResult{}, sleepErr
-			}
-			if delay < 10*time.Second {
-				delay *= 2
-				if delay > 10*time.Second {
-					delay = 10 * time.Second
-				}
-			}
-		}
+	plan := litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     uniqueModels(append([]string{profile.Model}, profile.FallbackModels...)),
+		MaxRetries: profile.MaxRetries,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildHottestClusterPayload(profile, model, req, metadata)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseHottestClusterCompletion(profile, status, header, raw, model)
+		},
+		Stop:     isRssStopError,
+		Observer: hottestAttemptAdapter{next: req.Observer, metadata: metadata},
 	}
-	if last == nil {
-		last = errors.New("LiteLLM completion failed")
+	response, err := client.RunCompletion(ctx, profile, plan)
+	if err != nil {
+		return HottestClusterResult{}, err
 	}
-	return HottestClusterResult{}, last
+	return HottestClusterResult{Content: response.Content, Model: response.Model, Usage: hottestClusterUsageFromBrief(briefUsageFromShared(response.Usage))}, nil
 }
 
-// completeHottestClusterModel performs exactly one attempt and reports it.
-func (g *gatewayClient) completeHottestClusterModel(ctx context.Context, profile completionProfile, model string, modelIndex, attempt int, req HottestClusterRequest, metadata HottestClusterMetadata) (hottestClusterOutcome, int, error) {
-	started := time.Now()
-	outcome, status, err := g.postHottestClusterCompletion(ctx, profile, model, req, metadata)
-	attemptModel := outcome.Model
-	if attemptModel == "" {
-		attemptModel = model
-	}
-	if req.Observer != nil {
-		req.Observer.ObserveHottestClusterAttempt(ctx, HottestClusterAttempt{
-			OrgID:                     req.OrgID,
-			Model:                     attemptModel,
-			APISurface:                profile.APISurface,
-			GatewayProfileID:          profile.ID,
-			GovernanceApplied:         profile.GovernanceApplied,
-			AuthMode:                  profile.authMode(),
-			GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			Attempt:                   attempt,
-			ModelIndex:                modelIndex,
-			Success:                   err == nil,
-			Err:                       err,
-			Latency:                   time.Since(started),
-			Usage:                     outcome.Usage,
-			Metadata:                  metadata,
-		})
-	}
-	return outcome, status, err
-}
-
-func (g *gatewayClient) postHottestClusterCompletion(ctx context.Context, profile completionProfile, model string, req HottestClusterRequest, metadata HottestClusterMetadata) (hottestClusterOutcome, int, error) {
-	body, primary, fallback, err := buildHottestClusterPayload(profile, model, req, metadata)
-	if err != nil {
-		return hottestClusterOutcome{}, 0, err
-	}
-	status, raw, header, err := g.post(ctx, profile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = g.post(ctx, profile, fallback, body)
-	}
-	if err != nil {
-		return hottestClusterOutcome{}, status, err
-	}
+func parseHottestClusterCompletion(profile litellmcompat.Profile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
 	if status < 200 || status >= 300 {
 		detail := rssErrorDetail(raw)
 		if rssGuardrailSignal(detail) {
-			return hottestClusterOutcome{}, status, errRssContentBlocked
+			return litellmcompat.CompletionResponse{}, errRssContentBlocked
 		}
-		if issue, ok := rssCompatibilityIssue(status, detail, profile.APISurface); ok {
-			return hottestClusterOutcome{}, status, &rssCompatibilityError{message: issue}
+		if issue, ok := rssCompatibilityIssue(status, detail, string(profile.APISurface)); ok {
+			return litellmcompat.CompletionResponse{}, &rssCompatibilityError{message: issue}
 		}
-		return hottestClusterOutcome{}, status, errors.New(rssHTTPErrorMessage(status, detail))
+		return litellmcompat.CompletionResponse{}, errors.New(rssHTTPErrorMessage(status, detail))
 	}
 	if isGuardrailBlockedResponse(raw) {
-		return hottestClusterOutcome{}, status, errRssContentBlocked
+		return litellmcompat.CompletionResponse{}, errRssContentBlocked
 	}
-	content := strings.TrimSpace(completionText(raw, profile.APISurface))
-	usage := hottestClusterUsageFromBrief(completionUsage(raw, profile.APISurface))
+	content := strings.TrimSpace(completionText(raw, string(profile.APISurface)))
+	usage := completionUsage(raw, string(profile.APISurface))
 	if cost, ok := extractCostHeader(header); ok {
 		usage.CostUSD = &cost
 	}
 	// Empty content is a successful exchange; the caller falls back to the
 	// heuristic labels without retrying another model.
-	return hottestClusterOutcome{
-		Content: content,
-		Model:   rssResponseModel(raw, model),
-		Usage:   usage,
-	}, status, nil
+	return litellmcompat.CompletionResponse{Content: content, Model: rssResponseModel(raw, model), Usage: briefUsageToShared(usage)}, nil
+}
+
+// hottestAttemptAdapter maps the shared attempt record onto the hottest attempt
+// type.
+type hottestAttemptAdapter struct {
+	next     HottestClusterObserver
+	metadata HottestClusterMetadata
+}
+
+func (a hottestAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
+	}
+	model := attempt.ResponseModel
+	if model == "" {
+		model = attempt.Model
+	}
+	a.next.ObserveHottestClusterAttempt(context.Background(), HottestClusterAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Attempt:                   attempt.Attempt,
+		ModelIndex:                attempt.ModelIndex,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     hottestClusterUsageFromBrief(briefUsageFromShared(attempt.Usage)),
+		Metadata:                  a.metadata,
+	})
 }
 
 // hottestChatMessage is one OpenAI-compatible message.
@@ -258,7 +221,7 @@ type hottestResponsesPayload struct {
 // buildHottestClusterPayload mirrors LiteLlmService.resolveResponseFormat: the
 // explicit schema is sent when the profile mode is json_schema, json_object
 // replaces it and none omits it.
-func buildHottestClusterPayload(profile completionProfile, model string, req HottestClusterRequest, metadata HottestClusterMetadata) ([]byte, string, string, error) {
+func buildHottestClusterPayload(profile litellmcompat.Profile, model string, req HottestClusterRequest, metadata HottestClusterMetadata) ([]byte, string, string, error) {
 	messages := []hottestChatMessage{
 		{Role: "system", Content: req.System},
 		{Role: "user", Content: req.User},
@@ -267,10 +230,10 @@ func buildHottestClusterPayload(profile completionProfile, model string, req Hot
 	if !profile.SendMetadata {
 		metadataPayload = nil
 	}
-	format := hottestClusterResponseFormat(profile.ResponseFormatMode)
+	format := hottestClusterResponseFormat(string(profile.ResponseFormatMode))
 	var payload any
 	var primary, fallback string
-	if profile.APISurface == "responses" {
+	if profile.APISurface == litellmcompat.APISurfaceResponses {
 		responses := hottestResponsesPayload{
 			Model:           model,
 			Input:           messages,

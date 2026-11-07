@@ -122,6 +122,58 @@ func newGateway(store BriefSettingsReader, env GatewayEnv) *gatewayClient {
 	return &gatewayClient{store: store, env: env, http: &http.Client{}}
 }
 
+// litellmConfig maps the public portal GatewayEnv onto the shared litellmcompat
+// environment defaults so profile resolution and completion behave identically
+// to the other LLM clients.
+func (g *gatewayClient) litellmConfig() litellmcompat.Config {
+	return litellmcompat.Config{
+		EncryptionKey:          g.env.EncryptionKey,
+		APIBase:                defaultString(g.env.APIBase, "http://localhost:4001"),
+		Timeout:                time.Duration(defaultPositive(g.env.TimeoutMs, 60_000)) * time.Millisecond,
+		MaxRetries:             defaultPositive(g.env.MaxRetries, 3),
+		DefaultTemperature:     defaultFloat(g.env.Temperature, 0.2),
+		DefaultTopP:            defaultFloat(g.env.TopP, 0.9),
+		DefaultMaxOutputTokens: defaultPositive(g.env.MaxOutputTokens, 2_048),
+	}
+}
+
+// resolveLitellmProfile resolves the completion profile and returns the shared
+// client that runs the chain, so the public portal no longer keeps its own
+// retry/fallback/transport loop.
+func (g *gatewayClient) resolveLitellmProfile(ctx context.Context) (litellmcompat.Profile, *litellmcompat.Client, error) {
+	profiles, governance, err := g.store.GatewaySettings(ctx)
+	if err != nil {
+		return litellmcompat.Profile{}, nil, err
+	}
+	client := litellmcompat.NewSettingsClient(profiles, governance, g.litellmConfig()).WithHTTP(g.http)
+	profile, err := client.ResolveProfile(ctx, litellmcompat.ProfileCompletion)
+	if err != nil {
+		return litellmcompat.Profile{}, nil, translateProfileError(err)
+	}
+	if profile.Model == "" || profile.APIBase == "" {
+		return litellmcompat.Profile{}, nil, errors.New("completion model is not configured")
+	}
+	return profile, client, nil
+}
+
+func briefUsageFromShared(usage litellmcompat.Usage) BriefCompletionUsage {
+	return BriefCompletionUsage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CostUSD:          usage.CostUSD,
+	}
+}
+
+func briefUsageToShared(usage BriefCompletionUsage) litellmcompat.Usage {
+	return litellmcompat.Usage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CostUSD:          usage.CostUSD,
+	}
+}
+
 // errContentBlocked marks an upstream guardrail refusal that arrived as a
 // successful HTTP response. Nest stops the fallback chain on this error, so the
 // completion loop must not paper over it with another model.
@@ -135,110 +187,56 @@ type completionOutcome struct {
 
 // Complete keeps the public portal story-detail call shape: content only.
 func (g *gatewayClient) Complete(ctx context.Context, req completionRequest) (string, error) {
-	outcome, err := g.complete(ctx, req, nil)
+	outcome, _, err := g.completeDetailed(ctx, req, nil)
 	if err != nil {
 		return "", err
 	}
 	return outcome.Content, nil
 }
 
-// complete resolves the active profile and walks the primary model followed by
-// the configured fallback models. observer, when not nil, receives one record
-// per real HTTP attempt.
-func (g *gatewayClient) complete(ctx context.Context, req completionRequest, observer BriefCompletionObserver) (completionOutcome, error) {
-	profiles, governance, err := g.store.GatewaySettings(ctx)
+// runBrief resolves the active profile through the shared litellmcompat resolver
+// and delegates the primary+fallback retry chain, transport and per-attempt
+// observer to litellmcompat.RunCompletion. The request body and response/error
+// parsing stay here so the public portal wire contract is byte-for-byte unchanged.
+func (g *gatewayClient) runBrief(ctx context.Context, req completionRequest, observer BriefCompletionObserver) (completionOutcome, string, error) {
+	profile, client, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
-		return completionOutcome{}, err
+		return completionOutcome{}, "", err
 	}
-	profile, err := resolveCompletionProfile(profiles, governance, g.env)
+	plan := litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     uniqueModels(append([]string{profile.Model}, profile.FallbackModels...)),
+		MaxRetries: profile.MaxRetries,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildBriefPayload(profile, model, req)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseBriefCompletion(profile, status, header, raw, model)
+		},
+		Stop: func(err error) bool {
+			return errors.Is(err, errContentBlocked)
+		},
+		Observer: briefAttemptAdapter{next: observer, metadata: req.Metadata},
+	}
+	response, err := client.RunCompletion(ctx, profile, plan)
 	if err != nil {
-		return completionOutcome{}, err
+		return completionOutcome{}, "", err
 	}
-	models := uniqueModels(append([]string{profile.Model}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return completionOutcome{}, errors.New("completion model is not configured")
-	}
-	var last error
-	for index, model := range models {
-		outcome, err := g.completeModel(ctx, profile, model, index, req, observer)
-		if err == nil {
-			return outcome, nil
-		}
-		if status, ok := err.(*StatusError); ok {
-			return completionOutcome{}, status
-		}
-		if errors.Is(err, errContentBlocked) {
-			// A guardrail refusal terminates the whole chain; Nest does not
-			// retry it against a fallback model.
-			return completionOutcome{}, err
-		}
-		last = err
-	}
-	if last == nil {
-		last = errors.New("completion failed")
-	}
-	return completionOutcome{}, last
+	return completionOutcome{Content: response.Content, Usage: briefUsageFromShared(response.Usage)}, response.Model, nil
 }
 
-func (g *gatewayClient) completeModel(ctx context.Context, profile completionProfile, model string, modelIndex int, req completionRequest, observer BriefCompletionObserver) (completionOutcome, error) {
-	attempts := profile.MaxRetries
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := time.Second
-	var last error
-	for attempt := 0; attempt < attempts; attempt++ {
-		started := time.Now()
-		outcome, status, err := g.postCompletion(ctx, profile, model, req)
-		if observer != nil {
-			observer.ObserveBriefCompletionAttempt(ctx, BriefCompletionAttempt{
-				OrgID:                     req.OrgID,
-				Model:                     model,
-				APISurface:                profile.APISurface,
-				GatewayProfileID:          profile.ID,
-				GovernanceApplied:         profile.GovernanceApplied,
-				AuthMode:                  profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				Attempt:                   attempt + 1,
-				ModelIndex:                modelIndex + 1,
-				Success:                   err == nil,
-				Err:                       err,
-				Latency:                   time.Since(started),
-				Usage:                     outcome.Usage,
-				Metadata:                  req.Metadata,
-			})
-		}
-		if err == nil {
-			return outcome, nil
-		}
-		last = err
-		if errors.Is(err, errContentBlocked) || !retryable(status, err) || attempt+1 >= attempts {
-			return completionOutcome{}, err
-		}
-		if sleepErr := sleep(ctx, delay); sleepErr != nil {
-			return completionOutcome{}, sleepErr
-		}
-		if delay < 10*time.Second {
-			delay *= 2
-			if delay > 10*time.Second {
-				delay = 10 * time.Second
-			}
-		}
-	}
-	return completionOutcome{}, last
-}
-
-func (g *gatewayClient) postCompletion(ctx context.Context, profile completionProfile, model string, req completionRequest) (completionOutcome, int, error) {
+func buildBriefPayload(profile litellmcompat.Profile, model string, req completionRequest) ([]byte, string, string, error) {
 	payload := map[string]any{
 		"temperature": 0.2,
 		"top_p":       0.9,
 	}
-	format := briefResponseFormat(profile.ResponseFormatMode)
+	format := briefResponseFormat(string(profile.ResponseFormatMode))
 	if profile.SendMetadata {
 		payload["metadata"] = req.Metadata
 	}
 	var primary, fallback string
-	if profile.APISurface == "responses" {
+	if profile.APISurface == litellmcompat.APISurfaceResponses {
 		payload["model"] = model
 		payload["input"] = []map[string]string{
 			{"role": "system", "content": req.System},
@@ -264,38 +262,57 @@ func (g *gatewayClient) postCompletion(ctx context.Context, profile completionPr
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return completionOutcome{}, 0, err
+		return nil, "", "", err
 	}
-	status, raw, header, err := g.post(ctx, profile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = g.post(ctx, profile, fallback, body)
-	}
-	if err != nil {
-		return completionOutcome{}, status, err
-	}
+	return body, primary, fallback, nil
+}
+
+func parseBriefCompletion(profile litellmcompat.Profile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
 	if status < 200 || status >= 300 {
-		return completionOutcome{}, status, errors.New("model gateway request failed")
+		return litellmcompat.CompletionResponse{}, errors.New("model gateway request failed")
 	}
-	content := completionText(raw, profile.APISurface)
-	usage := completionUsage(raw, profile.APISurface)
+	content := completionText(raw, string(profile.APISurface))
+	usage := completionUsage(raw, string(profile.APISurface))
 	if cost, ok := extractCostHeader(header); ok {
 		usage.CostUSD = &cost
 	}
+	response := litellmcompat.CompletionResponse{Content: content, Model: model, Usage: briefUsageToShared(usage)}
 	if strings.TrimSpace(content) == "" {
 		if isGuardrailBlockedResponse(raw) {
-			return completionOutcome{Usage: usage}, status, errContentBlocked
+			return response, errContentBlocked
 		}
-		return completionOutcome{Usage: usage}, status, errors.New("model gateway returned empty content")
+		return response, errors.New("model gateway returned empty content")
 	}
-	return completionOutcome{Content: content, Usage: usage}, status, nil
+	return response, nil
 }
 
-func (g *gatewayClient) post(ctx context.Context, profile completionProfile, path string, body []byte) (int, []byte, http.Header, error) {
-	timeout := profile.Timeout
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+// briefAttemptAdapter maps the shared attempt record onto the public portal
+// brief attempt type so the existing observers keep receiving their fields.
+type briefAttemptAdapter struct {
+	next     BriefCompletionObserver
+	metadata BriefCompletionMetadata
+}
+
+func (a briefAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
 	}
-	return litellmcompat.PostOnce(ctx, g.http, profile.APIBase, profile.APIKey, path, body, timeout, 2<<20)
+	a.next.ObserveBriefCompletionAttempt(context.Background(), BriefCompletionAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     attempt.Model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Attempt:                   attempt.Attempt,
+		ModelIndex:                attempt.ModelIndex,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     briefUsageFromShared(attempt.Usage),
+		Metadata:                  a.metadata,
+	})
 }
 
 // isGuardrailBlockedResponse mirrors Nest's extractGuardrailBlockedMessage:
@@ -523,6 +540,41 @@ func completionProfileFromShared(profile litellmcompat.Profile) completionProfil
 		MaxOutputTokens:           profile.MaxOutputTokens,
 		GovernanceApplied:         profile.GovernanceApplied,
 		GovernanceAuthMode:        profile.AuthMode,
+		GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
+	}
+}
+
+// sharedProfileFromCompletion projects the public portal completion profile onto
+// the shared profile so the assistant completion surface can delegate its chain
+// to litellmcompat.RunCompletion.
+func sharedProfileFromCompletion(profile completionProfile) litellmcompat.Profile {
+	apiSurface := litellmcompat.APISurfaceChat
+	if profile.APISurface == "responses" {
+		apiSurface = litellmcompat.APISurfaceResponses
+	}
+	formatMode := litellmcompat.ResponseFormatJSONSchema
+	switch profile.ResponseFormatMode {
+	case "none":
+		formatMode = litellmcompat.ResponseFormatNone
+	case "json_object":
+		formatMode = litellmcompat.ResponseFormatJSONObject
+	}
+	return litellmcompat.Profile{
+		ID:                        profile.ID,
+		APIBase:                   profile.APIBase,
+		APIKey:                    profile.APIKey,
+		Model:                     profile.Model,
+		FallbackModels:            profile.FallbackModels,
+		Timeout:                   profile.Timeout,
+		MaxRetries:                profile.MaxRetries,
+		SendMetadata:              profile.SendMetadata,
+		ResponseFormatMode:        formatMode,
+		APISurface:                apiSurface,
+		TopP:                      profile.TopP,
+		Temperature:               profile.Temperature,
+		MaxOutputTokens:           profile.MaxOutputTokens,
+		GovernanceApplied:         profile.GovernanceApplied,
+		AuthMode:                  profile.GovernanceAuthMode,
 		GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
 	}
 }

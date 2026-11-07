@@ -184,7 +184,10 @@ type completionResult struct {
 	Usage   ModelUsage
 }
 
-// complete ports acompletion.
+// complete ports acompletion: it resolves the profile through the shared
+// resolver and delegates the primary+fallback retry chain, transport and
+// per-attempt log to litellmcompat.RunCompletion, keeping the Frontier request
+// shape and error text unchanged.
 func (c *LLMClient) complete(ctx context.Context, request completionRequest) (completionResult, error) {
 	profile, err := c.resolve(ctx, "completion")
 	if err != nil {
@@ -198,80 +201,35 @@ func (c *LLMClient) complete(ctx context.Context, request completionRequest) (co
 		primary = profile.Model
 	}
 	models := uniqueModels(append([]string{primary}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return completionResult{}, errors.New("completion model is not configured")
+	client := litellmcompat.NewSettingsClient(nil, nil, litellmcompat.Config{}).WithHTTP(c.http)
+	response, err := client.RunCompletion(ctx, crawlSharedProfile(profile), litellmcompat.CompletionPlan{
+		OrgID:      request.OrgID,
+		Models:     models,
+		MaxRetries: profile.MaxRetries,
+		MaxBody:    maxResponseBytes,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildCrawlCompletionPayload(profile, model, request)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseCrawlCompletion(profile, status, header, raw, model)
+		},
+		Stop: func(err error) bool {
+			return errors.Is(err, errGuardrailBlocked)
+		},
+		Observer: crawlAttemptAdapter{client: c, metadata: request.Metadata},
+	})
+	if err != nil {
+		return completionResult{}, err
 	}
-	var lastErr error
-	for _, model := range models {
-		result, callErr := c.completeModel(ctx, profile, model, request)
-		if callErr == nil {
-			return result, nil
-		}
-		if errors.Is(callErr, errGuardrailBlocked) {
-			return completionResult{}, callErr
-		}
-		var nested *NestError
-		if errors.As(callErr, &nested) {
-			return completionResult{}, callErr
-		}
-		lastErr = callErr
+	choices := make([]completionChoice, 0, 1)
+	if response.Content != "" {
+		choices = append(choices, completionChoice{Message: struct{ Content string }{Content: response.Content}})
 	}
-	if lastErr == nil {
-		lastErr = errors.New("LiteLLM completion failed")
-	}
-	return completionResult{}, lastErr
+	return completionResult{Choices: choices, Model: response.Model, Usage: modelUsageFromShared(response.Usage)}, nil
 }
 
-func (c *LLMClient) completeModel(ctx context.Context, profile gatewayProfile, model string, request completionRequest) (completionResult, error) {
-	attempts := profile.MaxRetries
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := time.Second
-	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		started := c.now()
-		result, status, callErr := c.postCompletion(ctx, profile, model, request)
-		latency := c.now().Sub(started)
-		apiSurface := "chat_completions"
-		if profile.APISurface == "responses" {
-			apiSurface = "responses"
-		}
-		if callErr == nil {
-			c.writeLog(ctx, RequestLogEntry{
-				OrgID: request.OrgID, RequestType: "completion", Model: result.Model,
-				Status: "success", Latency: latency, Usage: result.Usage,
-				Feature: featureToken(request.Metadata), GatewayProfileID: profile.ID,
-				GovernanceApplied: boolPointer(profile.GovernanceApplied), AuthMode: profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				APISurface:                apiSurface, Metadata: request.Metadata, OccurredAt: c.now(),
-			})
-			return result, nil
-		}
-		c.writeLog(ctx, RequestLogEntry{
-			OrgID: request.OrgID, RequestType: "completion", Model: model,
-			Status: "error", Error: callErr.Error(), Latency: latency,
-			Feature: featureToken(request.Metadata), GatewayProfileID: profile.ID,
-			GovernanceApplied: boolPointer(profile.GovernanceApplied), AuthMode: profile.authMode(),
-			GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			APISurface:                apiSurface, Metadata: request.Metadata, OccurredAt: c.now(),
-		})
-		lastErr = callErr
-		if errors.Is(callErr, errGuardrailBlocked) || !isRetryableStatus(status) || attempt+1 >= attempts {
-			return completionResult{}, callErr
-		}
-		if sleepErr := sleepContext(ctx, delay); sleepErr != nil {
-			return completionResult{}, sleepErr
-		}
-		delay *= 2
-		if delay > 10*time.Second {
-			delay = 10 * time.Second
-		}
-	}
-	return completionResult{}, lastErr
-}
-
-func (c *LLMClient) postCompletion(ctx context.Context, profile gatewayProfile, model string, request completionRequest) (completionResult, int, error) {
+// buildCrawlCompletionPayload renders the Frontier chat/responses body.
+func buildCrawlCompletionPayload(profile gatewayProfile, model string, request completionRequest) ([]byte, string, string, error) {
 	payload := NewObject()
 	payload.SetString("model", model)
 	if profile.APISurface == "responses" {
@@ -301,38 +259,127 @@ func (c *LLMClient) postCompletion(ctx context.Context, profile gatewayProfile, 
 	}
 	body, err := payload.MarshalJSON()
 	if err != nil {
-		return completionResult{}, 0, err
+		return nil, "", "", err
 	}
 	primary, fallback := "/v1/chat/completions", "/chat/completions"
 	if profile.APISurface == "responses" {
 		primary, fallback = "/v1/responses", "/responses"
 	}
-	status, raw, header, err := c.post(ctx, profile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = c.post(ctx, profile, fallback, body)
-	}
-	if err != nil {
-		return completionResult{}, status, err
-	}
-	if status < 200 || status >= 300 {
-		return completionResult{}, status, fmt.Errorf("model gateway request failed with status %d", status)
+	return body, primary, fallback, nil
+}
+
+// parseCrawlCompletion parses one Frontier exchange into the shared result.
+func parseCrawlCompletion(profile gatewayProfile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return litellmcompat.CompletionResponse{}, fmt.Errorf("model gateway request failed with status %d", status)
 	}
 	result, blocked, parseErr := parseCompletion(raw, profile.APISurface, model)
 	if blocked {
-		return completionResult{}, status, errGuardrailBlocked
+		return litellmcompat.CompletionResponse{}, errGuardrailBlocked
 	}
 	if parseErr != nil {
-		return completionResult{}, status, parseErr
+		return litellmcompat.CompletionResponse{}, parseErr
 	}
+	usage := modelUsageToShared(result.Usage)
 	if cost, ok := headerCost(header); ok {
-		result.Usage.CostUSD = &cost
+		usage.CostUSD = &cost
 	}
-	if result.Usage.CostUSD == nil {
+	if usage.CostUSD == nil {
 		if cost, ok := payloadCost(raw); ok {
-			result.Usage.CostUSD = &cost
+			usage.CostUSD = &cost
 		}
 	}
-	return result, status, nil
+	content := ""
+	if len(result.Choices) > 0 {
+		content = result.Choices[0].Message.Content
+	}
+	return litellmcompat.CompletionResponse{Content: content, Model: result.Model, Usage: usage}, nil
+}
+
+// crawlSharedProfile projects the Frontier profile onto the shared profile so
+// RunCompletion can read timeout, auth mode and governance attribution.
+func crawlSharedProfile(profile gatewayProfile) litellmcompat.Profile {
+	apiSurface := litellmcompat.APISurfaceChat
+	if profile.APISurface == "responses" {
+		apiSurface = litellmcompat.APISurfaceResponses
+	}
+	formatMode := litellmcompat.ResponseFormatJSONSchema
+	switch profile.ResponseFormatMode {
+	case "none":
+		formatMode = litellmcompat.ResponseFormatNone
+	case "json_object":
+		formatMode = litellmcompat.ResponseFormatJSONObject
+	}
+	return litellmcompat.Profile{
+		ID:                        profile.ID,
+		APIBase:                   profile.APIBase,
+		APIKey:                    profile.APIKey,
+		Model:                     profile.Model,
+		FallbackModels:            profile.FallbackModels,
+		RerankModel:               profile.RerankModel,
+		RerankFallbackModels:      profile.RerankFallbacks,
+		Timeout:                   profile.Timeout,
+		MaxRetries:                profile.MaxRetries,
+		SendMetadata:              profile.SendMetadata,
+		ResponseFormatMode:        formatMode,
+		APISurface:                apiSurface,
+		TopP:                      profile.TopP,
+		GovernanceApplied:         profile.GovernanceApplied,
+		AuthMode:                  profile.GovernanceAuthMode,
+		GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
+	}
+}
+
+func modelUsageFromShared(usage litellmcompat.Usage) ModelUsage {
+	return ModelUsage{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens, CostUSD: usage.CostUSD}
+}
+
+func modelUsageToShared(usage ModelUsage) litellmcompat.Usage {
+	return litellmcompat.Usage{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens, CostUSD: usage.CostUSD}
+}
+
+// crawlAttemptAdapter writes the per-attempt request log from the shared record.
+type crawlAttemptAdapter struct {
+	client   *LLMClient
+	metadata *Object
+}
+
+func (a crawlAttemptAdapter) ObserveAttempt(ctx context.Context, attempt litellmcompat.Attempt) {
+	if a.client == nil {
+		return
+	}
+	apiSurface := "chat_completions"
+	if attempt.APISurface == litellmcompat.APISurfaceResponses {
+		apiSurface = "responses"
+	}
+	entry := RequestLogEntry{
+		OrgID:                     attempt.OrgID,
+		RequestType:               "completion",
+		Status:                    "success",
+		Latency:                   attempt.Latency,
+		Feature:                   featureToken(a.metadata),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         boolPointer(attempt.GovernanceApplied),
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		APISurface:                apiSurface,
+		Metadata:                  a.metadata,
+		OccurredAt:                a.client.now(),
+	}
+	if attempt.Success {
+		entry.Model = attempt.ResponseModel
+		if entry.Model == "" {
+			entry.Model = attempt.Model
+		}
+		entry.Usage = modelUsageFromShared(attempt.Usage)
+	} else {
+		entry.Model = attempt.Model
+		entry.Status = "error"
+		if attempt.Err != nil {
+			entry.Error = attempt.Err.Error()
+		}
+	}
+	a.client.writeLog(ctx, entry)
 }
 
 // post issues one HTTP attempt.

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // This file adds the news-event clustering LLM backfill completion surface. It
@@ -109,18 +111,11 @@ func NewClusteringDecisionCompleter(settings BriefSettingsReader, env GatewayEnv
 	return newGateway(settings, env)
 }
 
-// clusteringCompletionOutcome is one successful model HTTP exchange.
-type clusteringCompletionOutcome struct {
-	Content string
-	Model   string
-	Usage   ClusteringDecisionUsage
-}
-
 // CompleteClusteringDecision walks the requested model followed by the
-// configured fallback models and performs one HTTP attempt per configured retry.
-// observer, when not nil, receives one record per real attempt.
+// configured fallback models through the shared completion engine, one attempt
+// per configured retry. observer, when not nil, receives one record per attempt.
 func (g *gatewayClient) CompleteClusteringDecision(ctx context.Context, req ClusteringDecisionRequest) (ClusteringDecisionResult, error) {
-	profile, err := g.resolveRssProfile(ctx)
+	profile, client, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return ClusteringDecisionResult{}, err
 	}
@@ -128,125 +123,88 @@ func (g *gatewayClient) CompleteClusteringDecision(ctx context.Context, req Clus
 	if primary == "" {
 		primary = profile.Model
 	}
-	models := uniqueModels(append([]string{primary}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return ClusteringDecisionResult{}, errors.New("completion model is not configured")
-	}
 	metadata := ClusteringDecisionMetadata{
 		Feature:            clusteringDecisionFeature,
 		CandidateCount:     req.CandidateCount,
 		ArticleFingerprint: req.ArticleFingerprint,
 	}
-	var last error
-	for modelIndex, model := range models {
-		attempts := profile.MaxRetries
-		if attempts < 1 {
-			attempts = 1
-		}
-		delay := time.Second
-		for attempt := 1; attempt <= attempts; attempt++ {
-			outcome, status, attemptErr := g.completeClusteringModel(ctx, profile, model, modelIndex+1, attempt, req, metadata)
-			if attemptErr == nil {
-				return ClusteringDecisionResult{
-					Content: outcome.Content,
-					Model:   outcome.Model,
-					Usage:   outcome.Usage,
-				}, nil
-			}
-			if isRssStopError(attemptErr) {
-				return ClusteringDecisionResult{}, attemptErr
-			}
-			last = attemptErr
-			if !retryable(status, attemptErr) || attempt >= attempts {
-				break
-			}
-			if sleepErr := sleep(ctx, delay); sleepErr != nil {
-				return ClusteringDecisionResult{}, sleepErr
-			}
-			if delay < 10*time.Second {
-				delay *= 2
-				if delay > 10*time.Second {
-					delay = 10 * time.Second
-				}
-			}
-		}
+	plan := litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     uniqueModels(append([]string{primary}, profile.FallbackModels...)),
+		MaxRetries: profile.MaxRetries,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildClusteringPayload(profile, model, req, metadata)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseClusteringCompletion(profile, status, header, raw, model)
+		},
+		Stop:     isRssStopError,
+		Observer: clusteringAttemptAdapter{next: req.Observer, metadata: metadata},
 	}
-	if last == nil {
-		last = errors.New("LiteLLM completion failed")
+	response, err := client.RunCompletion(ctx, profile, plan)
+	if err != nil {
+		return ClusteringDecisionResult{}, err
 	}
-	return ClusteringDecisionResult{}, last
+	return ClusteringDecisionResult{Content: response.Content, Model: response.Model, Usage: clusteringUsageFromBrief(briefUsageFromShared(response.Usage))}, nil
 }
 
-// completeClusteringModel performs exactly one attempt and reports it to the
-// observer.
-func (g *gatewayClient) completeClusteringModel(ctx context.Context, profile completionProfile, model string, modelIndex, attempt int, req ClusteringDecisionRequest, metadata ClusteringDecisionMetadata) (clusteringCompletionOutcome, int, error) {
-	started := time.Now()
-	outcome, status, err := g.postClusteringCompletion(ctx, profile, model, req, metadata)
-	attemptModel := outcome.Model
-	if attemptModel == "" {
-		// A failed attempt reports no response model; Nest logs the requested
-		// model in that case.
-		attemptModel = model
-	}
-	if req.Observer != nil {
-		req.Observer.ObserveClusteringDecisionAttempt(ctx, ClusteringDecisionAttempt{
-			OrgID:                     req.OrgID,
-			Model:                     attemptModel,
-			APISurface:                profile.APISurface,
-			GatewayProfileID:          profile.ID,
-			GovernanceApplied:         profile.GovernanceApplied,
-			AuthMode:                  profile.authMode(),
-			GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			Attempt:                   attempt,
-			ModelIndex:                modelIndex,
-			Success:                   err == nil,
-			Err:                       err,
-			Latency:                   time.Since(started),
-			Usage:                     outcome.Usage,
-			Metadata:                  metadata,
-		})
-	}
-	return outcome, status, err
-}
-
-func (g *gatewayClient) postClusteringCompletion(ctx context.Context, profile completionProfile, model string, req ClusteringDecisionRequest, metadata ClusteringDecisionMetadata) (clusteringCompletionOutcome, int, error) {
-	body, primary, fallback, err := buildClusteringPayload(profile, model, req, metadata)
-	if err != nil {
-		return clusteringCompletionOutcome{}, 0, err
-	}
-	status, raw, header, err := g.post(ctx, profile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = g.post(ctx, profile, fallback, body)
-	}
-	if err != nil {
-		return clusteringCompletionOutcome{}, status, err
-	}
+func parseClusteringCompletion(profile litellmcompat.Profile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
 	if status < 200 || status >= 300 {
 		detail := rssErrorDetail(raw)
 		if rssGuardrailSignal(detail) {
-			return clusteringCompletionOutcome{}, status, errRssContentBlocked
+			return litellmcompat.CompletionResponse{}, errRssContentBlocked
 		}
-		if issue, ok := rssCompatibilityIssue(status, detail, profile.APISurface); ok {
-			return clusteringCompletionOutcome{}, status, &rssCompatibilityError{message: issue}
+		if issue, ok := rssCompatibilityIssue(status, detail, string(profile.APISurface)); ok {
+			return litellmcompat.CompletionResponse{}, &rssCompatibilityError{message: issue}
 		}
-		return clusteringCompletionOutcome{}, status, errors.New(rssHTTPErrorMessage(status, detail))
+		return litellmcompat.CompletionResponse{}, errors.New(rssHTTPErrorMessage(status, detail))
 	}
 	if isGuardrailBlockedResponse(raw) {
-		return clusteringCompletionOutcome{}, status, errRssContentBlocked
+		return litellmcompat.CompletionResponse{}, errRssContentBlocked
 	}
-	content := strings.TrimSpace(completionText(raw, profile.APISurface))
-	usage := clusteringUsageFromBrief(completionUsage(raw, profile.APISurface))
+	content := strings.TrimSpace(completionText(raw, string(profile.APISurface)))
+	usage := completionUsage(raw, string(profile.APISurface))
 	if cost, ok := extractCostHeader(header); ok {
 		usage.CostUSD = &cost
 	}
 	// Empty content is a successful exchange: the backfill turns it into a
 	// terminal failure with the NestJS empty-content message instead of trying
 	// another model here.
-	return clusteringCompletionOutcome{
-		Content: content,
-		Model:   rssResponseModel(raw, model),
-		Usage:   usage,
-	}, status, nil
+	return litellmcompat.CompletionResponse{Content: content, Model: rssResponseModel(raw, model), Usage: briefUsageToShared(usage)}, nil
+}
+
+// clusteringAttemptAdapter maps the shared attempt record onto the clustering
+// attempt type.
+type clusteringAttemptAdapter struct {
+	next     ClusteringDecisionObserver
+	metadata ClusteringDecisionMetadata
+}
+
+func (a clusteringAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
+	}
+	model := attempt.ResponseModel
+	if model == "" {
+		model = attempt.Model
+	}
+	a.next.ObserveClusteringDecisionAttempt(context.Background(), ClusteringDecisionAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Attempt:                   attempt.Attempt,
+		ModelIndex:                attempt.ModelIndex,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     clusteringUsageFromBrief(briefUsageFromShared(attempt.Usage)),
+		Metadata:                  a.metadata,
+	})
 }
 
 // clusteringChatMessage is one OpenAI-compatible message. The responses
@@ -297,7 +255,7 @@ type clusteringResponsesPayload struct {
 // explicit response_format is sent only when the profile mode is json_schema;
 // `none` omits it and `json_object` replaces it, exactly like
 // resolveResponseFormat and resolveResponsesTextFormat.
-func buildClusteringPayload(profile completionProfile, model string, req ClusteringDecisionRequest, metadata ClusteringDecisionMetadata) ([]byte, string, string, error) {
+func buildClusteringPayload(profile litellmcompat.Profile, model string, req ClusteringDecisionRequest, metadata ClusteringDecisionMetadata) ([]byte, string, string, error) {
 	messages := []clusteringChatMessage{
 		{Role: "system", Content: req.System},
 		{Role: "user", Content: req.User},
@@ -306,10 +264,10 @@ func buildClusteringPayload(profile completionProfile, model string, req Cluster
 	if !profile.SendMetadata {
 		metadataPayload = nil
 	}
-	format := clusteringResponseFormat(profile.ResponseFormatMode)
+	format := clusteringResponseFormat(string(profile.ResponseFormatMode))
 	var payload any
 	var primary, fallback string
-	if profile.APISurface == "responses" {
+	if profile.APISurface == litellmcompat.APISurfaceResponses {
 		responses := clusteringResponsesPayload{
 			Model:           model,
 			Input:           messages,

@@ -103,30 +103,10 @@ func (g *gatewayClient) CompleteBrief(ctx context.Context, req BriefCompletionRe
 	return BriefCompletionResult{Content: outcome.Content, Model: model, Usage: outcome.Usage}, nil
 }
 
-// completeDetailed wraps complete and additionally reports which model
-// produced the content. The model is captured through a one-shot observer so
-// the attempt loop keeps a single code path.
+// completeDetailed runs the brief chain through the shared completion engine and
+// reports which model produced the content.
 func (g *gatewayClient) completeDetailed(ctx context.Context, req completionRequest, observer BriefCompletionObserver) (completionOutcome, string, error) {
-	recorder := &completedModelRecorder{next: observer}
-	outcome, err := g.complete(ctx, req, recorder)
-	if err != nil {
-		return completionOutcome{}, "", err
-	}
-	return outcome, recorder.model, nil
-}
-
-type completedModelRecorder struct {
-	next  BriefCompletionObserver
-	model string
-}
-
-func (r *completedModelRecorder) ObserveBriefCompletionAttempt(ctx context.Context, attempt BriefCompletionAttempt) {
-	if attempt.Success && r.model == "" {
-		r.model = attempt.Model
-	}
-	if r.next != nil {
-		r.next.ObserveBriefCompletionAttempt(ctx, attempt)
-	}
+	return g.runBrief(ctx, req, observer)
 }
 
 // unavailableBriefCompleter fails every call when the settings reader is

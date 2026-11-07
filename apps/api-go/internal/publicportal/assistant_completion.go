@@ -164,12 +164,9 @@ func NewAssistantLLM(settings BriefSettingsReader, env AssistantGatewayEnv) Assi
 }
 
 // Complete performs one non-streaming completion over the active profile and
-// its fallback chain.
+// its fallback chain. It delegates the chain to litellmcompat.RunCompletion and
+// keeps the assistant request body, guardrail conversion and usage extraction.
 func (c *assistantClient) Complete(ctx context.Context, req AssistantCompletionRequest) (AssistantCompletionResult, error) {
-	return c.complete(ctx, req, false)
-}
-
-func (c *assistantClient) complete(ctx context.Context, req AssistantCompletionRequest, streaming bool) (AssistantCompletionResult, error) {
 	profile, err := c.resolveProfile(ctx)
 	if err != nil {
 		return AssistantCompletionResult{}, err
@@ -178,26 +175,30 @@ func (c *assistantClient) complete(ctx context.Context, req AssistantCompletionR
 	if len(models) == 0 {
 		return AssistantCompletionResult{}, errors.New("LiteLLM completion model is not configured in MySQL gateway profiles")
 	}
-	var lastErr error
-	for index, model := range models {
-		outcome, err := c.completeModel(ctx, profile, model, index+1, req, streaming)
-		if err == nil {
-			return outcome, nil
-		}
-		var guardrail *AssistantGuardrailError
-		if errors.As(err, &guardrail) {
-			return AssistantCompletionResult{}, err
-		}
-		var statusErr *StatusError
-		if errors.As(err, &statusErr) {
-			return AssistantCompletionResult{}, err
-		}
-		lastErr = err
+	client := litellmcompat.NewSettingsClient(nil, nil, litellmcompat.Config{}).WithHTTP(c.http)
+	response, err := client.RunCompletion(ctx, sharedProfileFromCompletion(profile.completionProfile), litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     models,
+		MaxRetries: profile.MaxRetries,
+		Timeout:    req.Timeout,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			body, primary, fallback, _ := c.completionPayload(profile, model, req)
+			return body, primary, fallback, nil
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseAssistantCompletion(profile, req, status, header, raw, model)
+		},
+		Stop: func(err error) bool {
+			var guardrail *AssistantGuardrailError
+			return errors.As(err, &guardrail)
+		},
+		Observer: assistantAttemptAdapter{next: req.Observer, metadata: req.Metadata},
+	})
+	if err != nil {
+		return AssistantCompletionResult{}, err
 	}
-	if lastErr == nil {
-		lastErr = errors.New("LiteLLM completion failed")
-	}
-	return AssistantCompletionResult{}, lastErr
+	return AssistantCompletionResult{Content: response.Content, Model: response.Model, Usage: assistantUsageFromShared(response.Usage)}, nil
 }
 
 func (c *assistantClient) resolveProfile(ctx context.Context) (assistantProfile, error) {
@@ -266,111 +267,6 @@ func assistantModels(profile assistantProfile, requested string) []string {
 		models = append(models, strings.TrimSpace(model))
 	}
 	return uniqueModels(models)
-}
-
-func (c *assistantClient) completeModel(
-	ctx context.Context,
-	profile assistantProfile,
-	model string,
-	modelIndex int,
-	req AssistantCompletionRequest,
-	streaming bool,
-) (AssistantCompletionResult, error) {
-	attempts := profile.MaxRetries
-	if attempts < 1 {
-		attempts = 1
-	}
-	delay := time.Second
-	var lastErr error
-	for attempt := 0; attempt < attempts; attempt++ {
-		started := time.Now()
-		payload, path, fallbackPath, surface := c.completionPayload(profile, model, req)
-		outcome, status, header, err := c.postJSON(ctx, profile, path, fallbackPath, payload, req.Timeout)
-		var usage AssistantUsage
-		guardrails := normalizeAssistantGuardrails(req.Guardrails)
-		if err == nil {
-			usage = assistantUsageFromResponse(outcome, surface)
-			if cost, ok := extractCostHeader(header); ok {
-				usage.CostUSD = &cost
-			}
-			var guardrailErr *AssistantGuardrailError
-			guardrailErr = assistantGuardrailFromResponse(outcome, header, status, guardrails)
-			if guardrailErr != nil {
-				err = guardrailErr
-			} else if status < 200 || status >= 300 {
-				err = fmt.Errorf("LiteLLM request failed (HTTP %d)", status)
-			} else if text := completionText(outcome, surface); strings.TrimSpace(text) != "" {
-				// success below
-			} else {
-				err = errors.New("model gateway returned empty content")
-			}
-		} else if status != 0 {
-			err = fmt.Errorf("LiteLLM request failed (HTTP %d)", status)
-		}
-		if err == nil {
-			content := completionText(outcome, surface)
-			normalizedModel := completionResponseModel(outcome, model)
-			c.observe(ctx, req.Observer, profile, AssistantAttempt{
-				OrgID:                     req.OrgID,
-				Model:                     model,
-				ModelIndex:                modelIndex,
-				APISurface:                surface,
-				GatewayProfileID:          profile.ID,
-				GovernanceApplied:         profile.GovernanceApplied,
-				AuthMode:                  profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				Success:                   true,
-				Latency:                   time.Since(started),
-				Usage:                     usage,
-				Metadata:                  req.Metadata,
-				Streaming:                 streaming,
-			})
-			return AssistantCompletionResult{Content: content, Model: normalizedModel, Usage: usage}, nil
-		}
-		c.observe(ctx, req.Observer, profile, AssistantAttempt{
-			OrgID:                     req.OrgID,
-			Model:                     model,
-			ModelIndex:                modelIndex,
-			APISurface:                surface,
-			GatewayProfileID:          profile.ID,
-			GovernanceApplied:         profile.GovernanceApplied,
-			AuthMode:                  profile.authMode(),
-			GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-			Success:                   false,
-			Err:                       err,
-			Latency:                   time.Since(started),
-			Usage:                     usage,
-			Metadata:                  req.Metadata,
-			Streaming:                 streaming,
-		})
-		lastErr = err
-		var guardrail *AssistantGuardrailError
-		if errors.As(err, &guardrail) {
-			return AssistantCompletionResult{}, err
-		}
-		if !retryable(status, err) || attempt+1 >= attempts {
-			return AssistantCompletionResult{}, err
-		}
-		if sleepErr := sleep(ctx, delay); sleepErr != nil {
-			return AssistantCompletionResult{}, sleepErr
-		}
-		if delay < 10*time.Second {
-			delay *= 2
-			if delay > 10*time.Second {
-				delay = 10 * time.Second
-			}
-		}
-	}
-	if lastErr == nil {
-		lastErr = errors.New("LiteLLM completion exhausted retries")
-	}
-	return AssistantCompletionResult{}, lastErr
-}
-
-func (c *assistantClient) observe(ctx context.Context, observer AssistantAttemptObserver, _ assistantProfile, attempt AssistantAttempt) {
-	if observer != nil {
-		observer.ObserveAssistantAttempt(ctx, attempt)
-	}
 }
 
 // completionPayload builds the request body and endpoint for the active API
@@ -479,28 +375,62 @@ func resolveChatResponseFormat(raw json.RawMessage, mode string) any {
 	return decoded
 }
 
-func (c *assistantClient) postJSON(
-	ctx context.Context,
-	profile assistantProfile,
-	primaryPath, fallbackPath string,
-	body []byte,
-	timeout time.Duration,
-) ([]byte, int, http.Header, error) {
-	status, raw, header, err := c.post(ctx, profile, primaryPath, body, timeout)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = c.post(ctx, profile, fallbackPath, body, timeout)
+func parseAssistantCompletion(profile assistantProfile, req AssistantCompletionRequest, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+	surface := profile.APISurface
+	usage := assistantUsageFromResponse(raw, surface)
+	if cost, ok := extractCostHeader(header); ok {
+		usage.CostUSD = &cost
 	}
-	return raw, status, header, err
+	response := litellmcompat.CompletionResponse{Model: completionResponseModel(raw, model), Usage: assistantUsageToShared(usage)}
+	if guardrailErr := assistantGuardrailFromResponse(raw, header, status, normalizeAssistantGuardrails(req.Guardrails)); guardrailErr != nil {
+		return response, guardrailErr
+	}
+	if status < 200 || status >= 300 {
+		return response, fmt.Errorf("LiteLLM request failed (HTTP %d)", status)
+	}
+	content := completionText(raw, surface)
+	if strings.TrimSpace(content) == "" {
+		return response, errors.New("model gateway returned empty content")
+	}
+	response.Content = content
+	return response, nil
 }
 
-func (c *assistantClient) post(ctx context.Context, profile assistantProfile, path string, body []byte, timeout time.Duration) (int, []byte, http.Header, error) {
-	if timeout <= 0 {
-		timeout = profile.Timeout
+// assistantAttemptAdapter maps the shared attempt record onto the assistant
+// attempt type (non-streaming).
+type assistantAttemptAdapter struct {
+	next     AssistantAttemptObserver
+	metadata AssistantRequestMetadata
+}
+
+func (a assistantAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
 	}
-	if timeout <= 0 {
-		timeout = 60 * time.Second
-	}
-	return litellmcompat.PostOnce(ctx, c.http, profile.APIBase, profile.APIKey, path, body, timeout, 2<<20)
+	a.next.ObserveAssistantAttempt(context.Background(), AssistantAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     attempt.Model,
+		ModelIndex:                attempt.ModelIndex,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     assistantUsageFromShared(attempt.Usage),
+		Metadata:                  a.metadata,
+		Streaming:                 false,
+	})
+}
+
+func assistantUsageFromShared(usage litellmcompat.Usage) AssistantUsage {
+	return AssistantUsage{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens, CostUSD: usage.CostUSD}
+}
+
+func assistantUsageToShared(usage AssistantUsage) litellmcompat.Usage {
+	return litellmcompat.Usage{PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens, TotalTokens: usage.TotalTokens, CostUSD: usage.CostUSD}
 }
 
 func assistantUsageFromResponse(raw []byte, surface string) AssistantUsage {

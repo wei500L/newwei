@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
 
 // This file adds the knowledge-graph completion surface. It reuses the gateway
@@ -156,11 +158,7 @@ var errKGContentBlocked = errors.New("model gateway blocked the request by guard
 // KGModels resolves the active completion profile and returns the primary model
 // followed by the configured fallback models.
 func (g *gatewayClient) KGModels(ctx context.Context) ([]string, error) {
-	profiles, governance, err := g.store.GatewaySettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	profile, err := resolveCompletionProfile(profiles, governance, g.env)
+	profile, _, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -168,14 +166,10 @@ func (g *gatewayClient) KGModels(ctx context.Context) ([]string, error) {
 }
 
 // KGComplete walks the requested model followed by the configured fallback
-// models and performs the configured attempts per model. observer, when not
-// nil, receives one record per real attempt.
+// models through the shared completion engine. observer, when not nil, receives
+// one record per real attempt.
 func (g *gatewayClient) KGComplete(ctx context.Context, req KGCompletionRequest) (KGCompletionResult, error) {
-	profiles, governance, err := g.store.GatewaySettings(ctx)
-	if err != nil {
-		return KGCompletionResult{}, err
-	}
-	profile, err := resolveCompletionProfile(profiles, governance, g.env)
+	profile, client, err := g.resolveLitellmProfile(ctx)
 	if err != nil {
 		return KGCompletionResult{}, err
 	}
@@ -183,129 +177,48 @@ func (g *gatewayClient) KGComplete(ctx context.Context, req KGCompletionRequest)
 	if requested == "" {
 		requested = profile.Model
 	}
-	models := uniqueModels(append([]string{requested}, profile.FallbackModels...))
-	if len(models) == 0 {
-		return KGCompletionResult{}, errors.New("completion model is not configured")
-	}
-
-	var last error
-	for index, model := range models {
-		outcome, attemptErr := g.completeKGModel(ctx, profile, model, index+1, req)
-		if attemptErr == nil {
-			return KGCompletionResult{
-				Content: outcome.Content,
-				Model:   outcome.Model,
-				Usage:   outcome.Usage,
-			}, nil
-		}
-		if isKGStopError(attemptErr) {
-			return KGCompletionResult{}, attemptErr
-		}
-		last = attemptErr
-	}
-	if last == nil {
-		last = errors.New("LiteLLM completion failed")
-	}
-	return KGCompletionResult{}, last
-}
-
-// kgCompletionOutcome is one successful model HTTP exchange.
-type kgCompletionOutcome struct {
-	Content string
-	Model   string
-	Usage   KGCompletionUsage
-}
-
-// completeKGModel performs the configured attempts for one model and reports
-// every attempt to the observer.
-func (g *gatewayClient) completeKGModel(
-	ctx context.Context,
-	profile completionProfile,
-	model string,
-	modelIndex int,
-	req KGCompletionRequest,
-) (kgCompletionOutcome, error) {
 	attempts := req.MaxRetries
 	if attempts < 1 {
 		attempts = 1
 	}
-	delay := time.Second
-	var last error
-	for attempt := 0; attempt < attempts; attempt++ {
-		started := time.Now()
-		outcome, status, err := g.postKGCompletion(ctx, profile, model, req)
-		attemptModel := outcome.Model
-		if attemptModel == "" {
-			// A failed attempt reports no response model; Nest logs the
-			// requested model in that case.
-			attemptModel = model
-		}
-		if req.Observer != nil {
-			req.Observer.ObserveKGCompletionAttempt(ctx, KGCompletionAttempt{
-				OrgID:                     req.OrgID,
-				Model:                     attemptModel,
-				APISurface:                profile.APISurface,
-				GatewayProfileID:          profile.ID,
-				GovernanceApplied:         profile.GovernanceApplied,
-				AuthMode:                  profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				Attempt:                   attempt + 1,
-				ModelIndex:                modelIndex,
-				Success:                   err == nil,
-				Err:                       err,
-				Latency:                   time.Since(started),
-				Usage:                     outcome.Usage,
-				Metadata:                  req.Metadata,
-			})
-		}
-		if err == nil {
-			return outcome, nil
-		}
-		last = err
-		if errors.Is(err, errKGContentBlocked) || !retryable(status, err) || attempt+1 >= attempts {
-			return kgCompletionOutcome{}, err
-		}
-		if sleepErr := sleep(ctx, delay); sleepErr != nil {
-			return kgCompletionOutcome{}, sleepErr
-		}
-		if delay < 10*time.Second {
-			delay *= 2
-			if delay > 10*time.Second {
-				delay = 10 * time.Second
-			}
-		}
+	plan := litellmcompat.CompletionPlan{
+		OrgID:      req.OrgID,
+		Models:     uniqueModels(append([]string{requested}, profile.FallbackModels...)),
+		MaxRetries: attempts,
+		Timeout:    time.Duration(req.TimeoutMS) * time.Millisecond,
+		MaxBody:    2 << 20,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildKGPayload(profile, model, req)
+		},
+		Parse: func(status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
+			return parseKGCompletion(profile, status, header, raw, model)
+		},
+		Stop:     isKGStopError,
+		Observer: kgAttemptAdapter{next: req.Observer, metadata: req.Metadata},
 	}
-	return kgCompletionOutcome{}, last
+	response, err := client.RunCompletion(ctx, profile, plan)
+	if err != nil {
+		return KGCompletionResult{}, err
+	}
+	return KGCompletionResult{Content: response.Content, Model: response.Model, Usage: briefUsageFromShared(response.Usage)}, nil
 }
 
-// postKGCompletion sends one attempt and normalizes the response. It mirrors
-// executeWithRetry / executeResponsesCompletionWithRetry payload construction
-// for the knowledge-graph call site.
-func (g *gatewayClient) postKGCompletion(
-	ctx context.Context,
-	profile completionProfile,
-	model string,
-	req KGCompletionRequest,
-) (kgCompletionOutcome, int, error) {
-	temperature := 0.0
-	topP := profile.TopP
+func buildKGPayload(profile litellmcompat.Profile, model string, req KGCompletionRequest) ([]byte, string, string, error) {
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 120
 	}
-
-	format := kgResponseFormat(profile.ResponseFormatMode, req.SchemaName, req.Schema)
+	format := kgResponseFormat(string(profile.ResponseFormatMode), req.SchemaName, req.Schema)
 	payload := map[string]any{
 		"model":       model,
-		"temperature": temperature,
-		"top_p":       topP,
+		"temperature": 0.0,
+		"top_p":       profile.TopP,
 	}
 	if profile.SendMetadata {
 		payload["metadata"] = req.Metadata
 	}
-
 	var primary, fallback string
-	if profile.APISurface == "responses" {
+	if profile.APISurface == litellmcompat.APISurfaceResponses {
 		payload["input"] = []map[string]string{
 			{"role": "system", "content": req.System},
 			{"role": "user", "content": req.User},
@@ -327,37 +240,63 @@ func (g *gatewayClient) postKGCompletion(
 		}
 		primary, fallback = "/v1/chat/completions", "/chat/completions"
 	}
-
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return kgCompletionOutcome{}, 0, err
+		return nil, "", "", err
 	}
-	callProfile := profile
-	if req.TimeoutMS > 0 {
-		callProfile.Timeout = time.Duration(req.TimeoutMS) * time.Millisecond
-	}
-	status, raw, header, err := g.post(ctx, callProfile, primary, body)
-	if err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed) {
-		status, raw, header, err = g.post(ctx, callProfile, fallback, body)
-	}
-	if err != nil {
-		return kgCompletionOutcome{}, status, err
-	}
+	return body, primary, fallback, nil
+}
+
+func parseKGCompletion(profile litellmcompat.Profile, status int, header http.Header, raw []byte, model string) (litellmcompat.CompletionResponse, error) {
 	if status < 200 || status >= 300 {
-		return kgCompletionOutcome{}, status, errors.New("model gateway request failed")
+		return litellmcompat.CompletionResponse{}, errors.New("model gateway request failed")
 	}
-	content := completionText(raw, profile.APISurface)
-	usage := completionUsage(raw, profile.APISurface)
+	content := completionText(raw, string(profile.APISurface))
+	usage := completionUsage(raw, string(profile.APISurface))
 	if cost, ok := extractCostHeader(header); ok {
 		usage.CostUSD = &cost
 	}
+	response := litellmcompat.CompletionResponse{Content: content, Model: completionResponseModel(raw, model), Usage: briefUsageToShared(usage)}
 	if strings.TrimSpace(content) == "" {
 		if isGuardrailBlockedResponse(raw) {
-			return kgCompletionOutcome{Usage: usage}, status, errKGContentBlocked
+			return response, errKGContentBlocked
 		}
-		return kgCompletionOutcome{Usage: usage}, status, errors.New("model gateway returned empty content")
+		return response, errors.New("model gateway returned empty content")
 	}
-	return kgCompletionOutcome{Content: content, Model: completionResponseModel(raw, model), Usage: usage}, status, nil
+	return response, nil
+}
+
+// kgAttemptAdapter maps the shared attempt record onto the knowledge-graph
+// attempt type. A failed attempt reports the requested model, matching NestJS.
+type kgAttemptAdapter struct {
+	next     KGCompletionObserver
+	metadata KGCompletionMetadata
+}
+
+func (a kgAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
+	}
+	model := attempt.ResponseModel
+	if model == "" {
+		model = attempt.Model
+	}
+	a.next.ObserveKGCompletionAttempt(context.Background(), KGCompletionAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Attempt:                   attempt.Attempt,
+		ModelIndex:                attempt.ModelIndex,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     briefUsageFromShared(attempt.Usage),
+		Metadata:                  a.metadata,
+	})
 }
 
 // kgResponseFormat reproduces resolveResponseFormat /
