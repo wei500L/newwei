@@ -2,21 +2,20 @@ package publicportal
 
 // This file is the narrow analysis streaming client. It never persists a
 // result, publishes an event or writes a log; the analysis domain owns those
-// side effects.
+// side effects. The transport, fallback/retry policy, SSE framing, chat/responses
+// decoding and usage/cost merge live in litellmcompat.CompletionStream; this file
+// keeps only the analysis prompt/event mapping and its error decoration.
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
 
@@ -106,10 +105,6 @@ func (e *AnalysisCompatibilityError) Error() string {
 	return e.Message
 }
 
-// errSSEDone stops the reader as soon as the [DONE] frame is received, exactly
-// like LiteLlmService.stream, which must not wait for the upstream to close.
-var errSSEDone = errors.New("analysis stream done")
-
 // AnalysisStreamer streams an analysis completion through the active gateway
 // profile. It is a narrow surface: it never writes the result document, never
 // publishes events and never logs by itself.
@@ -134,10 +129,10 @@ func (unavailableAnalysisStreamer) StreamAnalysis(context.Context, AnalysisStrea
 }
 
 // StreamAnalysis walks the primary model followed by the configured fallback
-// models. A model may be replaced only before any chunk was yielded. Once a
-// delta or a finish-only chunk was yielded, an error is final: the text of two
-// models is never concatenated. Guardrail and compatibility errors are final
-// immediately.
+// models through the shared CompletionStream engine. A model may be replaced
+// only before any chunk was yielded. Once a delta or a finish-only chunk was
+// yielded, an error is final: the text of two models is never concatenated.
+// Guardrail and compatibility errors are final immediately.
 func (g *gatewayClient) StreamAnalysis(ctx context.Context, req AnalysisStreamRequest) (AnalysisStreamResult, error) {
 	if req.OnChunk == nil {
 		return AnalysisStreamResult{}, errors.New("analysis stream requires a chunk callback")
@@ -162,62 +157,53 @@ func (g *gatewayClient) StreamAnalysis(ctx context.Context, req AnalysisStreamRe
 		return AnalysisStreamResult{}, errors.New("completion model is not configured")
 	}
 
-	var last error
-	for _, model := range models {
-		started := false
-		startedAt := time.Now()
-		usage, streamErr := g.streamAnalysisModel(ctx, profile, model, req, func(chunk AnalysisStreamChunk) error {
-			started = true
-			return req.OnChunk(chunk)
-		})
-		if req.Observer != nil {
-			attempt := AnalysisStreamAttempt{
-				OrgID:                     req.OrgID,
-				Model:                     model,
-				APISurface:                profile.APISurface,
-				GatewayProfileID:          profile.ID,
-				GovernanceApplied:         profile.GovernanceApplied,
-				AuthMode:                  profile.authMode(),
-				GovernanceTargetProfileID: profile.GovernanceTargetProfileID,
-				Success:                   streamErr == nil,
-				Err:                       streamErr,
-				Latency:                   time.Since(startedAt),
-				Usage:                     usage,
+	client := litellmcompat.NewSettingsClient(nil, nil, litellmcompat.Config{}).WithHTTP(g.http)
+	result, err := client.CompletionStream(ctx, sharedProfileFromCompletion(profile), litellmcompat.StreamPlan{
+		OrgID:      req.OrgID,
+		Models:     models,
+		MaxRetries: 1,
+		Timeout:    req.Timeout,
+		Build: func(model string) ([]byte, string, string, error) {
+			return buildAnalysisStreamPayload(profile, model, req)
+		},
+		ClassifyStatus: func(_ litellmcompat.Profile, _ string, status int, _ http.Header, raw []byte) error {
+			upstream := &upstreamStatusError{Status: status, Detail: sanitizeUpstreamDetail(raw)}
+			return g.decorateAnalysisStreamError(upstream, profile)
+		},
+		ClassifyNonSSE: func(_ litellmcompat.Profile, _ string, _ int, header http.Header, raw []byte) error {
+			if message := guardrailMessageFromBody(raw); message != "" {
+				return &AnalysisGuardrailError{Message: message}
 			}
-			req.Observer.ObserveAnalysisStreamAttempt(ctx, attempt)
-		}
-		if streamErr == nil {
-			return AnalysisStreamResult{Model: model, Usage: usage}, nil
-		}
-		if ctx.Err() != nil {
-			return AnalysisStreamResult{}, streamErr
-		}
-		var guardrail *AnalysisGuardrailError
-		if errors.As(streamErr, &guardrail) {
-			return AnalysisStreamResult{}, streamErr
-		}
-		var compatibility *AnalysisCompatibilityError
-		if errors.As(streamErr, &compatibility) {
-			return AnalysisStreamResult{}, streamErr
-		}
-		if started {
-			return AnalysisStreamResult{}, streamErr
-		}
-		last = streamErr
+			surfaceName := "LiteLLM stream"
+			if profile.APISurface == "responses" {
+				surfaceName = "LiteLLM responses stream"
+			}
+			return fmt.Errorf("%s returned non-SSE response (%s)", surfaceName, header.Get("Content-Type"))
+		},
+		Stop: func(err error) bool {
+			var guardrail *AnalysisGuardrailError
+			if errors.As(err, &guardrail) {
+				return true
+			}
+			var compatibility *AnalysisCompatibilityError
+			return errors.As(err, &compatibility)
+		},
+		OnEvent: func(event litellmcompat.StreamEvent) error {
+			return req.OnChunk(AnalysisStreamChunk{Model: event.Model, Delta: event.Delta, FinishReason: event.FinishReason})
+		},
+		Observer:        analysisStreamAttemptAdapter{next: req.Observer},
+		ApplyCostHeader: true,
+		FinishStarts:    true,
+	})
+	if err != nil {
+		return AnalysisStreamResult{}, err
 	}
-	if last == nil {
-		last = errors.New("LiteLLM stream failed")
-	}
-	return AnalysisStreamResult{}, last
+	return AnalysisStreamResult{Model: result.Model, Usage: analysisUsageFromShared(result.Usage)}, nil
 }
 
 // analysisStreamPayload is the closed set of request bodies for the two
 // supported api surfaces. It keeps the payload union typed at the HTTP
 // boundary instead of passing an untyped map.
-type analysisStreamPayload interface {
-	analysisPayload()
-}
-
 type chatStreamPayload struct {
 	Model       string            `json:"model"`
 	Messages    []AnalysisMessage `json:"messages"`
@@ -232,8 +218,6 @@ type responsesMessage struct {
 	Content string `json:"content"`
 }
 
-func (chatStreamPayload) analysisPayload() {}
-
 type responsesStreamPayload struct {
 	Model           string             `json:"model"`
 	Input           []responsesMessage `json:"input"`
@@ -243,29 +227,11 @@ type responsesStreamPayload struct {
 	Stream          bool               `json:"stream"`
 }
 
-func (responsesStreamPayload) analysisPayload() {}
-
-// streamAnalysisModel performs one model request and yields delta/finish chunks.
-// The accumulated usage is returned even when the stream fails so the request
-// log can record what the gateway reported before the failure.
-func (g *gatewayClient) streamAnalysisModel(
-	ctx context.Context,
-	profile completionProfile,
-	model string,
-	req AnalysisStreamRequest,
-	onChunk func(AnalysisStreamChunk) error,
-) (AnalysisStreamUsage, error) {
-	// Analysis passes ANALYSIS_LLM_TIMEOUT_MS directly. Zero means no timeout,
-	// exactly like an axios timeout of 0; the gateway env timeout belongs to
-	// the brief/RSS completion surfaces.
-	if req.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, req.Timeout)
-		defer cancel()
-	}
-
-	usage := AnalysisStreamUsage{}
-	var payload analysisStreamPayload
+// buildAnalysisStreamPayload renders the analysis chat/responses body for one
+// model. Analysis passes ANALYSIS_LLM_TIMEOUT_MS directly (a zero timeout means
+// no deadline), and keeps its profile temperature/top_p/max tokens.
+func buildAnalysisStreamPayload(profile completionProfile, model string, req AnalysisStreamRequest) ([]byte, string, string, error) {
+	var payload any
 	var primary, fallback string
 	if profile.APISurface == "responses" {
 		input := make([]responsesMessage, 0, len(req.Messages))
@@ -292,73 +258,45 @@ func (g *gatewayClient) streamAnalysisModel(
 		}
 		primary, fallback = "/v1/chat/completions", "/chat/completions"
 	}
-
-	response, err := g.postAnalysisStream(ctx, profile, primary, fallback, payload)
+	body, err := json.Marshal(payload)
 	if err != nil {
-		return usage, g.decorateAnalysisStreamError(err, profile)
+		return nil, "", "", err
 	}
-	defer response.Body.Close()
-	if cost, ok := extractCostHeader(response.Header); ok {
-		usage.CostUSD = &cost
-	}
-
-	surfaceName := "LiteLLM stream"
-	if profile.APISurface == "responses" {
-		surfaceName = "LiteLLM responses stream"
-	}
-	contentTypeRaw := response.Header.Get("Content-Type")
-	contentType := strings.ToLower(contentTypeRaw)
-	if contentType != "" && !strings.Contains(contentType, "text/event-stream") {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 128*1024))
-		if message := guardrailMessageFromBody(body); message != "" {
-			return usage, &AnalysisGuardrailError{Message: message}
-		}
-		return usage, fmt.Errorf("%s returned non-SSE response (%s)", surfaceName, contentTypeRaw)
-	}
-
-	err = readSSE(ctx, response.Body, func(data string) error {
-		if strings.TrimSpace(data) == "[DONE]" {
-			return errSSEDone
-		}
-		var frame sseFrame
-		if err := json.Unmarshal([]byte(data), &frame); err != nil {
-			return nil
-		}
-		mergeAnalysisUsage(&usage, frame.usage())
-		if cost := frame.costUSD(); cost != nil {
-			usage.CostUSD = cost
-		}
-		if profile.APISurface == "responses" {
-			chunk, err := frame.responsesChunk()
-			if err != nil {
-				return err
-			}
-			if chunk != nil {
-				chunk.Model = model
-				return onChunk(*chunk)
-			}
-		}
-		if chunk := frame.chatChunk(model); chunk != nil {
-			return onChunk(*chunk)
-		}
-		return nil
-	})
-	if err != nil && !errors.Is(err, errSSEDone) {
-		return usage, err
-	}
-	return usage, nil
+	return body, primary, fallback, nil
 }
 
-func (g *gatewayClient) postAnalysisStream(ctx context.Context, profile completionProfile, primary, fallback string, payload analysisStreamPayload) (*http.Response, error) {
-	response, err := g.postAnalysisStreamPath(ctx, profile, primary, payload)
-	if err == nil {
-		return response, nil
+// analysisStreamAttemptAdapter maps the shared attempt record onto the analysis
+// attempt type so the existing observer keeps receiving its fields.
+type analysisStreamAttemptAdapter struct {
+	next AnalysisStreamObserver
+}
+
+func (a analysisStreamAttemptAdapter) ObserveAttempt(_ context.Context, attempt litellmcompat.Attempt) {
+	if a.next == nil {
+		return
 	}
-	var status *upstreamStatusError
-	if errors.As(err, &status) && (status.Status == http.StatusNotFound || status.Status == http.StatusMethodNotAllowed) {
-		return g.postAnalysisStreamPath(ctx, profile, fallback, payload)
+	a.next.ObserveAnalysisStreamAttempt(context.Background(), AnalysisStreamAttempt{
+		OrgID:                     attempt.OrgID,
+		Model:                     attempt.Model,
+		APISurface:                string(attempt.APISurface),
+		GatewayProfileID:          attempt.GatewayProfileID,
+		GovernanceApplied:         attempt.GovernanceApplied,
+		AuthMode:                  attempt.AuthMode,
+		GovernanceTargetProfileID: attempt.GovernanceTargetProfileID,
+		Success:                   attempt.Success,
+		Err:                       attempt.Err,
+		Latency:                   attempt.Latency,
+		Usage:                     analysisUsageFromShared(attempt.Usage),
+	})
+}
+
+func analysisUsageFromShared(usage litellmcompat.Usage) AnalysisStreamUsage {
+	return AnalysisStreamUsage{
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CostUSD:          usage.CostUSD,
 	}
-	return nil, err
 }
 
 type upstreamStatusError struct {
@@ -371,36 +309,6 @@ func (e *upstreamStatusError) Error() string {
 		return "model gateway request failed"
 	}
 	return fmt.Sprintf("LiteLLM request failed (HTTP %d): %s", e.Status, e.Detail)
-}
-
-func (g *gatewayClient) postAnalysisStreamPath(ctx context.Context, profile completionProfile, path string, payload analysisStreamPayload) (*http.Response, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	endpoint := strings.TrimRight(profile.APIBase, "/") + path
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "text/event-stream")
-	if profile.APIKey != "" {
-		request.Header.Set("Authorization", "Bearer "+profile.APIKey)
-	}
-	response, err := g.http.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	if response.StatusCode >= 200 && response.StatusCode < 300 {
-		return response, nil
-	}
-	defer response.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(response.Body, 128*1024))
-	return nil, &upstreamStatusError{
-		Status: response.StatusCode,
-		Detail: sanitizeUpstreamDetail(raw),
-	}
 }
 
 // decorateAnalysisStreamError mirrors the compatibility and guardrail
@@ -431,205 +339,6 @@ func (g *gatewayClient) decorateAnalysisStreamError(err error, profile completio
 		return &AnalysisCompatibilityError{Message: err.Error()}
 	}
 	return err
-}
-
-// sseFrame is the subset of an SSE data frame the analysis chain consumes.
-// json.RawMessage leaves are protocol values, never business data.
-type sseFrame struct {
-	Type         string            `json:"type"`
-	Delta        json.RawMessage   `json:"delta"`
-	OutputText   json.RawMessage   `json:"output_text"`
-	Error        json.RawMessage   `json:"error"`
-	Message      json.RawMessage   `json:"message"`
-	Messages     []json.RawMessage `json:"messages"`
-	Choices      []sseChoice       `json:"choices"`
-	Usage        *sseUsage         `json:"usage"`
-	ResponseCost json.RawMessage   `json:"response_cost"`
-	Cost         json.RawMessage   `json:"cost"`
-	// Some OpenAI-compatible gateways put the usage counters on the root of
-	// the final frame instead of a usage object.
-	PromptTokens     json.RawMessage `json:"prompt_tokens"`
-	InputTokens      json.RawMessage `json:"input_tokens"`
-	CompletionTokens json.RawMessage `json:"completion_tokens"`
-	OutputTokens     json.RawMessage `json:"output_tokens"`
-	TotalTokens      json.RawMessage `json:"total_tokens"`
-}
-
-type sseChoice struct {
-	Delta struct {
-		Content json.RawMessage `json:"content"`
-	} `json:"delta"`
-	FinishReason json.RawMessage `json:"finish_reason"`
-}
-
-type sseUsage struct {
-	PromptTokens     json.RawMessage `json:"prompt_tokens"`
-	InputTokens      json.RawMessage `json:"input_tokens"`
-	CompletionTokens json.RawMessage `json:"completion_tokens"`
-	OutputTokens     json.RawMessage `json:"output_tokens"`
-	TotalTokens      json.RawMessage `json:"total_tokens"`
-	ResponseCost     json.RawMessage `json:"response_cost"`
-}
-
-func (f sseFrame) responsesChunk() (*AnalysisStreamChunk, error) {
-	if f.Type == "response.error" || f.Type == "error" {
-		message := rawText(f.Message)
-		if message == "" {
-			message = rawErrorMessage(f.Error)
-		}
-		if message == "" {
-			message = "Responses stream failed"
-		}
-		return nil, errors.New(message)
-	}
-	if f.Type == "response.completed" {
-		return &AnalysisStreamChunk{FinishReason: "stop"}, nil
-	}
-	delta := rawText(f.Delta)
-	if delta == "" {
-		delta = rawText(f.OutputText)
-	}
-	if delta != "" && strings.Contains(f.Type, "output_text") {
-		return &AnalysisStreamChunk{Delta: delta}, nil
-	}
-	return nil, nil
-}
-
-func (f sseFrame) chatChunk(model string) *AnalysisStreamChunk {
-	if len(f.Choices) == 0 {
-		return nil
-	}
-	choice := f.Choices[0]
-	delta := rawText(choice.Delta.Content)
-	finish := rawText(choice.FinishReason)
-	if delta != "" {
-		return &AnalysisStreamChunk{Model: model, Delta: delta, FinishReason: finish}
-	}
-	if finish != "" {
-		return &AnalysisStreamChunk{Model: model, FinishReason: finish}
-	}
-	return nil
-}
-
-func (f sseFrame) usage() *sseUsage {
-	if f.Usage != nil && f.Usage.hasTokensOrCost() {
-		return f.Usage
-	}
-	if len(f.PromptTokens) > 0 || len(f.InputTokens) > 0 ||
-		len(f.CompletionTokens) > 0 || len(f.OutputTokens) > 0 ||
-		len(f.TotalTokens) > 0 || len(f.ResponseCost) > 0 {
-		return &sseUsage{
-			PromptTokens:     f.PromptTokens,
-			InputTokens:      f.InputTokens,
-			CompletionTokens: f.CompletionTokens,
-			OutputTokens:     f.OutputTokens,
-			TotalTokens:      f.TotalTokens,
-			ResponseCost:     f.ResponseCost,
-		}
-	}
-	// An empty usage object still carries no accounting; return it so the
-	// caller can see a response_cost leaf if one was present.
-	return f.Usage
-}
-
-func (u *sseUsage) hasTokensOrCost() bool {
-	if u == nil {
-		return false
-	}
-	return len(u.PromptTokens) > 0 || len(u.InputTokens) > 0 ||
-		len(u.CompletionTokens) > 0 || len(u.OutputTokens) > 0 ||
-		len(u.TotalTokens) > 0 || len(u.ResponseCost) > 0
-}
-
-func (f sseFrame) costUSD() *float64 {
-	for _, raw := range []json.RawMessage{f.ResponseCost, f.Cost} {
-		if value := rawNumber(raw); value != nil {
-			return value
-		}
-	}
-	if f.Usage != nil {
-		return rawNumber(f.Usage.ResponseCost)
-	}
-	return nil
-}
-
-func mergeAnalysisUsage(target *AnalysisStreamUsage, frame *sseUsage) {
-	if target == nil || frame == nil {
-		return
-	}
-	if value := firstNumber(frame.PromptTokens, frame.InputTokens); value != nil {
-		target.PromptTokens = value
-	}
-	if value := firstNumber(frame.CompletionTokens, frame.OutputTokens); value != nil {
-		target.CompletionTokens = value
-	}
-	if value := rawNumber(frame.TotalTokens); value != nil {
-		target.TotalTokens = value
-	} else if target.TotalTokens == nil && target.PromptTokens != nil {
-		if target.CompletionTokens != nil {
-			sum := *target.PromptTokens + *target.CompletionTokens
-			target.TotalTokens = &sum
-		} else {
-			prompt := *target.PromptTokens
-			target.TotalTokens = &prompt
-		}
-	}
-}
-
-func firstNumber(values ...json.RawMessage) *float64 {
-	for _, raw := range values {
-		if value := rawNumber(raw); value != nil {
-			return value
-		}
-	}
-	return nil
-}
-
-func rawNumber(raw json.RawMessage) *float64 {
-	text := strings.TrimSpace(string(raw))
-	if text == "" || text == "null" {
-		return nil
-	}
-	if strings.HasPrefix(text, `"`) {
-		var quoted string
-		if err := json.Unmarshal(raw, &quoted); err != nil {
-			return nil
-		}
-		text = strings.TrimSpace(quoted)
-	}
-	value, err := strconv.ParseFloat(text, 64)
-	if err != nil {
-		return nil
-	}
-	return &value
-}
-
-func rawText(raw json.RawMessage) string {
-	text := strings.TrimSpace(string(raw))
-	if text == "" || text == "null" {
-		return ""
-	}
-	if strings.HasPrefix(text, `"`) {
-		var decoded string
-		if err := json.Unmarshal(raw, &decoded); err != nil {
-			return ""
-		}
-		return decoded
-	}
-	return ""
-}
-
-func rawErrorMessage(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var record struct {
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(raw, &record); err == nil && strings.TrimSpace(record.Message) != "" {
-		return strings.TrimSpace(record.Message)
-	}
-	return rawText(raw)
 }
 
 // guardrailMessageFromBody recognizes a guardrail refusal that arrived as a
@@ -700,47 +409,30 @@ func containsAny(value string, needles []string) bool {
 	return false
 }
 
-// readSSE dispatches the `data` field of each SSE event. It tolerates CRLF,
-// comments, multi-line data, blank frames and network chunk boundaries; the
-// bufio reader reassembles UTF-8 sequences that split across reads.
-func readSSE(ctx context.Context, body io.Reader, onData func(data string) error) error {
-	reader := bufio.NewReaderSize(body, 64*1024)
-	var dataLines []string
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			line = strings.TrimSuffix(line, "\n")
-			line = strings.TrimSuffix(line, "\r")
-			if line == "" {
-				if len(dataLines) > 0 {
-					if dispatchErr := onData(strings.Join(dataLines, "\n")); dispatchErr != nil {
-						return dispatchErr
-					}
-					dataLines = nil
-				}
-			} else if !strings.HasPrefix(line, ":") {
-				field, value, found := strings.Cut(line, ":")
-				if found && strings.HasPrefix(value, " ") {
-					value = value[1:]
-				}
-				if field == "data" {
-					dataLines = append(dataLines, value)
-				}
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				if len(dataLines) > 0 {
-					if dispatchErr := onData(strings.Join(dataLines, "\n")); dispatchErr != nil {
-						return dispatchErr
-					}
-				}
-				return nil
-			}
-			return err
-		}
+func rawText(raw json.RawMessage) string {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return ""
 	}
+	if strings.HasPrefix(text, `"`) {
+		var decoded string
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return ""
+		}
+		return decoded
+	}
+	return ""
+}
+
+func rawErrorMessage(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var record struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &record); err == nil && strings.TrimSpace(record.Message) != "" {
+		return strings.TrimSpace(record.Message)
+	}
+	return rawText(raw)
 }

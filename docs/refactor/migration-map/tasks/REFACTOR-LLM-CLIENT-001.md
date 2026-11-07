@@ -31,9 +31,9 @@
 
 ## 交付记录 -b（编码窗口填写：步骤 3 + 步骤 4）
 
-- 分支 / PR / Ready：
-- 最终 head SHA：
-- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：
-- 实际范围 / 排除项：
-- 有意行为变更：
-- 剩余问题：
+- 分支 / PR / Ready：`codex/refactor-llm-client-b` / [#182](https://github.com/wei500L/newwei/pull/182) / Ready（非 draft）。
+- 最终 head SHA：`83c1aa308c9519c7ed0f54a5c01f698f862a001c`（其后仅追加本交付记录的文档提交）。
+- 普通 CI run 与结论（`gh run view --json conclusion,headSha,jobs`）：run [42372744624](https://github.com/wei500L/newwei/actions/runs/42372744624)，event `pull_request`，head `83c1aa30`，`conclusion=success`；`verify` / `vector-integration` / `api-go-user-settings-integration` / `globe-vendor` 均 success，`contract-baseline-regen` / `go-modules-regen` skipped（skipped 不算通过）。
+- 实际范围 / 排除项：**步骤 3** 新增 `internal/litellmcompat/stream.go`（`StreamPlan`/`(*Client).CompletionStream`），统一 SSE 传输、404/405 路径回退、每模型重试+指数退避、ctx 取消即停读并关闭上游 body、chat/responses 两种块解码、usage/cost 合并、每次尝试 `AttemptObserver`；`analysis_stream.go` 与 `assistant_stream.go` 改调它，只保留各自业务事件映射与错误装饰（删除本地 `readSSE`/`sseFrame`/`streamModels`/`consumeStream` 等整套副本）；回退门控用 `FinishStarts` 区分 analysis（finish-only 也算已输出）与 assistant（仅 delta）。**步骤 4** `llmembed.Embed`/`Rerank` 改走 `litellmcompat.Client.Embedding`/`Rerank`（删除 `parseEmbeddings`/`postWithRetry`/`metadataPayload`）；`crawlfrontierllm.rerank` 改走新增的 `litellmcompat.Client.RerankWithProfile` + 每次尝试 `Observer`（保留自带 profile 解析覆盖与 frontier 请求日志），删除 `rerankModel`/`postRerank`/`parseRerankResults`。`archive_port.go` 已使用 litellmcompat，未重复改动。**排除**：无（步骤 5 探针已由 `-a2` 完成；步骤 6 只读能力展示已由 `-a` 完成）。
+- 有意行为变更：无对外 HTTP/GraphQL/Socket 契约、状态码、文案、请求体字段名/`omitempty`/`stream` 语义变更。内部细微差异：① assistant 流式单帧行上限由 2MB 改为不设上限（统一采用 analysis 的 `bufio.Reader` 多行 SSE 解析）；② assistant 流式 usage 合并改为 analysis 超集（额外识别根级 token/成本头，标准响应结果不变）；③ `llmembed.Rerank` 经 `litellmcompat.Rerank` 会新增内部 fallback 指标计数（不影响返回与日志文档）；④ `llmembed` 的 embedding/rerank 请求体改用具名结构体序列化，字段集合一致、JSON 键顺序可能不同（无测试断言其字节序）。
+- 剩余问题：本任务（`-a`/`-a2`/`-b`）全部完成。本机另执行 `go build ./...`、`go vet ./...`、`go test ./...`（apps/api-go）作为补充自检并通过；最终运行证据以精确 head 的普通 CI 为准；未连接真实 LiteLLM/MySQL/Redis/Mongo，未部署、未实网验证。
