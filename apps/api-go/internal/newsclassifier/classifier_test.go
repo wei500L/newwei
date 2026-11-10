@@ -106,7 +106,7 @@ func TestClassifyFusesThreeLayers(t *testing.T) {
 	if result.Method != "llm+embedding+rerank" {
 		t.Fatalf("method = %s", result.Method)
 	}
-	if result.Confidence == nil || !approxEqual(*result.Confidence, 0.95) {
+	if result.Confidence == nil || !approxEqual(*result.Confidence, 0.93) {
 		t.Fatalf("confidence = %v", result.Confidence)
 	}
 	if result.Reason == nil || *result.Reason != "llm reason" {
@@ -118,7 +118,7 @@ func TestClassifyFusesThreeLayers(t *testing.T) {
 	if len(result.Candidates) != 2 || result.Candidates[0].Path != "a" || result.Candidates[1].Path != "b" {
 		t.Fatalf("candidates = %+v", result.Candidates)
 	}
-	if !approxEqual(result.Candidates[1].Score, 0.3) {
+	if !approxEqual(result.Candidates[1].Score, 0.02) {
 		t.Fatalf("b score = %v", result.Candidates[1].Score)
 	}
 }
@@ -128,6 +128,12 @@ func TestClassifyLowConfidenceFallsBackToRule(t *testing.T) {
 	settings.EnableEmbedding = false
 	settings.EnableRerank = false
 	settings.MinConfidence = 0.99
+	// The rule fallback must find its path in the org taxonomy, so this custom
+	// taxonomy keeps the LLM candidate path and the finance rule path.
+	settings.Taxonomy = []TaxonomyNode{
+		{Path: "a", DisplayName: "A", Description: "A node", LegacyCategory: "tech"},
+		{Path: "finance/macro/monetary-policy", DisplayName: "Monetary Policy", Description: "mp", LegacyCategory: "finance"},
+	}
 	model := &fakeModel{
 		completion: func(litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
 			return llmCandidates(`{"path":"a","score":0.4}`), nil
@@ -154,6 +160,9 @@ func TestClassifyEmptyWeightedFallsBackToRule(t *testing.T) {
 	settings.EnableLlm = false
 	settings.EnableEmbedding = false
 	settings.EnableRerank = false
+	// Rule fallback path must exist in the taxonomy, so use the default taxonomy
+	// which contains tech/ai/model-release.
+	settings.Taxonomy = defaultTaxonomy
 	session := NewSession(Deps{Client: &fakeModel{}, Settings: fixedSettings{settings}, SourcePolicies: fixedPolicy{}})
 	result, err := session.Classify(context.Background(), "org", CleanedNews{Title: "OpenAI model release"}, Options{})
 	if err != nil {
@@ -197,7 +206,9 @@ func TestClassifySourceCategoryAuthority(t *testing.T) {
 	}
 }
 
-func TestRerankNormalizationEqualScores(t *testing.T) {
+// L3: rerank scores are used raw, so two equal upstream scores stay equal and
+// are not collapsed to 1.0.
+func TestRerankPreservesUpstreamScoreWhenEqual(t *testing.T) {
 	model := &fakeModel{
 		rerank: func(litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error) {
 			return litellmcompat.RerankResponse{Results: []litellmcompat.RerankResult{
@@ -214,12 +225,14 @@ func TestRerankNormalizationEqualScores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerank: %v", err)
 	}
-	if len(scores) != 2 || scores[0].Score != 1 || scores[1].Score != 1 {
+	if len(scores) != 2 || !approxEqual(scores[0].Score, 0.42) || !approxEqual(scores[1].Score, 0.42) {
 		t.Fatalf("scores = %+v", scores)
 	}
 }
 
-func TestRerankNormalizationMinMax(t *testing.T) {
+// L3: no min-max normalization, so 0.8/0.2 keep their absolute relevance instead
+// of becoming 1/0.
+func TestRerankUsesAbsoluteUpstreamScores(t *testing.T) {
 	model := &fakeModel{
 		rerank: func(litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error) {
 			return litellmcompat.RerankResponse{Results: []litellmcompat.RerankResult{
@@ -236,7 +249,53 @@ func TestRerankNormalizationMinMax(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rerank: %v", err)
 	}
-	if scores[0].Score != 1 || scores[1].Score != 0 {
+	if len(scores) != 2 || !approxEqual(scores[0].Score, 0.8) || !approxEqual(scores[1].Score, 0.2) {
+		t.Fatalf("scores = %+v", scores)
+	}
+}
+
+// L3: a single rerank hit with score 0.2 must stay 0.2, not become 1.0.
+func TestRerankSingleResultKeepsRawScore(t *testing.T) {
+	model := &fakeModel{
+		rerank: func(litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error) {
+			return litellmcompat.RerankResponse{Results: []litellmcompat.RerankResult{
+				{Index: 0, Score: 0.2},
+			}}, nil
+		},
+	}
+	session := NewSession(Deps{Client: model})
+	taxonomy := testTaxonomy()
+	scores, err := session.runRerankLayer(context.Background(), "org", "q", []string{"a"}, map[string]TaxonomyNode{
+		"a": taxonomy[0],
+	}, 6, "")
+	if err != nil {
+		t.Fatalf("rerank: %v", err)
+	}
+	if len(scores) != 1 || !approxEqual(scores[0].Score, 0.2) {
+		t.Fatalf("scores = %+v", scores)
+	}
+}
+
+// L3: an out-of-range logit score is mapped through the logistic function
+// instead of being clamped or min-maxed.
+func TestRerankLogitScoreUsesSigmoid(t *testing.T) {
+	model := &fakeModel{
+		rerank: func(litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error) {
+			return litellmcompat.RerankResponse{Results: []litellmcompat.RerankResult{
+				{Index: 0, Score: 2.0},
+			}}, nil
+		},
+	}
+	session := NewSession(Deps{Client: model})
+	taxonomy := testTaxonomy()
+	scores, err := session.runRerankLayer(context.Background(), "org", "q", []string{"a"}, map[string]TaxonomyNode{
+		"a": taxonomy[0],
+	}, 6, "")
+	if err != nil {
+		t.Fatalf("rerank: %v", err)
+	}
+	// sigmoid(2.0) = 0.8807970779778823
+	if len(scores) != 1 || !approxEqual(scores[0].Score, 0.8807970779778823) {
 		t.Fatalf("scores = %+v", scores)
 	}
 }
@@ -353,5 +412,149 @@ func TestEmbeddingLayerReusesTaxonomyVectorsWithinOneTask(t *testing.T) {
 	}
 	if len(inputs) != 2 || inputs[0] != 3 || inputs[1] != 1 {
 		t.Fatalf("embedding inputs = %v, want [3 1]", inputs)
+	}
+}
+
+// L2: when neither LLM nor embedding produced candidates, rerank must score the
+// full leaf set instead of an arbitrary prefix of the declared taxonomy.
+func TestRerankWithoutCandidatesUsesAllLeafNodes(t *testing.T) {
+	taxonomy := []TaxonomyNode{
+		{Path: "tech", DisplayName: "Tech", Description: "tech", LegacyCategory: "tech"},
+		{Path: "tech/ai/model-release", DisplayName: "AI", Description: "ai", LegacyCategory: "ai"},
+		{Path: "tech/cyber/security-incident", DisplayName: "Cyber", Description: "cyber", LegacyCategory: "intel"},
+		{Path: "finance/markets/equities", DisplayName: "Equities", Description: "eq", LegacyCategory: "finance"},
+	}
+	var documentCount int
+	model := &fakeModel{
+		rerank: func(req litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error) {
+			documentCount = len(req.Documents)
+			results := make([]litellmcompat.RerankResult, 0, len(req.Documents))
+			for index := range req.Documents {
+				results = append(results, litellmcompat.RerankResult{Index: index, Score: 0.1 * float64(index+1)})
+			}
+			return litellmcompat.RerankResponse{Results: results}, nil
+		},
+	}
+	settings := baseSettings()
+	settings.EnableLlm = false
+	settings.EnableEmbedding = false
+	settings.EnableRerank = true
+	settings.MinConfidence = 0
+	settings.RerankTopN = 10
+	settings.Taxonomy = taxonomy
+	session := NewSession(Deps{Client: model, Settings: fixedSettings{settings}, SourcePolicies: fixedPolicy{}})
+	result, err := session.Classify(context.Background(), "org", CleanedNews{Title: "an article"}, Options{})
+	if err != nil {
+		t.Fatalf("classify: %v", err)
+	}
+	if documentCount != 3 {
+		t.Fatalf("rerank documents = %d, want 3 leaf nodes (parent excluded)", documentCount)
+	}
+	// Leaf order is [tech/ai/model-release, tech/cyber/security-incident,
+	// finance/markets/equities]; the highest score lands on the last leaf.
+	if result.CategoryPath == nil || *result.CategoryPath != "finance/markets/equities" {
+		t.Fatalf("path = %v", result.CategoryPath)
+	}
+}
+
+func TestTaxonomyLeafPathsExcludeParents(t *testing.T) {
+	taxonomy := []TaxonomyNode{
+		{Path: "tech", LegacyCategory: "tech"},
+		{Path: "tech/ai/model-release", LegacyCategory: "ai"},
+		{Path: "tech/cyber/security-incident", LegacyCategory: "intel"},
+		{Path: "finance/markets/equities", LegacyCategory: "finance"},
+	}
+	got := taxonomyLeafPaths(taxonomy)
+	want := []string{"tech/ai/model-release", "tech/cyber/security-incident", "finance/markets/equities"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("leaves = %v, want %v", got, want)
+	}
+}
+
+// L4: a candidate seen by only one layer must not beat an explicit higher LLM
+// score merely because its denominator is smaller, and embedding uses the raw
+// cosine rather than (cos+1)/2.
+func TestAbsentLayerScoresZeroInFusion(t *testing.T) {
+	taxonomy := []TaxonomyNode{
+		{Path: "topic/a", DisplayName: "A", Description: "a", LegacyCategory: "tech"},
+		{Path: "topic/b", DisplayName: "B", Description: "b", LegacyCategory: "finance"},
+	}
+	model := &fakeModel{
+		embeddingModel: litellmcompat.RuntimeModel{Model: "embed", Configured: true},
+		completion: func(litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
+			return llmCandidates(`{"path":"topic/a","score":0.6}`), nil
+		},
+		embedding: func(req litellmcompat.EmbeddingRequest) (litellmcompat.EmbeddingResponse, error) {
+			// Request input order is [query, topic/a doc, topic/b doc].
+			return litellmcompat.EmbeddingResponse{Rows: []litellmcompat.EmbeddingRow{
+				{Index: 0, Embedding: []float64{1, 0}},
+				{Index: 1, Embedding: []float64{0, 1}},
+				{Index: 2, Embedding: []float64{0.5, 0.8660254037844386}},
+			}}, nil
+		},
+	}
+	settings := baseSettings()
+	settings.EnableRerank = false
+	settings.EnableLlm = true
+	settings.EnableEmbedding = true
+	settings.EmbeddingTopK = 1
+	settings.MinConfidence = 0
+	settings.Taxonomy = taxonomy
+	session := NewSession(Deps{Client: model, Settings: fixedSettings{settings}, SourcePolicies: fixedPolicy{}})
+	result, err := session.Classify(context.Background(), "org", CleanedNews{Title: "article"}, Options{})
+	if err != nil {
+		t.Fatalf("classify: %v", err)
+	}
+	if result.CategoryPath == nil || *result.CategoryPath != "topic/a" {
+		t.Fatalf("path = %v, want topic/a", result.CategoryPath)
+	}
+	// topic/a = 0.6*0.5/0.8 = 0.375; topic/b = 0.5*0.3/0.8 = 0.1875.
+	if !approxEqual(result.Candidates[0].Score, 0.375) {
+		t.Fatalf("a score = %v", result.Candidates[0].Score)
+	}
+	if len(result.Candidates) != 2 || !approxEqual(result.Candidates[1].Score, 0.1875) {
+		t.Fatalf("candidates = %+v", result.Candidates)
+	}
+}
+
+// L5: Chinese titles must match the rule fallback, and a rule whose path is not
+// in the org taxonomy must be treated as no hit.
+func TestRuleFallbackMatchesChineseFinance(t *testing.T) {
+	result := classifyByRule(CleanedNews{Title: "美联储宣布加息"}, "v", defaultTaxonomy)
+	if result.LegacyCategory != "finance" || result.CategoryPath == nil || *result.CategoryPath != "finance/macro/monetary-policy" {
+		t.Fatalf("fallback = %+v", result)
+	}
+}
+
+func TestRuleFallbackRequiresPathInTaxonomy(t *testing.T) {
+	custom := []TaxonomyNode{{Path: "tech/ai/model-release", DisplayName: "AI", Description: "ai", LegacyCategory: "ai"}}
+	result := classifyByRule(CleanedNews{Title: "美联储宣布加息"}, "v", custom)
+	if result.CategoryPath != nil || result.LegacyCategory != "" {
+		t.Fatalf("expected no match, got %+v", result)
+	}
+	if result.Reason == nil || *result.Reason != "no-classification-match" {
+		t.Fatalf("reason = %v", result.Reason)
+	}
+	// With no taxonomy (classifier disabled / empty) the legacy hard-coded path
+	// is preserved.
+	legacy := classifyByRule(CleanedNews{Title: "美联储宣布加息"}, "v", nil)
+	if legacy.CategoryPath == nil || *legacy.CategoryPath != "finance/macro/monetary-policy" {
+		t.Fatalf("legacy fallback = %+v", legacy)
+	}
+}
+
+// L7: the shared query text must not contain the source label or language code.
+func TestBuildQueryTextExcludesSourceAndLanguage(t *testing.T) {
+	text := buildQueryText(CleanedNews{
+		Title: "Fed raises rates", Source: "Reuters", Language: "en",
+		Topics: []string{"macro"},
+	})
+	for _, line := range strings.Split(text, "\n") {
+		if line == "Reuters" || line == "en" {
+			t.Fatalf("query text must not include source/language: %q", text)
+		}
+	}
+	if !strings.Contains(text, "Fed raises rates") || !strings.Contains(text, "macro") {
+		t.Fatalf("query text missing content: %q", text)
 	}
 }
