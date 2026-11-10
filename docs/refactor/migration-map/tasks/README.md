@@ -1,5 +1,17 @@
 # 任务认领与历史恢复索引
 
+## 2026-11-10 LOGIC 业务逻辑修复（处理链路，planned）
+
+来源：[业务逻辑复审 01](../LOGIC-REVIEW-01-PROCESSING.md)。纪律：[LOGIC-COMMON](LOGIC-COMMON.md)（在 REFACTOR-COMMON 之上，允许有意的行为变更，并要求回归测试）。
+
+| 波次 | 任务 | 前置 | 提示词 |
+|---|---|---|---|
+| A | [LOGIC-EVENTS-001](LOGIC-EVENTS-001.md) | 无 | [提示词](LOGIC-EVENTS-001.prompt.md) |
+| A | [LOGIC-CLASSIFIER-001](LOGIC-CLASSIFIER-001.md) | 无 | [提示词](LOGIC-CLASSIFIER-001.prompt.md) |
+| A | [LOGIC-PIPELINE-STATE-001](LOGIC-PIPELINE-STATE-001.md) | 无 | [提示词](LOGIC-PIPELINE-STATE-001.prompt.md) |
+| A | [LOGIC-TRANSLATION-001](LOGIC-TRANSLATION-001.md) | 无 | [提示词](LOGIC-TRANSLATION-001.prompt.md) |
+| B | [LOGIC-PIPELINE-COST-001](LOGIC-PIPELINE-COST-001.md) | PIPELINE-STATE | [提示词](LOGIC-PIPELINE-COST-001.prompt.md) |
+
 ## 2026-11-06 REFACTOR 第二轮（全部已合入）
 
 基线 main `67f31754`。来源是第一轮各任务交付记录中的剩余问题，见总计划“[第二轮任务](../BACKEND-REFACTOR-PLAN.md#第二轮任务2026-11-06-规划基线-main-67f31754)”。

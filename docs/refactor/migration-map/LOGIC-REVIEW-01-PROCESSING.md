@@ -148,3 +148,18 @@
 分类和聚类相关的修复（L1–L5）会改变已有数据的产出口径。建议修复后：
 - 对最近 7 天的数据离线重跑一次，对比事件数量、平均事件规模和各类别分布，再决定默认参数；
 - 对已经形成的“巨型事件”，提供重新归并工具，或者在运维面板中支持拆分。
+
+## 修复任务（2026-11-10，用户已确认行为变更方案）
+
+- L1：采用“只按文本相似度归并”。overlap 仅在向量不可用时兜底，而且要求 topic 和 entity 同时命中，时间间隔不超过 72 小时（可配置）。
+- L2–L5、L7：全部修复。L6 因为没有界面入口、默认值为 0，不修改。
+
+| 波次 | 任务 | 覆盖 | 前置 |
+|---|---|---|---|
+| A | [LOGIC-EVENTS-001](tasks/LOGIC-EVENTS-001.md) | L1 | 无 |
+| A | [LOGIC-CLASSIFIER-001](tasks/LOGIC-CLASSIFIER-001.md) | L2–L5、L7 | 无 |
+| A | [LOGIC-PIPELINE-STATE-001](tasks/LOGIC-PIPELINE-STATE-001.md) | S1–S5 | 无 |
+| A | [LOGIC-TRANSLATION-001](tasks/LOGIC-TRANSLATION-001.md) | T1 | 无 |
+| B | [LOGIC-PIPELINE-COST-001](tasks/LOGIC-PIPELINE-COST-001.md) | D1、D2 | PIPELINE-STATE |
+
+所有执行窗口都要先读 [LOGIC-COMMON](tasks/LOGIC-COMMON.md)。
