@@ -1,6 +1,6 @@
 # 任务认领与历史恢复索引
 
-## 2026-11-06 REFACTOR 第二轮（A 波已合入，LLM-CLIENT 续做中）
+## 2026-11-06 REFACTOR 第二轮（A 波与 LLM-CLIENT 已合入，HTTP-CLIENT 待派发）
 
 基线 main `67f31754`。来源是第一轮各任务交付记录中的剩余问题，见总计划“[第二轮任务](../BACKEND-REFACTOR-PLAN.md#第二轮任务2026-11-06-规划基线-main-67f31754)”。
 
@@ -12,6 +12,8 @@
 | B | [REFACTOR-HTTP-CLIENT-001](REFACTOR-HTTP-CLIENT-001.md) | LLM-CLIENT | [提示词](REFACTOR-HTTP-CLIENT-001.prompt.md) |
 
 2026-11-07 核实：CRAWLWORKER #178、CLEANUP #175/#177/#179、LLM-CLIENT `-a` 步骤 1 #176 已经整合 #180 合入（main `dba96962` CI success）。LLM-CLIENT 剩余拆为 `-a2`（步骤 2+5）→ `-b`（步骤 3+4）依次执行；HTTP-CLIENT 等两段都合入后再开。
+
+2026-11-10 核实：LLM-CLIENT `-a2` #181、`-b` #182 已合入；main `5f5dd31b` 普通 CI run 42791764580 success。HTTP-CLIENT 前置已满足，可以派发。
 
 ## 2026-11-04 后端重构修复系列（REFACTOR，第一轮已合入）
 

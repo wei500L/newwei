@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**部分合入**（`-a` 步骤 1 #176，经整合 #180 → `dba96962`，main CI success）。剩余拆为两段依次执行：**`-a2`**（步骤 2 同步补全上收 + 步骤 5 探针）已提交 [PR #181](https://github.com/wei500L/newwei/pull/181) Ready（head `503a191c`，普通 CI success），待合入；**`-b`** = 步骤 3（`CompletionStream`）+ 步骤 4（Embedding/Rerank 上收），`-b` 等 `-a2` 合入后再开。REFACTOR-HTTP-CLIENT-001 等这两段都合入。
+- 状态：**merged**（`-a` 步骤 1 #176 → 整合 #180 `dba96962`；`-a2` 步骤 2+5 #181 → `f19a2fad`；`-b` 步骤 3+4 #182 → `19b15671`。2026-11-10 规划窗口核实；`19b15671` 的 push CI 因自托管 runner 停机被取消；包含它的后续 main `5f5dd31b`（CI 迁回 GitHub 托管 runner）普通 CI run 42791764580 success）。
 - 规划基线：`origin/main = 67f31754`；规划时间：2026-11-06。
 - 来源：第一轮 REFACTOR 交付记录中的“剩余问题”（见总计划“第一轮结果与第二轮候选”）。
 - 前置：无（第二轮 A 波）；并行：与 CRAWLWORKER、CLEANUP 并行。
