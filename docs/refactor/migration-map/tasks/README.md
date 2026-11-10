@@ -1,8 +1,10 @@
 # 任务认领与历史恢复索引
 
-## 2026-11-10 LOGIC 业务逻辑修复（处理链路，planned）
+## 2026-11-10 LOGIC 业务逻辑修复（处理链路；A 波 4 项已 merged，B 波 planned）
 
 来源：[业务逻辑复审 01](../LOGIC-REVIEW-01-PROCESSING.md)。纪律：[LOGIC-COMMON](LOGIC-COMMON.md)（在 REFACTOR-COMMON 之上，允许有意的行为变更，并要求回归测试）。
+
+A 波 4 项已于 2026-11-10 以 merge commit 合入 main（`aabe588c`）：#184 → `0acc2f63`、#185 → `d66ed58c`、#186 → `543533cf`、#187 → `aabe588c`，各源 PR 普通 CI 精确 head 均 success。B 波 LOGIC-PIPELINE-COST-001（D1、D2）前置（PIPELINE-STATE）已满足，仍未认领。
 
 | 波次 | 任务 | 前置 | 提示词 |
 |---|---|---|---|

@@ -4,7 +4,7 @@
 
 ## 任务记录
 
-- 状态：**pr_open**（[PR #184](https://github.com/wei500L/newwei/pull/184)，Ready 非 draft）。
+- 状态：`merged`；[#184](https://github.com/wei500L/newwei/pull/184) → merge `0acc2f63750f291050435fe319667e533550d127`（2026-11-10）；分支 head `ca5f58b416ee` 的[普通 CI 42807835911](https://github.com/wei500L/newwei/actions/runs/42807835911) success（verify / api-go-user-settings-integration / vector-integration / globe-vendor 均 success，两个 regen skipped 不算通过）。
 - 规划基线：`origin/main = 0f6e62da`；规划时间：2026-11-10。
 - 来源：业务逻辑复审 01（处理链路）。行为变更方案已由用户确认（L1 只按文本相似度归并；L2–L5 全部修复）。
 - 前置：无（A 波）。

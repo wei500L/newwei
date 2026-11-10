@@ -1,5 +1,16 @@
 # 后端迁移地图
 
+## 2026-11-10 LOGIC 业务逻辑修复 A 波已合入 main
+
+基线 main `84dae568`。用户要求合并 LOGIC 系列 A 波 4 个 Ready PR，均以 merge commit 合入 main，最终 main `aabe588c`：
+
+- [LOGIC-TRANSLATION-001](tasks/LOGIC-TRANSLATION-001.md)：[#184](https://github.com/wei500L/newwei/pull/184) → merge `0acc2f63750f291050435fe319667e533550d127`；分支 head `ca5f58b416ee` 普通 CI [42807835911](https://github.com/wei500L/newwei/actions/runs/42807835911) success。
+- [LOGIC-CLASSIFIER-001](tasks/LOGIC-CLASSIFIER-001.md)：[#185](https://github.com/wei500L/newwei/pull/185) → merge `d66ed58c804acb99974ad692bed6425a6c9049c5`；分支 head `0d6b19bd1dc1` 普通 CI [42806380472](https://github.com/wei500L/newwei/actions/runs/42806380472) success。
+- [LOGIC-PIPELINE-STATE-001](tasks/LOGIC-PIPELINE-STATE-001.md)：[#186](https://github.com/wei500L/newwei/pull/186) → merge `543533cf7f049b6fd6c97e183c815e027cba73d8`；分支 head `1bb90bebd80e` 普通 CI [42810656809](https://github.com/wei500L/newwei/actions/runs/42810656809) success。
+- [LOGIC-EVENTS-001](tasks/LOGIC-EVENTS-001.md)：[#187](https://github.com/wei500L/newwei/pull/187) → merge `aabe588c659bc0a7e38c222cb095871719e6b356`；分支 head `278386265126` 普通 CI [42810696140](https://github.com/wei500L/newwei/actions/runs/42810696140) success。
+
+四项源 PR 的 `verify` / `vector-integration` / `api-go-user-settings-integration` / `globe-vendor` 均 success，`contract-baseline-regen` / `go-modules-regen` 为 skipped（skipped 不算通过）。合并后 main merge head `aabe588c` 的普通 CI [42827789781](https://github.com/wei500L/newwei/actions/runs/42827789781) 已 `completed/success`（同一四主 job success，两 regen skipped）。LOGIC-PIPELINE-COST-001（D1、D2）为 B 波，前置 PIPELINE-STATE 已合入，仍未认领。本次仅合并与文档回填，未部署、未实网验证。
+
 ## 2026-11-04 进入后端重构修复阶段
 
 基线 main `18c41879858d`（最新 main CI 41636414918 success）。对 `apps/api-go` 做了纯静态横向审查，发现的主要问题有：
