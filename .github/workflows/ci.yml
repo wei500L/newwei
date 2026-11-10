@@ -14,13 +14,14 @@ env:
   HUSKY: "0"
   CI: "true"
   NEXT_BUILD_SKIP_QUALITY_CHECKS: "true"
-  # 自托管 runner 内存预算（德国服务器 7.8G，其中生产容器常驻约 2.1G）。
-  # 实测 Go 编译器单包峰值约 3.5G。默认 turbo 并发 10 + Go 默认 -p=NumCPU
-  # 会把物理内存和 swap 一起打满并触发内核 OOM-killer。
-  # 取舍：Node 堆给 3G（够 Web lint/typecheck），Go 编译串行（-p=1），turbo 并发 2。
+  # 运行时为 GitHub 官方托管 runner（ubuntu-latest 标准规格：4 vCPU / 16 GB RAM /
+  # 14 GB SSD；public 仓库免费无限量）。以下并发/堆上限是自托管德国服务器
+  # （7.8G，生产容器常驻约 2.1G）时期为避免内核 OOM-killer 加的保险；迁到
+  # 16G 托管 runner 后仍保留作为安全边界，只把 Go 编译并发从串行放宽到 2
+  # 以利用多核。实测 Go 编译器单包峰值约 3.5G，Node 类型感知 lint 峰值 >1.5G 堆。
   TURBO_CONCURRENCY: "2"
   NODE_OPTIONS: "--max-old-space-size=3072"
-  GOFLAGS: "-p=1"
+  GOFLAGS: "-p=2"
   NEXTAUTH_URL: http://localhost:3000
   API_BASE_URL: http://localhost:4020
   NEXT_PUBLIC_API_BASE_URL: http://localhost:4020/api
@@ -34,7 +35,7 @@ env:
 
 jobs:
   verify:
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -155,7 +156,7 @@ jobs:
   # 提交），耗时也较长，且与本批改动无关。G6 需要给 vendor 打补丁时，再按需把
   # 被补丁模块对应的测试文件加进来。
   globe-vendor:
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
@@ -205,7 +206,7 @@ jobs:
   # 返回；预期来自已保存契约（httpapi 对齐 Nest 的行为）的独立断言，不与同一次
   # Go 请求结果自比。不再启动 NestJS vector，也不再做 Nest↔Go 差分。
   vector-integration:
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       qdrant:
@@ -258,7 +259,7 @@ jobs:
   # api-go 的远端真实 MySQL/Redis 集成测试（Go-批3A 起含 authz 授权
   # 重推导 + authn blacklist 的真实栈验证）。
   api-go-user-settings-integration:
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
       mysql:
@@ -692,7 +693,7 @@ jobs:
   # fail-on-drift 语义。
   go-modules-regen:
     if: contains(github.event.pull_request.labels.*.name, 'go-modules-regen')
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
@@ -748,7 +749,7 @@ jobs:
   # 保持 fail-on-drift 语义不变。
   contract-baseline-regen:
     if: contains(github.event.pull_request.labels.*.name, 'contract-regen')
-    runs-on: [self-hosted, linux, build-server]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
