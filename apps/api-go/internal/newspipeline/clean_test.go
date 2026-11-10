@@ -186,6 +186,10 @@ type contentTestModels struct {
 	requests    []litellmcompat.CompletionRequest
 	timeoutMS   int
 	timeoutErr  error
+	// completionModel is returned by RuntimeCompletionModel so the stage cache
+	// key can be driven across a model change in tests.
+	completionModel string
+	modelErr        error
 }
 
 func (m *contentTestModels) Completion(_ context.Context, req litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
@@ -213,6 +217,15 @@ func (m *contentTestModels) RuntimeEmbeddingModel(context.Context) (litellmcompa
 
 func (m *contentTestModels) RuntimeRerankModel(context.Context) (litellmcompat.RuntimeModel, error) {
 	return litellmcompat.RuntimeModel{}, nil
+}
+
+func (m *contentTestModels) RuntimeCompletionModel(context.Context) (litellmcompat.RuntimeModel, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.modelErr != nil {
+		return litellmcompat.RuntimeModel{}, m.modelErr
+	}
+	return litellmcompat.RuntimeModel{Model: m.completionModel, Configured: m.completionModel != ""}, nil
 }
 
 func (m *contentTestModels) CompletionTimeoutMS(context.Context) (int, error) {
@@ -826,7 +839,7 @@ func TestCleanArticleStageCacheSkipsSecondModelCall(t *testing.T) {
 	models := &contentTestModels{completions: []contentTestCompletion{{response: cleanCacheTestResponse()}}}
 	crawl := &contentTestCrawl{}
 	cleaner, sqlFake, _ := contentTestCleaner(t, models, crawl)
-	cleaner.stageCache = newMemoryStageCache("gpt-clean")
+	cleaner.stageCache = newMemoryStageCache()
 	sqlFake.queryRowFn = func(string, []any) contentRow { return contentTestRow{} }
 
 	payload := NormalizedPayload{URL: "https://example.com/a"}
@@ -891,5 +904,50 @@ func TestCleanArticleStageCacheUnavailableStillCleans(t *testing.T) {
 	}
 	if len(models.requests) != 2 {
 		t.Fatalf("without a cache each run should call the model, got %d calls", len(models.requests))
+	}
+}
+
+// TestCleanArticleStageCacheMissesAfterModelChange covers the review fix: the
+// cache key includes the settings-resolved completion model, so switching the
+// model must miss the old product and call the model again.
+func TestCleanArticleStageCacheMissesAfterModelChange(t *testing.T) {
+	models := &contentTestModels{completions: []contentTestCompletion{
+		{response: cleanCacheTestResponse()},
+		{response: cleanCacheTestResponse()},
+	}}
+	models.completionModel = "model-a"
+	crawl := &contentTestCrawl{}
+	cleaner, sqlFake, _ := contentTestCleaner(t, models, crawl)
+	cleaner.stageCache = newMemoryStageCache()
+	sqlFake.queryRowFn = func(string, []any) contentRow { return contentTestRow{} }
+
+	payload := NormalizedPayload{URL: "https://example.com/a"}
+	article := CrawledArticle{SourceURL: payload.URL, Markdown: "# A\n\nBody", ContentHash: "hash-model-change"}
+
+	first, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("first CleanArticle: %v", err)
+	}
+	if len(models.requests) != 1 || first.StageCacheHit {
+		t.Fatalf("first run calls=%d hit=%v, want 1/false", len(models.requests), first.StageCacheHit)
+	}
+
+	models.mu.Lock()
+	models.completionModel = "model-b"
+	models.mu.Unlock()
+	second, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("second CleanArticle: %v", err)
+	}
+	if len(models.requests) != 2 || second.StageCacheHit {
+		t.Fatalf("model change must miss the cache: calls=%d hit=%v, want 2/false", len(models.requests), second.StageCacheHit)
+	}
+
+	third, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("third CleanArticle: %v", err)
+	}
+	if len(models.requests) != 2 || !third.StageCacheHit {
+		t.Fatalf("same model must hit the second product: calls=%d hit=%v, want 2/true", len(models.requests), third.StageCacheHit)
 	}
 }

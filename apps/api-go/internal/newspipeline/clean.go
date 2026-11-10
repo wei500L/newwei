@@ -960,6 +960,20 @@ func (c *Cleaner) cleanPromptConfig(ctx context.Context) PromptConfig {
 	return c.settings.PromptConfig(ctx)
 }
 
+// stageCacheModel resolves the completion model the org settings select for the
+// clean cache key. ok is false when the settings read failed; the caller then
+// skips the cache for this run.
+func (c *Cleaner) stageCacheModel(ctx context.Context) (string, bool) {
+	if c.models == nil {
+		return "", true
+	}
+	resolved, err := c.models.RuntimeCompletionModel(ctx)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(resolved.Model), true
+}
+
 // CleanArticle is cleanArticle.
 func (c *Cleaner) CleanArticle(ctx context.Context, payload NormalizedPayload, article CrawledArticle, job Job, provider string) (CleanResult, error) {
 	state := c.takePendingState(job, payload.URL)
@@ -1008,10 +1022,16 @@ func (c *Cleaner) CleanArticle(ctx context.Context, payload NormalizedPayload, a
 	// Reuse a successful clean product from a previous attempt. This sits after
 	// the ProcessedArticle cache lookup and the provider check, so the exact
 	// content-duplicate path is unchanged: only the expensive LLM (clean +
-	// repair) work is skipped on a retry.
+	// repair) work is skipped on a retry. The key includes the provider and the
+	// settings-resolved completion model, so a model change misses the old entry.
 	stageCacheKey := ""
+	cacheModel := ""
+	cacheOK := false
 	if c.stageCache != nil {
-		stageCacheKey = c.stageCache.key(job.OrgID, "clean", contentHash, promptConfig.Version)
+		cacheModel, cacheOK = c.stageCacheModel(ctx)
+	}
+	if c.stageCache != nil && cacheOK {
+		stageCacheKey = c.stageCache.key(job.OrgID, "clean", provider, contentHash, promptConfig.Version, cacheModel)
 		var cached cleanStageCacheEntry
 		if c.stageCache.get(ctx, stageCacheKey, &cached) {
 			return CleanResult{
@@ -1079,7 +1099,7 @@ func (c *Cleaner) CleanArticle(ctx context.Context, payload NormalizedPayload, a
 		ContentHash:          contentHash,
 		ArticleMetadataPatch: cleanRepairPatchJSON(repaired.metadata, false),
 	}
-	if c.stageCache != nil {
+	if c.stageCache != nil && cacheOK {
 		c.stageCache.set(ctx, stageCacheKey, cleanStageCacheEntry{
 			Cleaned:              result.Cleaned,
 			LLM:                  result.LLM,

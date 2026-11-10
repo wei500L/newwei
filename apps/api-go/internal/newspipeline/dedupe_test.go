@@ -129,6 +129,10 @@ func (f *dedupeFakeModels) RuntimeRerankModel(context.Context) (litellmcompat.Ru
 	return litellmcompat.RuntimeModel{}, errors.New("unused")
 }
 
+func (f *dedupeFakeModels) RuntimeCompletionModel(context.Context) (litellmcompat.RuntimeModel, error) {
+	return litellmcompat.RuntimeModel{}, errors.New("unused")
+}
+
 func (f *dedupeFakeModels) CompletionTimeoutMS(context.Context) (int, error) {
 	return 0, errors.New("unused")
 }
@@ -1133,6 +1137,21 @@ func (m *memoryInflightKV) setNX(_ context.Context, key, value string, ttl time.
 	return true
 }
 
+func (m *memoryInflightKV) releaseOwned(_ context.Context, orgID, itemMetaID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := fmt.Sprintf("pipeline:inflight:%s:content:", orgID)
+	for key, entry := range m.entries {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		var registration inflightRegistration
+		if json.Unmarshal([]byte(entry.value), &registration) == nil && registration.ItemMetaID == itemMetaID {
+			delete(m.entries, key)
+		}
+	}
+}
+
 func dedupeInflightHarness(t *testing.T) *dedupeHarness {
 	t.Helper()
 	harness := newDedupeHarness(nil)
@@ -1141,7 +1160,7 @@ func dedupeInflightHarness(t *testing.T) *dedupeHarness {
 	return harness
 }
 
-func dedupeInflightInput(itemMetaID, processedItemID, contentHash, title, summary string) DedupeInput {
+func dedupeInflightInput(itemMetaID, processedItemID, contentHash, summary string) DedupeInput {
 	return DedupeInput{
 		Job: Job{
 			OrgID:           "org-1",
@@ -1149,7 +1168,7 @@ func dedupeInflightInput(itemMetaID, processedItemID, contentHash, title, summar
 			JobID:           "job-" + itemMetaID,
 			ProcessedItemID: processedItemID,
 		},
-		Cleaned:     CleanedNews{Title: dedupeStringPtr(title), Summary: dedupeStringPtr(summary)},
+		Cleaned:     CleanedNews{Summary: dedupeStringPtr(summary)},
 		ContentHash: contentHash,
 	}
 }
@@ -1163,7 +1182,7 @@ func TestInflightDuplicateMarksLateConcurrentItem(t *testing.T) {
 	owner := dedupeObjectIDHex(1)
 
 	first, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-1", owner, "content-hash-1", "Same Headline", "summary one"))
+		dedupeInflightInput("meta-1", owner, "content-hash-1", "summary one"))
 	if err != nil {
 		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
 	}
@@ -1172,7 +1191,7 @@ func TestInflightDuplicateMarksLateConcurrentItem(t *testing.T) {
 	}
 
 	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-2", dedupeObjectIDHex(2), "content-hash-1", "Same Headline", "summary two"))
+		dedupeInflightInput("meta-2", dedupeObjectIDHex(2), "content-hash-1", "summary two"))
 	if err != nil {
 		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
 	}
@@ -1184,32 +1203,11 @@ func TestInflightDuplicateMarksLateConcurrentItem(t *testing.T) {
 	}
 }
 
-// TestInflightDuplicateMatchesNormalizedTitle covers the title dimension: the
-// same headline with different punctuation/whitespace and a different content
-// hash is still an in-flight duplicate.
-func TestInflightDuplicateMatchesNormalizedTitle(t *testing.T) {
-	harness := dedupeInflightHarness(t)
-	owner := dedupeObjectIDHex(3)
-
-	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-1", owner, "content-hash-a", "Breaking  News!", "summary one")); err != nil {
-		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
-	}
-	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-2", dedupeObjectIDHex(4), "content-hash-b", "breaking news", "summary two"))
-	if err != nil {
-		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
-	}
-	if second.DuplicateOf == nil || *second.DuplicateOf != owner {
-		t.Fatalf("normalized title match DuplicateOf = %v, want %s", second.DuplicateOf, owner)
-	}
-}
-
 // TestInflightDuplicateIgnoresSameItemRetry verifies a retry of the same item
 // recognises its own registration and is not treated as a duplicate.
 func TestInflightDuplicateIgnoresSameItemRetry(t *testing.T) {
 	harness := dedupeInflightHarness(t)
-	input := dedupeInflightInput("meta-1", dedupeObjectIDHex(5), "content-hash-retry", "Retry Headline", "summary")
+	input := dedupeInflightInput("meta-1", dedupeObjectIDHex(5), "content-hash-retry", "summary")
 
 	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), input); err != nil {
 		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
@@ -1228,17 +1226,79 @@ func TestInflightDuplicateIgnoresSameItemRetry(t *testing.T) {
 func TestInflightDuplicateExpiresAfterTTL(t *testing.T) {
 	harness := dedupeInflightHarness(t)
 	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-1", dedupeObjectIDHex(6), "content-hash-expire", "Expiring Headline", "summary one")); err != nil {
+		dedupeInflightInput("meta-1", dedupeObjectIDHex(6), "content-hash-expire", "summary one")); err != nil {
 		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
 	}
 
 	harness.now = harness.now.Add(601 * time.Second)
 	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
-		dedupeInflightInput("meta-2", dedupeObjectIDHex(7), "content-hash-expire", "Expiring Headline", "summary two"))
+		dedupeInflightInput("meta-2", dedupeObjectIDHex(7), "content-hash-expire", "summary two"))
 	if err != nil {
 		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
 	}
 	if second.DuplicateOf != nil {
 		t.Fatalf("expired registration must not be a duplicate, got %v", second.DuplicateOf)
+	}
+}
+
+// TestInflightReleaseAfterFinalFailureAllowsSameContent covers the review fix:
+// when the registrant reaches its final failure, releasing its own in-flight
+// registration lets a later same-content item through instead of rejecting it
+// against an owner that never persisted.
+func TestInflightReleaseAfterFinalFailureAllowsSameContent(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	contentHash := "content-hash-release"
+	owner := dedupeObjectIDHex(8)
+
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-owner", owner, contentHash, "summary owner")); err != nil {
+		t.Fatalf("owner EvaluateSummaryDedupe: %v", err)
+	}
+	// While the owner is in flight, a same-content item is a duplicate.
+	blocked, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-blocked", dedupeObjectIDHex(9), contentHash, "summary blocked"))
+	if err != nil {
+		t.Fatalf("blocked EvaluateSummaryDedupe: %v", err)
+	}
+	if blocked.DuplicateOf == nil || *blocked.DuplicateOf != owner {
+		t.Fatalf("in-flight item DuplicateOf = %v, want %s", blocked.DuplicateOf, owner)
+	}
+
+	// The owner's job finally failed and was sent to the dead letter queue.
+	harness.deduper.inflight.release(context.Background(), "org-1", "meta-owner")
+
+	afterRelease, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-new", dedupeObjectIDHex(10), contentHash, "summary new"))
+	if err != nil {
+		t.Fatalf("after-release EvaluateSummaryDedupe: %v", err)
+	}
+	if afterRelease.DuplicateOf != nil {
+		t.Fatalf("after owner release the same content must not be a duplicate, got %v", afterRelease.DuplicateOf)
+	}
+}
+
+// TestInflightReleaseOnlyRemovesOwnKeys verifies the release deletes only the
+// failing item's own registration and leaves other items' keys intact.
+func TestInflightReleaseOnlyRemovesOwnKeys(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-owner", dedupeObjectIDHex(11), "content-hash-owner", "summary owner")); err != nil {
+		t.Fatalf("owner EvaluateSummaryDedupe: %v", err)
+	}
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-other", dedupeObjectIDHex(12), "content-hash-other", "summary other")); err != nil {
+		t.Fatalf("other EvaluateSummaryDedupe: %v", err)
+	}
+
+	harness.deduper.inflight.release(context.Background(), "org-1", "meta-owner")
+
+	// The other item's registration still blocks a same-content newcomer.
+	blocked, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-new", dedupeObjectIDHex(13), "content-hash-other", "summary new"))
+	if err != nil {
+		t.Fatalf("post-release EvaluateSummaryDedupe: %v", err)
+	}
+	if blocked.DuplicateOf == nil || *blocked.DuplicateOf != dedupeObjectIDHex(12) {
+		t.Fatalf("other item's registration must survive release, got %v", blocked.DuplicateOf)
 	}
 }

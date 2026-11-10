@@ -537,6 +537,10 @@ type Models interface {
 	Rerank(ctx context.Context, req litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error)
 	RuntimeEmbeddingModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
 	RuntimeRerankModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
+	// RuntimeCompletionModel reports the settings-resolved completion model the
+	// next completion call would use. The stage cache keys on it so a model
+	// change (not just the env default) misses the old product.
+	RuntimeCompletionModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
 	CompletionTimeoutMS(ctx context.Context) (int, error)
 }
 

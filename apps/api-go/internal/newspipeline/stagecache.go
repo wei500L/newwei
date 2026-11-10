@@ -3,9 +3,9 @@ package newspipeline
 // This file holds the short-lived Redis cache for successful LLM stage products
 // (clean, entities, sentiment, kg). A BullMQ retry re-runs the whole pipeline
 // from the top; without this cache every retried job pays for the same model
-// calls again. The cache is keyed by org, stage, the clean stage's contentHash,
-// the prompt version and the configured completion model, so a prompt or model
-// change naturally misses the old entry.
+// calls again. The cache is keyed by org, stage, provider, the clean stage's
+// contentHash, the prompt version and the settings-resolved completion model, so
+// a prompt, provider or model change naturally misses the old entry.
 //
 // Only successful products are written; a failure is never cached. Any read or
 // write error is treated as a miss and only logged: the cache is an optimization
@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -25,7 +26,7 @@ import (
 // stageCache is the cache surface the clean stage and the enrichment stages use.
 // A nil value (or one backed by an unconfigured Redis client) is a no-op.
 type stageCache interface {
-	key(orgID, stage, contentHash, promptVersion string) string
+	key(orgID, stage, provider, contentHash, promptVersion, model string) string
 	get(ctx context.Context, key string, dst any) bool
 	set(ctx context.Context, key string, value any)
 }
@@ -34,38 +35,35 @@ type stageCache interface {
 type redisStageCache struct {
 	client *redis.Client
 	ttl    time.Duration
-	model  string
 	logf   func(format string, args ...any)
 }
 
-// newRedisStageCache builds the stage cache. ttlSeconds <= 0 disables writes
-// (the Redis SET still happens with 0, which Redis rejects; guard instead).
-func newRedisStageCache(client *redis.Client, ttlSeconds int, model string, logf func(format string, args ...any)) *redisStageCache {
+// newRedisStageCache builds the stage cache. A non-positive ttl disables it.
+func newRedisStageCache(client *redis.Client, ttlSeconds int, logf func(format string, args ...any)) *redisStageCache {
 	if logf == nil {
 		logf = log.Printf
 	}
 	return &redisStageCache{
 		client: client,
 		ttl:    time.Duration(ttlSeconds) * time.Second,
-		model:  model,
 		logf:   logf,
 	}
 }
 
-// key builds pipeline:stage:{orgId}:{stage}:{contentHash}:{promptVersion}:{model}.
-func (c *redisStageCache) key(orgID, stage, contentHash, promptVersion string) string {
-	model := c.effectiveModel()
-	return fmt.Sprintf("pipeline:stage:%s:%s:%s:%s:%s", orgID, stage, contentHash, promptVersion, model)
-}
-
-func (c *redisStageCache) effectiveModel() string {
-	if c == nil {
-		return "default"
+// key builds
+// pipeline:stage:{orgId}:{stage}:{provider}:{contentHash}:{promptVersion}:{model}.
+// The provider and the settings-resolved completion model are part of the key so
+// switching either misses the old entry instead of reusing a product a different
+// provider/model produced.
+func (c *redisStageCache) key(orgID, stage, provider, contentHash, promptVersion, model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "default"
 	}
-	if c.model == "" {
-		return "default"
+	if provider == "" {
+		provider = "default"
 	}
-	return c.model
+	return fmt.Sprintf("pipeline:stage:%s:%s:%s:%s:%s:%s", orgID, stage, provider, contentHash, promptVersion, model)
 }
 
 // get returns true and fills dst when the key holds a decodable value. Any error
@@ -105,11 +103,30 @@ func (c *redisStageCache) set(ctx context.Context, key string, value any) {
 }
 
 // stageCacheKey returns the stage cache key, or "" when no cache is wired.
-func (s *Service) stageCacheKey(orgID, stage, contentHash, promptVersion string) string {
+func (s *Service) stageCacheKey(orgID, stage, provider, contentHash, promptVersion, model string) string {
 	if s.stageCache == nil {
 		return ""
 	}
-	return s.stageCache.key(orgID, stage, contentHash, promptVersion)
+	return s.stageCache.key(orgID, stage, provider, contentHash, promptVersion, model)
+}
+
+// stageCacheModel resolves the completion model the org settings select for a
+// model call, so the cache key tracks the actual model instead of the global
+// environment override. ok is false when the settings read failed; the caller
+// then skips the cache for this run (a miss must never reuse another model's
+// product).
+func (s *Service) stageCacheModel(ctx context.Context) (string, bool) {
+	if s.models == nil {
+		return "", true
+	}
+	resolved, err := s.models.RuntimeCompletionModel(ctx)
+	if err != nil {
+		if s.logf != nil {
+			s.logf("newspipeline: resolving completion model for the stage cache failed: %v", err)
+		}
+		return "", false
+	}
+	return strings.TrimSpace(resolved.Model), true
 }
 
 // loadStageCache reports whether the key held a decodable value into dst.

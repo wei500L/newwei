@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -15,19 +16,20 @@ import (
 type memoryStageCache struct {
 	mu     sync.Mutex
 	values map[string][]byte
-	model  string
 }
 
-func newMemoryStageCache(model string) *memoryStageCache {
-	return &memoryStageCache{values: map[string][]byte{}, model: model}
+func newMemoryStageCache() *memoryStageCache {
+	return &memoryStageCache{values: map[string][]byte{}}
 }
 
-func (m *memoryStageCache) key(orgID, stage, contentHash, promptVersion string) string {
-	model := m.model
-	if model == "" {
+func (m *memoryStageCache) key(orgID, stage, provider, contentHash, promptVersion, model string) string {
+	if strings.TrimSpace(model) == "" {
 		model = "default"
 	}
-	return fmt.Sprintf("pipeline:stage:%s:%s:%s:%s:%s", orgID, stage, contentHash, promptVersion, model)
+	if provider == "" {
+		provider = "default"
+	}
+	return fmt.Sprintf("pipeline:stage:%s:%s:%s:%s:%s:%s", orgID, stage, provider, contentHash, promptVersion, model)
 }
 
 func (m *memoryStageCache) get(_ context.Context, key string, dst any) bool {

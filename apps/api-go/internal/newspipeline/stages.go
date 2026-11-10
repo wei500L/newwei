@@ -299,6 +299,11 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 // the returned cleaned news carries the stage_meta entries.
 func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, payload NormalizedPayload, article CrawledArticle, cleaned CleanedNews, contentHash string, settings ExtractionSettings) CleanedNews {
 	promptConfig := s.settings.PromptConfig(ctx)
+	cacheModel := ""
+	cacheOK := false
+	if s.stageCache != nil {
+		cacheModel, cacheOK = s.stageCacheModel(ctx)
+	}
 	stageContext := StageContext{OrgID: job.OrgID, JobID: job.JobID}
 	language := cleaned.Language
 	if language == nil {
@@ -323,7 +328,10 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		stageMeta.Entities = entry
 		s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
 	} else {
-		entitiesKey := s.stageCacheKey(job.OrgID, "entities", contentHash, promptConfig.Version)
+		entitiesKey := ""
+		if cacheOK {
+			entitiesKey = s.stageCacheKey(job.OrgID, "entities", settings.Providers.Entities, contentHash, promptConfig.Version, cacheModel)
+		}
 		var cached entitiesStageCacheEntry
 		if s.loadStageCache(ctx, entitiesKey, &cached) {
 			entities := cached.Entities
@@ -363,7 +371,10 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		stageMeta.Sentiment = entry
 		s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
 	} else {
-		sentimentKey := s.stageCacheKey(job.OrgID, "sentiment", contentHash, promptConfig.Version)
+		sentimentKey := ""
+		if cacheOK {
+			sentimentKey = s.stageCacheKey(job.OrgID, "sentiment", settings.Providers.Sentiment, contentHash, promptConfig.Version, cacheModel)
+		}
 		var cached sentimentStageCacheEntry
 		if s.loadStageCache(ctx, sentimentKey, &cached) {
 			var labelPointer *string
@@ -409,7 +420,10 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		return next
 	}
 
-	kgKey := s.stageCacheKey(job.OrgID, "kg", contentHash, promptConfig.Version)
+	kgKey := ""
+	if cacheOK {
+		kgKey = s.stageCacheKey(job.OrgID, "kg", settings.Providers.KG, contentHash, promptConfig.Version, cacheModel)
+	}
 	var cachedKG kgStageCacheEntry
 	if s.loadStageCache(ctx, kgKey, &cachedKG) {
 		relations := cachedKG.Relations

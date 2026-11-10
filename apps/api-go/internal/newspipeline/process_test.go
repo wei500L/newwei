@@ -598,7 +598,7 @@ func pipelineTestCountCall(calls []string, name string) int {
 // products.
 func TestStagedEnrichmentStagesReuseStageCacheOnRetry(t *testing.T) {
 	service, recorder, _ := newPipelineTestService(t)
-	service.stageCache = newMemoryStageCache("model-x")
+	service.stageCache = newMemoryStageCache()
 	job := pipelineTestJob()
 	cleanResult := CleanResult{
 		Cleaned:     pipelineTestCleaned(),

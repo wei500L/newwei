@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +51,7 @@ type Service struct {
 	store      pipelineStore
 	outbox     OutboxDispatcher
 	snapshots  SnapshotRefresher
+	models     Models
 	config     RuntimeConfig
 	stageCache stageCache
 	now        func() time.Time
@@ -83,10 +83,9 @@ func New(opts Options) *Service {
 	settings := NewSettingsReader(opts.DB, opts.Redis, opts.Config)
 	builder := NewPromptBuilder()
 
-	// The stage cache key carries the configured completion model; an empty
-	// config model becomes the "default" token so the key is always well-formed.
-	stageCacheModel := strings.TrimSpace(opts.Config.LiteLLM.Model)
-	cache := newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, stageCacheModel, logf)
+	// The stage cache key carries the provider and the settings-resolved
+	// completion model, resolved per stage call (see stageCacheModel).
+	cache := newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, logf)
 
 	service := &Service{
 		settings: settings,
@@ -115,6 +114,7 @@ func New(opts Options) *Service {
 		store:      &pipelineMySQLStore{db: opts.DB, now: now},
 		outbox:     opts.Outbox,
 		snapshots:  opts.Snapshots,
+		models:     opts.Models,
 		config:     opts.Config.Pipeline,
 		stageCache: cache,
 		now:        now,

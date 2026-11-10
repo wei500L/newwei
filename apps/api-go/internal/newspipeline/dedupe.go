@@ -273,15 +273,14 @@ func (d *Deduper) EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) 
 		}, nil
 	}
 
-	// In-flight duplicate: a concurrent item with the same content hash or
-	// normalized title already registered before either persisted. The
-	// registration value carries the registrant's processedItemId, which the
-	// itemPipeline processor resolves before the pipeline runs, so it is known
-	// at registration time. When the job has no valid ObjectId processedItemId
-	// (legacy/replay), skip the registry and fall back to the persisted
-	// candidate sets.
+	// In-flight duplicate: a concurrent item with the same content hash already
+	// registered before either persisted. The registration value carries the
+	// registrant's processedItemId, which the itemPipeline processor resolves
+	// before the pipeline runs, so it is known at registration time. When the
+	// job has no valid ObjectId processedItemId (legacy/replay), skip the
+	// registry and fall back to the persisted candidate sets.
 	if d.inflight != nil && pipelineObjectIDIsValid(input.Job.ProcessedItemID) {
-		if peer := d.inflight.checkAndRegister(ctx, input.Job.OrgID, input.Job.ItemMetaID, input.Job.ProcessedItemID, input.ContentHash, input.Cleaned.Title); peer != nil {
+		if peer := d.inflight.checkAndRegister(ctx, input.Job.OrgID, input.Job.ItemMetaID, input.Job.ProcessedItemID, input.ContentHash); peer != nil {
 			return DedupeResult{
 				DuplicateOf:         stringPointer(*peer),
 				DuplicateSimilarity: floatPointer(1),

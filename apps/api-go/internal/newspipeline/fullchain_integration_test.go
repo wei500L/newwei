@@ -102,6 +102,10 @@ func (m *fakePipelineModels) RuntimeRerankModel(context.Context) (litellmcompat.
 	return litellmcompat.RuntimeModel{}, nil
 }
 
+func (m *fakePipelineModels) RuntimeCompletionModel(context.Context) (litellmcompat.RuntimeModel, error) {
+	return litellmcompat.RuntimeModel{Model: "test-model", Configured: true}, nil
+}
+
 func (m *fakePipelineModels) CompletionTimeoutMS(context.Context) (int, error) { return 60_000, nil }
 
 type disabledVectorConfig struct{}
