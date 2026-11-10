@@ -56,7 +56,7 @@ type Options struct {
 type Service struct {
 	db         *sql.DB
 	mongo      *mongo.Database
-	cache      *rssCache
+	cache      translationCache
 	settings   SettingsReader
 	completion publicportal.RssTranslationCompleter
 	observer   publicportal.RssTranslationObserver
@@ -276,9 +276,6 @@ func (s *Service) translateTextList(ctx context.Context, texts []string, options
 		} else {
 			translatedMissing = s.translateMissingViaLLM(ctx, missingTexts, options)
 		}
-		// A cache write failure fails the item like NestJS, but the remaining
-		// successful texts are still written so a later request can hit them.
-		var setErr error
 		for _, text := range missingTexts {
 			translatedValue := strings.TrimSpace(translatedMissing[text])
 			if translatedValue == "" {
@@ -288,12 +285,12 @@ func (s *Service) translateTextList(ctx context.Context, texts []string, options
 			}
 			options.metrics.translatedCount++
 			translatedByText[text] = translatedValue
-			if err := s.cache.setString(ctx, buildRSSKey(options.provider, options.targetLanguage, text, options.llmModel), translatedValue, rssCacheTTLSeconds); err != nil && setErr == nil {
-				setErr = err
+			// A cache write failure is only logged: the text is already
+			// translated and must still reach the caller. The entry is simply
+			// retried on a later request once Redis is healthy.
+			if err := s.cache.setString(ctx, buildRSSKey(options.provider, options.targetLanguage, text, options.llmModel), translatedValue, rssCacheTTLSeconds); err != nil {
+				log.Printf("api-go: RSS translation cache write failed: %v", err)
 			}
-		}
-		if setErr != nil {
-			return nil, setErr
 		}
 	}
 	return mapTranslated(normalizedInputs, translatedByText), nil

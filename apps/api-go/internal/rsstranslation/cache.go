@@ -12,6 +12,17 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// translationCache is the Redis surface the translation service and the DeepLX
+// client need: the batch read of the 7 day outer cache, plus the single read and
+// write of the 30 day inner cache. It is an interface only so the batch
+// semantics can be unit tested without a live Redis; the production path is
+// always *rssCache.
+type translationCache interface {
+	getManyStrings(ctx context.Context, keys []string) ([]*string, error)
+	getString(ctx context.Context, key string) (string, bool)
+	setString(ctx context.Context, key, value string, ttlSeconds int) error
+}
+
 // rssCache is the Redis side of the two caches. Values are JSON strings, the
 // same encoding CacheService uses, so Go and NestJS read each other's entries.
 type rssCache struct {
