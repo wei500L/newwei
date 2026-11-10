@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log"
 	"math"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +14,13 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 )
+
+// maxRerankDocuments caps how many documents go into a single rerank request.
+// The full leaf set is ranked when no earlier layer produced candidates; this
+// bound matches maxTaxonomyNodes so any taxonomy the settings layer accepts
+// fits in one request, while future growth beyond the upstream document limit is
+// truncated and logged instead of failing the whole layer.
+const maxRerankDocuments = maxTaxonomyNodes
 
 // ModelClient is the model surface one classification session uses.
 type ModelClient interface {
@@ -111,7 +117,9 @@ func HashText(value string) string {
 func (s *Session) Classify(ctx context.Context, orgID string, cleaned CleanedNews, options Options) (Result, error) {
 	settings := s.settings.Get(ctx, orgID)
 	if !settings.Enabled {
-		return classifyByRule(cleaned, settings.TaxonomyVersion), nil
+		// Classifier disabled: keep the legacy hard-coded rule paths, no taxonomy
+		// membership check.
+		return classifyByRule(cleaned, settings.TaxonomyVersion, nil), nil
 	}
 	taxonomy := settings.Taxonomy
 	taxonomyByPath := make(map[string]TaxonomyNode, len(taxonomy))
@@ -122,7 +130,8 @@ func (s *Session) Classify(ctx context.Context, orgID string, cleaned CleanedNew
 		if settings.StrictFail {
 			return Result{}, errors.New("News classification taxonomy is empty")
 		}
-		return classifyByRule(cleaned, settings.TaxonomyVersion), nil
+		// Empty taxonomy: keep the legacy hard-coded rule paths.
+		return classifyByRule(cleaned, settings.TaxonomyVersion, nil), nil
 	}
 
 	metrics := Metrics{
@@ -191,15 +200,14 @@ func (s *Session) Classify(ctx context.Context, orgID string, cleaned CleanedNew
 		if len(candidates.order) > 0 {
 			rerankPaths = append(rerankPaths, candidates.order...)
 		} else {
-			limit := settings.EmbeddingTopK
-			if settings.RerankTopN > limit {
-				limit = settings.RerankTopN
-			}
-			if limit > len(taxonomy) {
-				limit = len(taxonomy)
-			}
-			for _, node := range taxonomy[:limit] {
-				rerankPaths = append(rerankPaths, node.Path)
+			// No LLM/embedding candidates (both layers disabled or failed). Rank
+			// the actual leaf categories instead of an arbitrary taxonomy prefix,
+			// otherwise the reranker can only ever pick the first few declared
+			// nodes regardless of the article.
+			rerankPaths = taxonomyLeafPaths(taxonomy)
+			if len(rerankPaths) > maxRerankDocuments {
+				s.warn("Rerank candidate set truncated from %d leaf nodes to the upstream limit of %d", len(rerankPaths), maxRerankDocuments)
+				rerankPaths = rerankPaths[:maxRerankDocuments]
 			}
 		}
 		scores, err := s.runRerankLayer(ctx, orgID, queryText, rerankPaths, taxonomyByPath, settings.RerankTopN, options.JobID)
@@ -224,9 +232,7 @@ func (s *Session) Classify(ctx context.Context, orgID string, cleaned CleanedNew
 		}
 	}
 
-	weighted := combineScores(candidates, Settings{
-		EnableLlm: settings.EnableLlm, EnableEmbedding: settings.EnableEmbedding, EnableRerank: settings.EnableRerank,
-	})
+	weighted := combineScores(candidates, metrics.LayerSuccess)
 	sourceLabel := options.SourceLabel
 	if sourceLabel == "" {
 		sourceLabel = cleaned.Source
@@ -240,7 +246,7 @@ func (s *Session) Classify(ctx context.Context, orgID string, cleaned CleanedNew
 	metrics.CandidateCount = len(weightedWithSource)
 
 	if len(weightedWithSource) == 0 || weightedWithSource[0].Score < settings.MinConfidence {
-		fallback := classifyByRule(cleaned, settings.TaxonomyVersion)
+		fallback := classifyByRule(cleaned, settings.TaxonomyVersion, taxonomy)
 		fallback.Method = "rule-fallback-empty"
 		if len(weightedWithSource) > 0 {
 			fallback.Method = "rule-fallback-low-confidence"
@@ -406,7 +412,10 @@ func (s *Session) runEmbeddingLayer(ctx context.Context, orgID, queryText string
 			continue
 		}
 		cosine := dot(normalizedQuery, normalized)
-		scores = append(scores, pathScore{Path: node.Path, Score: clamp01((cosine + 1) / 2)})
+		// Use the raw cosine similarity. The previous (cos+1)/2 squashed even
+		// unrelated texts (cosine ~0.3-0.5) to 0.65-0.75, which let a candidate
+		// seen only by the embedding layer outrank an explicit LLM pick.
+		scores = append(scores, pathScore{Path: node.Path, Score: clamp01(cosine)})
 	}
 	sort.SliceStable(scores, func(i, j int) bool { return scores[i].Score > scores[j].Score })
 	limit := topK
@@ -461,33 +470,34 @@ func (s *Session) runRerankLayer(ctx context.Context, orgID, queryText string, c
 	if len(response.Results) == 0 {
 		return nil, errors.New("Rerank classification returned no usable results")
 	}
-	raw := make([]pathScore, 0, len(response.Results))
-	minScore := math.Inf(1)
-	maxScore := math.Inf(-1)
+	// Keep the upstream relevance score; do not min-max it. Min-max forced the
+	// best hit to 1.0 even when every candidate was irrelevant, so MinConfidence
+	// could never reject it.
+	out := make([]pathScore, 0, len(response.Results))
 	for _, result := range response.Results {
 		if result.Index < 0 || result.Index >= len(documentPaths) {
 			continue
 		}
-		raw = append(raw, pathScore{Path: documentPaths[result.Index], Score: result.Score})
-		if result.Score < minScore {
-			minScore = result.Score
-		}
-		if result.Score > maxScore {
-			maxScore = result.Score
-		}
+		out = append(out, pathScore{Path: documentPaths[result.Index], Score: rerankProbability(result.Score)})
 	}
-	if len(raw) == 0 {
+	if len(out) == 0 {
 		return nil, errors.New("Rerank classification returned no usable results")
 	}
-	out := make([]pathScore, 0, len(raw))
-	for _, entry := range raw {
-		score := 1.0
-		if maxScore != minScore {
-			score = clamp01((entry.Score - minScore) / (maxScore - minScore))
-		}
-		out = append(out, pathScore{Path: entry.Path, Score: score})
-	}
 	return out, nil
+}
+
+// rerankProbability normalizes one upstream rerank score to [0,1]. Cohere- and
+// Jina-style providers already return a relevance probability in [0,1], which is
+// used as-is. A value outside [0,1] is treated as a logit and mapped through the
+// logistic function so absolute relevance is preserved.
+func rerankProbability(score float64) float64 {
+	if math.IsNaN(score) {
+		return 0
+	}
+	if score < 0 || score > 1 {
+		return clamp01(1 / (1 + math.Exp(-score)))
+	}
+	return clamp01(score)
 }
 
 // --- Candidate/fusion/source authority ---
@@ -522,44 +532,49 @@ func (c *candidateSet) get(path, legacyCategory string) *candidateScore {
 	return entry
 }
 
-func combineScores(candidates *candidateSet, settings Settings) []ClassificationCandidate {
+// combineScores fuses the per-layer scores into one weighted score.
+//
+// The denominator is the sum of the weights of the layers that were enabled and
+// succeeded on this run. A layer that was active but did not score a candidate
+// contributes a 0 for that candidate (the weight still counts). This stops a
+// candidate seen by only one layer from winning merely because its denominator
+// is smaller. Layers that were disabled or failed are excluded from the
+// denominator.
+func combineScores(candidates *candidateSet, success LayerSuccess) []ClassificationCandidate {
 	weights := struct {
 		llm       float64
 		embedding float64
 		rerank    float64
 	}{}
-	if settings.EnableLlm {
+	if success.LLM {
 		weights.llm = 0.5
 	}
-	if settings.EnableEmbedding {
+	if success.Embedding {
 		weights.embedding = 0.3
 	}
-	if settings.EnableRerank {
+	if success.Rerank {
 		weights.rerank = 0.2
 	}
+	denominator := weights.llm + weights.embedding + weights.rerank
 	out := make([]ClassificationCandidate, 0, len(candidates.order))
 	for _, path := range candidates.order {
 		candidate := candidates.byPath[path]
 		score := 0.0
-		applied := 0.0
 		if candidate.llmScore != nil {
 			score += *candidate.llmScore * weights.llm
-			applied += weights.llm
 		}
 		if candidate.embeddingScore != nil {
 			score += *candidate.embeddingScore * weights.embedding
-			applied += weights.embedding
 		}
 		if candidate.rerankScore != nil {
 			score += *candidate.rerankScore * weights.rerank
-			applied += weights.rerank
 		}
-		if applied <= 0 {
+		if denominator <= 0 {
 			continue
 		}
 		out = append(out, ClassificationCandidate{
 			Path:           candidate.path,
-			Score:          clamp01(score / applied),
+			Score:          clamp01(score / denominator),
 			LegacyCategory: candidate.legacyCategory,
 			Reason:         candidate.reason,
 		})
@@ -634,26 +649,30 @@ func (s *Session) applySourceCategoryAuthority(ctx context.Context, orgID string
 
 // --- Rule fallback ---
 
-type ruleDefinition struct {
-	pattern *regexp.Regexp
-	legacy  string
-	path    string
-}
-
-var ruleDefinitions = []ruleDefinition{
-	{pattern: regexp.MustCompile(`\b(openai|anthropic|deepmind|llm|gpt|model release|ai model)\b`), legacy: "ai", path: "tech/ai/model-release"},
-	{pattern: regexp.MustCompile(`\b(fed|fomc|inflation|cpi|gdp|bond|yield|stock|equity|nasdaq|dow)\b`), legacy: "finance", path: "finance/macro/monetary-policy"},
-	{pattern: regexp.MustCompile(`\b(regulation|regulatory|sec|doj|congress|white house|policy)\b`), legacy: "gov", path: "gov/regulation/enforcement"},
-	{pattern: regexp.MustCompile(`\b(cyber|breach|malware|ransomware|defense|military|missile|osint)\b`), legacy: "intel", path: "intel/defense/military-operation"},
-	{pattern: regexp.MustCompile(`\b(election|campaign|parliament|geopolitic|sanction|ceasefire|conflict)\b`), legacy: "politics", path: "politics/geopolitics/conflict"},
-	{pattern: regexp.MustCompile(`\b(semiconductor|chip|software|hardware|cloud|startup|technology)\b`), legacy: "tech", path: "tech/semiconductor/supply-chain"},
-}
-
-func classifyByRule(cleaned CleanedNews, taxonomyVersion string) Result {
+// classifyByRule is the deterministic keyword fallback used when the classifier
+// is disabled, the taxonomy is empty, or every model layer is inconclusive.
+//
+// When taxonomy is non-empty the fallback may only return a rule whose path
+// actually exists in that org's taxonomy; a rule that matches the text but whose
+// path is absent is treated as no hit. A nil/empty taxonomy preserves the legacy
+// hard-coded paths (classifier disabled or no taxonomy configured).
+func classifyByRule(cleaned CleanedNews, taxonomyVersion string, taxonomy []TaxonomyNode) Result {
 	text := strings.ToLower(buildQueryText(cleaned))
+	var taxonomyPaths map[string]struct{}
+	if len(taxonomy) > 0 {
+		taxonomyPaths = make(map[string]struct{}, len(taxonomy))
+		for _, node := range taxonomy {
+			taxonomyPaths[node.Path] = struct{}{}
+		}
+	}
 	for _, rule := range ruleDefinitions {
-		if !rule.pattern.MatchString(text) {
+		if !rule.matches(text) {
 			continue
+		}
+		if taxonomyPaths != nil {
+			if _, ok := taxonomyPaths[rule.path]; !ok {
+				continue
+			}
 		}
 		confidence := 0.35
 		reason := "rule-based fallback"
@@ -718,6 +737,28 @@ func sliceCandidates(candidates []ClassificationCandidate, limit int) []Classifi
 	out := make([]ClassificationCandidate, limit)
 	copy(out, candidates[:limit])
 	return out
+}
+
+// taxonomyLeafPaths returns the paths of leaf taxonomy nodes in declaration
+// order: a node is a leaf when no other node's path is nested under it. Only
+// leaves are real classification targets, so ranking them avoids scoring a
+// parent-only path.
+func taxonomyLeafPaths(taxonomy []TaxonomyNode) []string {
+	leaves := make([]string, 0, len(taxonomy))
+	for _, node := range taxonomy {
+		isLeaf := true
+		prefix := node.Path + "/"
+		for _, other := range taxonomy {
+			if other.Path != node.Path && strings.HasPrefix(other.Path, prefix) {
+				isLeaf = false
+				break
+			}
+		}
+		if isLeaf {
+			leaves = append(leaves, node.Path)
+		}
+	}
+	return leaves
 }
 
 func splitPath(path string) []string {

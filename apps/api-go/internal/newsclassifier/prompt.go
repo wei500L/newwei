@@ -33,14 +33,16 @@ func wrapUntrustedArticle(content string) string {
 	return "<" + untrustedArticleTag + ">\n" + safe + "\n</" + untrustedArticleTag + ">"
 }
 
-// buildQueryText reproduces NewsClassifierService.buildQueryText.
+// buildQueryText builds the semantic query text shared by the embedding, rerank
+// and rule layers. It intentionally excludes the source label and language code:
+// those are not topical signal for similarity and only add noise. Source
+// authority is applied after fusion by applySourceCategoryAuthority, so the
+// source never needs to leak into the query text.
 func buildQueryText(cleaned CleanedNews) string {
 	entries := []string{
 		cleaned.Title,
 		cleaned.Subtitle,
 		cleaned.Summary,
-		cleaned.Source,
-		cleaned.Language,
 	}
 	entries = append(entries, cleaned.Topics...)
 	entries = append(entries, cleaned.KeyPoints...)
