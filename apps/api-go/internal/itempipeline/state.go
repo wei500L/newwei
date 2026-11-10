@@ -16,13 +16,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-)
 
-// Item status values (common/pipeline-status.ts).
-const (
-	itemStatusProcessing = "processing"
-	itemStatusFailed     = "failed"
-	itemStatusDuplicate  = "Duplicate"
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 )
 
 // PipelineJobStatus values (Prisma enum).
@@ -80,7 +75,7 @@ func (p *Processor) updateItemMetaStatus(ctx context.Context, itemMetaID, status
 	if skipIfDuplicate {
 		_, err = p.db.ExecContext(ctx,
 			"UPDATE `ItemMeta` SET status = ?, updatedAt = ? WHERE id = ? AND status <> ?",
-			status, now, itemMetaID, itemStatusDuplicate)
+			status, now, itemMetaID, string(itemsreading.ItemStatusDuplicate))
 	} else {
 		_, err = p.db.ExecContext(ctx,
 			"UPDATE `ItemMeta` SET status = ?, updatedAt = ? WHERE id = ?",
@@ -166,13 +161,13 @@ func (p *Processor) upsertProcessedItemStatus(ctx context.Context, update proces
 // lastRunAt, then the ops snapshot refresh.
 func (p *Processor) markProcessingState(ctx context.Context, state processingState) {
 	now := msTime(p.now())
-	p.updateItemMetaStatus(ctx, state.ItemMetaID, itemStatusProcessing, true)
+	p.updateItemMetaStatus(ctx, state.ItemMetaID, string(itemsreading.ItemStatusProcessing), true)
 	p.upsertProcessedItemStatus(ctx, processedItemUpdate{
 		ProcessedItemID: state.ProcessedItemID,
 		RawItemID:       state.RawItemID,
 		ItemMetaID:      state.ItemMetaID,
 		OrgID:           state.OrgID,
-		Status:          itemStatusProcessing,
+		Status:          string(itemsreading.ItemStatusProcessing),
 	})
 	if p.db != nil && state.PipelineJobID != nil && *state.PipelineJobID != "" {
 		if _, err := p.db.ExecContext(ctx,
@@ -218,7 +213,7 @@ func (p *Processor) markFailureState(ctx context.Context, state failureState) {
 	now := msTime(p.now())
 	sanitized := sanitizeError(state.Error)
 	if state.ItemMetaID != "" && state.FinalFailure {
-		p.updateItemMetaStatus(ctx, state.ItemMetaID, itemStatusFailed, true)
+		p.updateItemMetaStatus(ctx, state.ItemMetaID, string(itemsreading.ItemStatusFailed), true)
 	}
 	if state.ProcessedItemID != "" && state.RawItemID != "" && state.ItemMetaID != "" {
 		p.upsertProcessedItemStatus(ctx, processedItemUpdate{
@@ -226,7 +221,7 @@ func (p *Processor) markFailureState(ctx context.Context, state failureState) {
 			RawItemID:       state.RawItemID,
 			ItemMetaID:      state.ItemMetaID,
 			OrgID:           state.OrgID,
-			Status:          itemStatusFailed,
+			Status:          string(itemsreading.ItemStatusFailed),
 			Error:           &sanitized,
 		})
 	}
@@ -258,8 +253,8 @@ func (p *Processor) markFailureState(ctx context.Context, state failureState) {
 				{Key: "itemMetaId", Value: state.ItemMetaID},
 			},
 			bson.D{{Key: "$set", Value: bson.D{
-				{Key: "status", Value: itemStatusFailed},
-				{Key: "processed.status", Value: itemStatusFailed},
+				{Key: "status", Value: string(itemsreading.ItemStatusFailed)},
+				{Key: "processed.status", Value: string(itemsreading.ItemStatusFailed)},
 				{Key: "processed.error", Value: bson.D{
 					{Key: "message", Value: sanitized.Message},
 					{Key: "name", Value: errorName},

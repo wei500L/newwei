@@ -2,6 +2,8 @@ package processeditemoutbox
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -179,4 +181,56 @@ func (v *countingVector) Upsert(_ context.Context, _ vectorclient.Config, reques
 	v.calls++
 	v.last = request
 	return nil
+}
+
+// itemMetaFakeExecer records the dead-letter ItemMeta statement and can inject a
+// failure, standing in for the mysql handle without a server.
+type itemMetaFakeExecer struct {
+	queries []string
+	args    [][]any
+	err     error
+}
+
+func (f *itemMetaFakeExecer) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
+	f.queries = append(f.queries, query)
+	f.args = append(f.args, args)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return nil, nil
+}
+
+func TestMarkItemMetaFailedAfterDeadGuardsDuplicate(t *testing.T) {
+	exec := &itemMetaFakeExecer{}
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := markItemMetaFailedAfterDead(context.Background(), exec, "meta-1", "org-1", now); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+	if len(exec.queries) != 1 {
+		t.Fatalf("queries = %v", exec.queries)
+	}
+	query := exec.queries[0]
+	for _, fragment := range []string{"UPDATE `ItemMeta`", "`status` = ?", "`id` = ?", "`orgId` = ?", "`status` <> ?"} {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("query is missing %q: %s", fragment, query)
+		}
+	}
+	args := exec.args[0]
+	if len(args) != 5 {
+		t.Fatalf("args = %v", args)
+	}
+	if args[0] != itemsreading.ItemStatusFailed {
+		t.Errorf("status arg = %v, want failed", args[0])
+	}
+	if args[2] != "meta-1" || args[3] != "org-1" {
+		t.Errorf("id/org args = %v/%v", args[2], args[3])
+	}
+	if args[4] != itemsreading.ItemStatusDuplicate {
+		t.Errorf("duplicate guard = %v", args[4])
+	}
+
+	exec.err = errors.New("mysql down")
+	if err := markItemMetaFailedAfterDead(context.Background(), exec, "meta-1", "org-1", now); err == nil {
+		t.Fatal("want the write error returned so the caller logs it")
+	}
 }

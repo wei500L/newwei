@@ -245,7 +245,9 @@ func (s *store) markOutboxFailure(ctx context.Context, id string, attempts int, 
 
 // markOutboxDead writes the dead state and runs the reference-scoped
 // compensation: ItemMeta only when it still points at this raw id, PipelineJob
-// only when the payload carried a pipelineJobId.
+// only when the payload carried a pipelineJobId. The compensation is the final
+// status write of the ingest chain, so its failure is returned (the caller logs
+// it with the outbox id) instead of being silently discarded.
 func (s *store) markOutboxDead(ctx context.Context, id string, attempts int, message string, payload *OutboxPayload) error {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	_, err := s.db.ExecContext(ctx,
@@ -257,13 +259,34 @@ func (s *store) markOutboxDead(ctx context.Context, id string, attempts int, mes
 	if payload == nil {
 		return nil
 	}
-	_, _ = s.db.ExecContext(ctx,
+	if err := applyOutboxDeadCompensation(ctx, s.db, payload, message, now); err != nil {
+		return fmt.Errorf("itemsingest: compensate raw-item outbox %s: %w", id, err)
+	}
+	return nil
+}
+
+// outboxDeadExecer is the ExecContext subset the dead-letter compensation needs;
+// *sql.DB and *sql.Tx satisfy it and tests inject a fake.
+type outboxDeadExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// applyOutboxDeadCompensation marks the referenced ItemMeta (only when it still
+// points at this raw id) and PipelineJob (only when the payload carried an id)
+// failed. Both are required status writes of the ingest chain, so a failure is
+// returned rather than swallowed; the caller records it with the outbox id.
+func applyOutboxDeadCompensation(ctx context.Context, exec outboxDeadExecer, payload *OutboxPayload, message string, now time.Time) error {
+	if _, err := exec.ExecContext(ctx,
 		"UPDATE ItemMeta SET status = 'failed', updatedAt = ? WHERE id = ? AND orgId = ? AND mongoRef = ?",
-		now, payload.ItemMetaID, payload.OrgID, payload.RawItemID)
+		now, payload.ItemMetaID, payload.OrgID, payload.RawItemID); err != nil {
+		return err
+	}
 	if payload.PipelineJobID != nil {
-		_, _ = s.db.ExecContext(ctx,
+		if _, err := exec.ExecContext(ctx,
 			"UPDATE PipelineJob SET status = 'failed', error = ?, completedAt = ?, updatedAt = ? WHERE id = ? AND orgId = ?",
-			message, now, now, *payload.PipelineJobID, payload.OrgID)
+			message, now, now, *payload.PipelineJobID, payload.OrgID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

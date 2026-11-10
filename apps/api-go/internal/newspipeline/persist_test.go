@@ -1,12 +1,66 @@
 package newspipeline
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/processeditemoutbox"
 )
+
+// pipelineFakeExecer records the duplicate-mark statement and can inject a
+// failure; it stands in for the mysql transaction without a server.
+type pipelineFakeExecer struct {
+	queries []string
+	args    [][]any
+	err     error
+}
+
+func (f *pipelineFakeExecer) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
+	f.queries = append(f.queries, query)
+	f.args = append(f.args, args)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return nil, nil
+}
+
+func TestPipelineMarkItemMetaDuplicateStatement(t *testing.T) {
+	exec := &pipelineFakeExecer{}
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := pipelineMarkItemMetaDuplicate(context.Background(), exec, "meta-1", "org-1", now); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+	if len(exec.queries) != 1 {
+		t.Fatalf("queries = %v", exec.queries)
+	}
+	query := exec.queries[0]
+	for _, fragment := range []string{"UPDATE `ItemMeta`", "`status` = ?", "`id` = ?", "`orgId` = ?"} {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("query is missing %q: %s", fragment, query)
+		}
+	}
+	args := exec.args[0]
+	if len(args) != 4 {
+		t.Fatalf("args = %v", args)
+	}
+	if args[0] != itemsreading.ItemStatusDuplicate {
+		t.Errorf("status arg = %v, want duplicate", args[0])
+	}
+	if args[2] != "meta-1" || args[3] != "org-1" {
+		t.Errorf("id/org args = %v/%v", args[2], args[3])
+	}
+
+	exec.err = errors.New("mysql down")
+	if err := pipelineMarkItemMetaDuplicate(context.Background(), exec, "meta-1", "org-1", now); err == nil {
+		t.Fatal("want the write error returned so the persist transaction aborts")
+	}
+}
 
 func TestBuildProcessedItemOutboxPayloadMatchesSchema(t *testing.T) {
 	duplicateOf := "507f1f77bcf86cd799439012"

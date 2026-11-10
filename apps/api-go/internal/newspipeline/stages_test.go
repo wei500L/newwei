@@ -281,7 +281,7 @@ func TestProcessStagedClassifierUnavailableRecordsSkipped(t *testing.T) {
 	}
 }
 
-func TestProcessStagedDedupeReasonAndRevert(t *testing.T) {
+func TestProcessStagedDedupeReasonAndPersistDuplicate(t *testing.T) {
 	service, recorder, _ := newPipelineTestService(t)
 	duplicateOf := "507f1f77bcf86cd799439012"
 	service.settings = &pipelineFakeSettings{extraction: pipelineTestStagedSettings(), prompt: PromptConfig{Version: "v1"}}
@@ -306,11 +306,10 @@ func TestProcessStagedDedupeReasonAndRevert(t *testing.T) {
 	if _, err := service.Process(context.Background(), pipelineTestJob(), pipelineTestRaw()); err == nil {
 		t.Fatal("expected the persist stage to fail")
 	}
-	if !deduper.reverted {
-		t.Fatal("the staged pipeline must revert the Duplicate mark on persist failure")
-	}
-	if deduper.revertedWith == nil || *deduper.revertedWith != duplicateOf {
-		t.Fatalf("revert duplicateOf = %v", deduper.revertedWith)
+	// The duplicate mark now travels with the persist transaction, so a failed
+	// persist leaves no mark to revert.
+	if store.input.DuplicateOf == nil || *store.input.DuplicateOf != duplicateOf {
+		t.Fatalf("persist duplicateOf = %v", store.input.DuplicateOf)
 	}
 }
 

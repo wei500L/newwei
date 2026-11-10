@@ -7,6 +7,7 @@ package itempipeline
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -120,14 +121,7 @@ func (p *Processor) Handle(ctx context.Context, job Job) (json.RawMessage, error
 		return nil, NewPermanentError("Queue job missing orgId")
 	}
 	orgID := data.OrgID
-	processedItemID := data.ProcessedItemID
-	if processedItemID == "" {
-		if isValidObjectID(rawItemID) {
-			processedItemID = rawItemID
-		} else {
-			processedItemID = bson.NewObjectID().Hex()
-		}
-	}
+	processedItemID := p.resolveProcessedItemID(ctx, data)
 
 	p.markProcessingState(ctx, processingState{
 		ItemMetaID:      itemMetaID,
@@ -208,12 +202,7 @@ func (p *Processor) HandleFailure(ctx context.Context, job Job, failure FailureI
 	}
 	rawItemID := data.RawItemID
 	itemMetaID := data.ItemMetaID
-	processedItemID := data.ProcessedItemID
-	if processedItemID == "" {
-		if rawItemID != "" && isValidObjectID(rawItemID) {
-			processedItemID = rawItemID
-		}
-	}
+	processedItemID := p.resolveProcessedItemID(ctx, data)
 
 	attempts := job.Attempts()
 	taskData, marshalErr := json.Marshal(struct {
@@ -288,6 +277,67 @@ func (p *Processor) HandleFailure(ctx context.Context, job Job, failure FailureI
 	}
 	log.Printf("itempipeline: queue job enqueued to DLQ jobId=%s dlqJobId=%s errorKind=%s",
 		job.ID, dlqJobID, classified.Kind)
+}
+
+// resolveProcessedItemID returns the ProcessedItem id this attempt must use.
+// The queue data normally carries it. Legacy/replay jobs may omit it, and the id
+// must stay identical across retries so a retry after a lost lease (persist
+// succeeded but the acknowledgement was lost) cannot create a second
+// ProcessedItem. It reuses the newest ProcessedItem of the item (the same stable
+// lookup pipelineenqueue uses), falls back to the raw item id when that is a
+// valid ObjectId (the legacy form), and finally mints a deterministic ObjectId
+// from (orgId, itemMetaId). Handle and HandleFailure share this resolver, so a
+// failure always targets the same document the successful attempt would have
+// written.
+func (p *Processor) resolveProcessedItemID(ctx context.Context, data Payload) string {
+	if data.ProcessedItemID != "" {
+		return data.ProcessedItemID
+	}
+	if p != nil && p.mongo != nil && data.OrgID != "" && data.ItemMetaID != "" {
+		if id := p.latestProcessedItemID(ctx, data.OrgID, data.ItemMetaID); id != "" {
+			return id
+		}
+	}
+	if data.RawItemID != "" && isValidObjectID(data.RawItemID) {
+		return data.RawItemID
+	}
+	return deterministicProcessedItemID(data.OrgID, data.ItemMetaID)
+}
+
+// latestProcessedItemID reads the newest ProcessedItem id for the item. A query
+// failure is logged and treated as "none found" so the deterministic fallback
+// still yields a stable id.
+func (p *Processor) latestProcessedItemID(ctx context.Context, orgID, itemMetaID string) string {
+	var row struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	err := p.mongo.Collection(processedItemsCollection).FindOne(ctx, bson.D{
+		{Key: "orgId", Value: orgID},
+		{Key: "itemMetaId", Value: itemMetaID},
+	}, options.FindOne().
+		SetProjection(bson.D{{Key: "_id", Value: 1}}).
+		SetSort(bson.D{{Key: "createdAt", Value: -1}}),
+	).Decode(&row)
+	if err != nil {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			log.Printf("itempipeline: failed to resolve existing processed item orgId=%s itemMetaId=%s: %v", orgID, itemMetaID, err)
+		}
+		return ""
+	}
+	if row.ID.IsZero() {
+		return ""
+	}
+	return row.ID.Hex()
+}
+
+// deterministicProcessedItemID derives a stable ObjectId from (orgId, itemMetaId)
+// so every attempt of a job without a stored processedItemId computes the same
+// id. SHA-256 keeps collisions negligible; its first 12 bytes form the ObjectId.
+func deterministicProcessedItemID(orgID, itemMetaID string) string {
+	sum := sha256.Sum256([]byte(orgID + "\x00" + itemMetaID))
+	var id bson.ObjectID
+	copy(id[:], sum[:12])
+	return id.Hex()
 }
 
 // readRawItem is RawItemModel.findById. A missing document returns (nil, nil);

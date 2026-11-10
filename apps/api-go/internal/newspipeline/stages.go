@@ -20,8 +20,8 @@ import (
 // A rejected gate never throws: it persists the gate-rejected result with
 // skipped stage_meta entries. An individual enrichment failure never aborts: the
 // stage records failed, the output becomes []/null/[] and the failure is written
-// to TaskLog. A persist failure after the dedupe mark rolls the Duplicate mark
-// back and rethrows.
+// to TaskLog. A persist failure rolls the whole transaction back, so the
+// duplicate status is never left behind without a processed result.
 
 // processLegacyPipeline is processLegacyPipeline.
 func (s *Service) processLegacyPipeline(ctx context.Context, job Job, raw RawItem, payload NormalizedPayload, article ArticleWithCache) (ProcessResult, error) {
@@ -88,9 +88,6 @@ func (s *Service) processLegacyPipeline(ctx context.Context, job Job, raw RawIte
 		return pipelineStageFailureRawItemMeta{RawItemID: raw.ID, ItemMetaID: job.ItemMetaID}
 	})
 	if err != nil {
-		// The dedupe stage already marked the item Duplicate; if persist fails
-		// the item must not stay Duplicate with no processed document.
-		s.revertDuplicateMarkOnPersistFailure(ctx, job, dedupe.DuplicateOf)
 		return ProcessResult{}, err
 	}
 	return result, nil
@@ -288,9 +285,6 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 		})
 	}, persistErrorData)
 	if err != nil {
-		// The dedupe stage already marked the item Duplicate; if persist fails
-		// the item must not stay Duplicate with no processed document.
-		s.revertDuplicateMarkOnPersistFailure(ctx, job, dedupe.DuplicateOf)
 		return ProcessResult{}, err
 	}
 	return result, nil
@@ -439,13 +433,6 @@ func (s *Service) runClassificationStage(ctx context.Context, job Job, payload N
 	next.StageMeta.Classify = entry
 	s.recordStageOutcome(ctx, job, "classify", entry, nil)
 	return next, nil
-}
-
-// revertDuplicateMarkOnPersistFailure best-effort reverts the Duplicate mark.
-func (s *Service) revertDuplicateMarkOnPersistFailure(ctx context.Context, job Job, duplicateOf *string) {
-	if err := s.deduper.RevertDuplicateMarkOnPersistFailure(ctx, job, duplicateOf); err != nil {
-		s.logf("failed to revert Duplicate mark after persist failure for itemMetaId %s: %v", job.ItemMetaID, err)
-	}
 }
 
 // classificationOptions builds the classifier context exactly like the

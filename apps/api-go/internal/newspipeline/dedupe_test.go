@@ -2,7 +2,6 @@ package newspipeline
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
 )
@@ -85,27 +83,6 @@ func (f *fakeDedupeStore) SemanticCandidates(_ context.Context, orgID, embedding
 	f.semanticExclude = excludeItemMetaID
 	return f.semanticCandidates, f.semanticErr
 }
-
-// dedupeFakeSQL records the duplicate-mark statements.
-type dedupeFakeSQL struct {
-	queries []string
-	args    [][]any
-	err     error
-}
-
-func (f *dedupeFakeSQL) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
-	f.queries = append(f.queries, query)
-	f.args = append(f.args, args)
-	if f.err != nil {
-		return nil, f.err
-	}
-	return dedupeFakeSQLResult(0), nil
-}
-
-type dedupeFakeSQLResult int64
-
-func (r dedupeFakeSQLResult) LastInsertId() (int64, error) { return 0, nil }
-func (r dedupeFakeSQLResult) RowsAffected() (int64, error) { return int64(r), nil }
 
 // dedupeFakeModels is the LiteLLM fake.
 type dedupeFakeModels struct {
@@ -229,7 +206,6 @@ func dedupeTestSettings() DedupeSettings {
 type dedupeHarness struct {
 	deduper  *Deduper
 	store    *fakeDedupeStore
-	sql      *dedupeFakeSQL
 	models   *dedupeFakeModels
 	searcher vectorclient.Searcher
 	now      time.Time
@@ -238,7 +214,6 @@ type dedupeHarness struct {
 func newDedupeHarness(options func(*dedupeHarness)) *dedupeHarness {
 	harness := &dedupeHarness{
 		store: &fakeDedupeStore{},
-		sql:   &dedupeFakeSQL{},
 		models: &dedupeFakeModels{
 			runtimeEmbedding: litellmcompat.RuntimeModel{Model: "embed-v1", Configured: true},
 		},
@@ -254,7 +229,6 @@ func newDedupeHarness(options func(*dedupeHarness)) *dedupeHarness {
 		Now:     func() time.Time { return harness.now },
 	})
 	deduper.store = harness.store
-	deduper.sql = harness.sql
 	harness.deduper = deduper
 	return harness
 }
@@ -333,12 +307,9 @@ func TestDedupeEvaluateContentDuplicateSelfReferenceIsSkipped(t *testing.T) {
 		harness.store.existsItemMetaID != "meta-1" || harness.store.existsProcessedID != ref {
 		t.Errorf("self-reference query = %+v", harness.store)
 	}
-	if len(harness.sql.queries) != 0 {
-		t.Errorf("no duplicate mark expected, got %v", harness.sql.queries)
-	}
 }
 
-func TestDedupeEvaluateContentDuplicateMarksItemMeta(t *testing.T) {
+func TestDedupeEvaluateContentDuplicateReturnsDuplicateWithoutWriting(t *testing.T) {
 	harness := newDedupeHarness(nil)
 	harness.store.exists = false
 	ref := dedupeObjectIDHex(2)
@@ -359,37 +330,6 @@ func TestDedupeEvaluateContentDuplicateMarksItemMeta(t *testing.T) {
 	}
 	if result.ThresholdUsed != nil {
 		t.Errorf("ThresholdUsed = %v, want nil", result.ThresholdUsed)
-	}
-	if len(harness.sql.queries) != 1 || len(harness.sql.args) != 1 {
-		t.Fatalf("mark queries = %v args = %v", harness.sql.queries, harness.sql.args)
-	}
-	args := harness.sql.args[0]
-	if len(args) != 4 {
-		t.Fatalf("mark args = %v", args)
-	}
-	if args[0] != itemsreading.ItemStatusDuplicate {
-		t.Errorf("status arg = %v", args[0])
-	}
-	if args[2] != "meta-1" || args[3] != "org-1" {
-		t.Errorf("itemMetaId/orgId args = %v/%v", args[2], args[3])
-	}
-}
-
-func TestDedupeEvaluateContentDuplicateSwallowsMarkFailure(t *testing.T) {
-	harness := newDedupeHarness(nil)
-	harness.store.exists = false
-	harness.sql.err = errors.New("mysql down")
-	ref := dedupeObjectIDHex(3)
-
-	result, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), DedupeInput{
-		Job:                Job{OrgID: "org-1", ItemMetaID: "meta-1"},
-		ContentDuplicateOf: &ref,
-	})
-	if err != nil {
-		t.Fatalf("EvaluateSummaryDedupe error = %v, want the mark failure swallowed", err)
-	}
-	if result.DuplicateOf == nil || *result.DuplicateOf != ref {
-		t.Errorf("DuplicateOf = %v", result.DuplicateOf)
 	}
 }
 
@@ -543,9 +483,6 @@ func TestDedupeEvaluateLlmJudgeFindsDuplicate(t *testing.T) {
 	if harness.models.calls() != 3 {
 		t.Errorf("judge calls = %d, want 3", harness.models.calls())
 	}
-	if len(harness.sql.queries) != 1 {
-		t.Errorf("duplicate marks = %d, want 1", len(harness.sql.queries))
-	}
 }
 
 func TestDedupeEvaluateLlmJudgeEarlyExitAt098(t *testing.T) {
@@ -605,9 +542,6 @@ func TestDedupeEvaluateLlmJudgeInvalidOrFailedCallIsSkipped(t *testing.T) {
 	}
 	if result.ThresholdUsed == nil {
 		t.Error("ThresholdUsed must be set")
-	}
-	if len(harness.sql.queries) != 0 {
-		t.Errorf("duplicate marks = %d, want 0", len(harness.sql.queries))
 	}
 
 	harness.models.completion = func(context.Context, litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
@@ -945,67 +879,6 @@ func TestDedupeFindSemanticDuplicatePropagatesStoreErrors(t *testing.T) {
 	harness.store.allowedErr = errors.New("mongo down")
 	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), dedupeSummaryInput(summary)); err == nil {
 		t.Fatal("want the vector validation failure to propagate")
-	}
-}
-
-// --- duplicate mark / revert SQL ---
-
-func TestDedupeRevertDuplicateMarkOnPersistFailure(t *testing.T) {
-	harness := newDedupeHarness(nil)
-	job := Job{OrgID: "org-1", ItemMetaID: "meta-1"}
-
-	if err := harness.deduper.RevertDuplicateMarkOnPersistFailure(context.Background(), job, nil); err != nil {
-		t.Fatalf("nil duplicateOf error = %v", err)
-	}
-	if len(harness.sql.queries) != 0 {
-		t.Fatalf("queries = %v, want none", harness.sql.queries)
-	}
-
-	ref := dedupeObjectIDHex(1)
-	if err := harness.deduper.RevertDuplicateMarkOnPersistFailure(context.Background(), job, &ref); err != nil {
-		t.Fatalf("revert error = %v", err)
-	}
-	if len(harness.sql.queries) != 1 {
-		t.Fatalf("queries = %v", harness.sql.queries)
-	}
-	query := harness.sql.queries[0]
-	if !strings.Contains(query, "SET `status` = ?") || !strings.Contains(query, "`status` = ?") {
-		t.Errorf("revert query = %q", query)
-	}
-	args := harness.sql.args[0]
-	if len(args) != 5 {
-		t.Fatalf("revert args = %v", args)
-	}
-	if args[0] != itemsreading.ItemStatusPending || args[4] != itemsreading.ItemStatusDuplicate {
-		t.Errorf("revert statuses = %v/%v", args[0], args[4])
-	}
-	if args[2] != "meta-1" || args[3] != "org-1" {
-		t.Errorf("revert id/org args = %v/%v", args[2], args[3])
-	}
-
-	// A database failure is swallowed so the original persist error propagates.
-	harness.sql.err = errors.New("mysql down")
-	if err := harness.deduper.RevertDuplicateMarkOnPersistFailure(context.Background(), job, &ref); err != nil {
-		t.Fatalf("revert failure error = %v, want nil", err)
-	}
-}
-
-func TestDedupeMarkItemMetaDuplicateSwallowsFailure(t *testing.T) {
-	query := strings.Repeat("market analysts expect the central bank ", 3)
-	harness := newDedupeHarness(nil).withSettings(dedupeTestSettings())
-	harness.store.llmCandidates = []dedupeLLMCandidate{
-		{ID: dedupeObjectIDHex(1), Summary: dedupeStringPtr(query + " x")},
-	}
-	harness.models.completion = func(context.Context, litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
-		return litellmcompat.CompletionResponse{Content: `{"similarity":0.99,"is_duplicate":true}`}, nil
-	}
-	harness.sql.err = errors.New("mysql down")
-	result, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), dedupeSummaryInput(query))
-	if err != nil {
-		t.Fatalf("EvaluateSummaryDedupe error = %v, want the mark failure swallowed", err)
-	}
-	if result.DuplicateOf == nil {
-		t.Fatal("want the duplicate result even when the mark failed")
 	}
 }
 

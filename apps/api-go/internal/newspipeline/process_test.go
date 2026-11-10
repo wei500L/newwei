@@ -152,14 +152,10 @@ func (f *pipelineFakeExtractor) ExtractKGRelations(context.Context, StageContext
 }
 
 type pipelineFakeDeduper struct {
-	recorder        *pipelineTestRecorder
-	result          DedupeResult
-	evaluateErr     error
-	revertErr       error
-	input           DedupeInput
-	reverted        bool
-	revertedWith    *string
-	revertCallCount int
+	recorder    *pipelineTestRecorder
+	result      DedupeResult
+	evaluateErr error
+	input       DedupeInput
 }
 
 func (f *pipelineFakeDeduper) EvaluateSummaryDedupe(_ context.Context, input DedupeInput) (DedupeResult, error) {
@@ -169,13 +165,6 @@ func (f *pipelineFakeDeduper) EvaluateSummaryDedupe(_ context.Context, input Ded
 		return DedupeResult{}, f.evaluateErr
 	}
 	return f.result, nil
-}
-
-func (f *pipelineFakeDeduper) RevertDuplicateMarkOnPersistFailure(_ context.Context, _ Job, duplicateOf *string) error {
-	f.reverted = true
-	f.revertCallCount++
-	f.revertedWith = duplicateOf
-	return f.revertErr
 }
 
 type pipelineFakeClassifier struct {
@@ -515,7 +504,7 @@ func TestProcessLegacyClassificationFailurePropagates(t *testing.T) {
 	}
 }
 
-func TestProcessLegacyPersistFailureRevertsDuplicateMark(t *testing.T) {
+func TestProcessLegacyPersistFailureCarriesDuplicateOfIntoPersist(t *testing.T) {
 	service, recorder, _ := newPipelineTestService(t)
 	duplicateOf := "507f1f77bcf86cd799439012"
 	service.settings = &pipelineFakeSettings{extraction: pipelineTestLegacySettings()}
@@ -532,16 +521,16 @@ func TestProcessLegacyPersistFailureRevertsDuplicateMark(t *testing.T) {
 		},
 	}
 	service.deduper = deduper
-	service.store = &pipelineFakeStore{recorder: recorder, err: errors.New("persist failed")}
+	store := &pipelineFakeStore{recorder: recorder, err: errors.New("persist failed")}
+	service.store = store
 
 	if _, err := service.Process(context.Background(), pipelineTestJob(), pipelineTestRaw()); err == nil {
 		t.Fatal("expected the persist stage to fail")
 	}
-	if !deduper.reverted {
-		t.Fatal("the Duplicate mark must be reverted after a persist failure")
-	}
-	if deduper.revertedWith == nil || *deduper.revertedWith != duplicateOf {
-		t.Fatalf("revert must receive the dedupe duplicateOf, got %v", deduper.revertedWith)
+	// The dedupe stage only computes the result; the duplicate mark now travels
+	// with the persist transaction input so a failed persist leaves no mark.
+	if store.input.DuplicateOf == nil || *store.input.DuplicateOf != duplicateOf {
+		t.Fatalf("persist must receive the dedupe duplicateOf, got %v", store.input.DuplicateOf)
 	}
 }
 
