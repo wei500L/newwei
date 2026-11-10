@@ -198,6 +198,35 @@ func TestProcessedItemOutboxIntegration(t *testing.T) {
 		if readModel.Status != "failed" || readModel.Processed == nil || readModel.Processed.Status != "failed" || readModel.Processed.Error == nil {
 			t.Fatalf("read model compensation = %+v", readModel)
 		}
+		// S1: the MySQL ItemMeta must leave "processing" even though delivery
+		// never completed, or the item is invisible to failure statistics.
+		meta := loadMetaForTest(t, db, metaID)
+		if meta.Status != "failed" {
+			t.Fatalf("ItemMeta.status = %q, want failed after dead-letter compensation", meta.Status)
+		}
+	})
+
+	t.Run("dead letter keeps a duplicate item duplicate", func(t *testing.T) {
+		resetProcessedItemState(t, db, database)
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		metaID := "meta-dead-duplicate"
+		insertMetaForTest(t, db, metaID, "org-1", "external-dead-duplicate", "Title", "duplicate", now)
+		outboxID := "outbox-dead-duplicate"
+		payload := validOutboxPayload("507f1f77bcf86cd799439041", "not-an-object-id", metaID, "org-1")
+		insertOutboxForTest(t, db, outboxID, "org-1", payload, "pending", 9, now, now)
+		service := newTestService()
+		if !service.deliverOne(ctx, outboxID) {
+			t.Fatal("delivery was not claimed")
+		}
+		row := loadOutboxForTest(t, db, outboxID)
+		if row.Status != "dead" || row.Attempts != 10 {
+			t.Fatalf("outbox = %+v", row)
+		}
+		// The compensation must not overwrite a duplicate classification.
+		meta := loadMetaForTest(t, db, metaID)
+		if meta.Status != "duplicate" {
+			t.Fatalf("ItemMeta.status = %q, want duplicate preserved", meta.Status)
+		}
 	})
 
 	t.Run("tick drains multiple batches within budget", func(t *testing.T) {

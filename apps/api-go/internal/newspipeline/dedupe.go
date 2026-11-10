@@ -22,14 +22,17 @@ package newspipeline
 // duplicate mark and the configured lookback window; this item's own previous
 // runs (same itemMetaId) are always excluded so a replay cannot match itself.
 //
+// The stage only computes the duplicate result: it never writes ItemMeta. The
+// duplicate status is applied inside the persist transaction, so a persist
+// failure rolls the mark back atomically instead of leaving the item stuck as a
+// duplicate with no processed result.
+//
 // Failure semantics follow the TypeScript service: Mongo and embedding-model
-// resolution failures propagate and fail the stage, while a failed judge call, a
-// failed duplicate mark, a failed embedding call and a failed revert are logged
-// and never abort the pipeline.
+// resolution failures propagate and fail the stage, while a failed judge call or
+// a failed embedding call are logged and never abort the pipeline.
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"log"
 	"math"
@@ -45,7 +48,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
-	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
@@ -81,8 +83,6 @@ var errDedupeMongoNotConfigured = errors.New("newspipeline: mongo is not configu
 
 // DeduperDeps wires the summary dedupe stage.
 type DeduperDeps struct {
-	// DB is the MySQL pool used for the ItemMeta duplicate mark.
-	DB *sql.DB
 	// Mongo is the pipeline database (processeditems).
 	Mongo *mongo.Database
 	// Models is the LiteLLM surface (embedding + dedupe judge).
@@ -100,21 +100,15 @@ type DeduperDeps struct {
 	Random func() float64
 }
 
-// Deduper executes evaluateSummaryDedupe and the persist-failure revert.
+// Deduper executes evaluateSummaryDedupe. It computes the duplicate result only;
+// the duplicate ItemMeta write happens inside the persist transaction.
 type Deduper struct {
-	sql      dedupeSQL
 	store    dedupeStore
 	models   Models
 	vector   vectorclient.Searcher
 	settings dedupeSettingsProvider
 	runtime  RuntimeConfig
 	now      func() time.Time
-}
-
-// dedupeSQL is the *sql.DB surface the duplicate marks use. Tests inject a fake
-// that records the statements.
-type dedupeSQL interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // dedupeSettingsProvider is the org-scoped dedupe settings read. *SettingsReader
@@ -234,9 +228,6 @@ func NewDeduper(deps DeduperDeps) *Deduper {
 		runtime: deps.Runtime,
 		now:     now,
 	}
-	if deps.DB != nil {
-		deduper.sql = deps.DB
-	}
 	if deps.Mongo != nil {
 		deduper.store = &mongoDedupeStore{mongo: deps.Mongo}
 	}
@@ -267,7 +258,6 @@ func (d *Deduper) EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) 
 		if isSelf {
 			return DedupeResult{}, nil
 		}
-		d.markItemMetaDuplicate(ctx, input.Job, *ref, 1)
 		return DedupeResult{
 			DuplicateOf:         stringPointer(*ref),
 			DuplicateSimilarity: floatPointer(1),
@@ -321,7 +311,6 @@ func (d *Deduper) EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) 
 		if duplicate == nil {
 			return baseResult, nil
 		}
-		d.markItemMetaDuplicate(ctx, input.Job, duplicate.ID, duplicate.Similarity)
 		baseResult.DuplicateOf = stringPointer(duplicate.ID)
 		baseResult.DuplicateSimilarity = floatPointer(duplicate.Similarity)
 		return baseResult, nil
@@ -352,7 +341,6 @@ func (d *Deduper) EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) 
 	if duplicate == nil {
 		return embeddingBaseResult, nil
 	}
-	d.markItemMetaDuplicate(ctx, input.Job, duplicate.ID, duplicate.Similarity)
 	embeddingBaseResult.DuplicateOf = stringPointer(duplicate.ID)
 	embeddingBaseResult.DuplicateSimilarity = floatPointer(duplicate.Similarity)
 	return embeddingBaseResult, nil
@@ -774,44 +762,6 @@ func (d *Deduper) vectorFallbackToMongo(ctx context.Context) bool {
 		}
 	}
 	return true
-}
-
-// markItemMetaDuplicate ports markItemMetaDuplicate: a best-effort
-// ItemMeta.status Duplicate mark. Failures are logged and swallowed, exactly
-// like the TypeScript warn branch.
-func (d *Deduper) markItemMetaDuplicate(ctx context.Context, job Job, duplicateOf string, similarity float64) {
-	if d == nil || d.sql == nil {
-		return
-	}
-	_, err := d.sql.ExecContext(ctx,
-		"UPDATE `ItemMeta` SET `status` = ?, `updatedAt` = ? WHERE `id` = ? AND `orgId` = ?",
-		itemsreading.ItemStatusDuplicate, d.now(), job.ItemMetaID, job.OrgID)
-	if err != nil {
-		log.Printf("newspipeline: failed to mark item meta as duplicate (itemMetaId %s, duplicateOf %s, similarity %v): %v",
-			job.ItemMetaID, duplicateOf, similarity, err)
-	}
-}
-
-// RevertDuplicateMarkOnPersistFailure ports
-// revertDuplicateMarkOnPersistFailure: when persist fails after the dedupe stage
-// already marked the item Duplicate, put it back to Pending. Like the TypeScript
-// service the call never fails the pipeline: a database error is logged and
-// swallowed, so the original persist error is the one the queue classifies.
-func (d *Deduper) RevertDuplicateMarkOnPersistFailure(ctx context.Context, job Job, duplicateOf *string) error {
-	if duplicateOf == nil || *duplicateOf == "" {
-		return nil
-	}
-	if d == nil || d.sql == nil {
-		return nil
-	}
-	_, err := d.sql.ExecContext(ctx,
-		"UPDATE `ItemMeta` SET `status` = ?, `updatedAt` = ? WHERE `id` = ? AND `orgId` = ? AND `status` = ?",
-		itemsreading.ItemStatusPending, d.now(), job.ItemMetaID, job.OrgID, itemsreading.ItemStatusDuplicate)
-	if err != nil {
-		log.Printf("newspipeline: failed to revert Duplicate mark after persist failure (itemMetaId %s, duplicateOf %s): %v",
-			job.ItemMetaID, *duplicateOf, err)
-	}
-	return nil
 }
 
 // resolveSummaryDedupThreshold ports resolveSummaryDedupThreshold: shorter

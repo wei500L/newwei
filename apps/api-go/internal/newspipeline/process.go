@@ -35,10 +35,10 @@ type pipelineExtractor interface {
 	ExtractKGRelations(ctx context.Context, stage StageContext, prompt PromptConfig, provider string, input EnrichmentInput) ([]KGRelation, *LLMMetadata, error)
 }
 
-// pipelineDeduper is the news-dedupe surface.
+// pipelineDeduper is the news-dedupe surface. It only computes the duplicate
+// result; the duplicate ItemMeta write belongs to the persist transaction.
 type pipelineDeduper interface {
 	EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) (DedupeResult, error)
-	RevertDuplicateMarkOnPersistFailure(ctx context.Context, job Job, duplicateOf *string) error
 }
 
 // Service is the itemPipeline news pipeline worker.
@@ -94,7 +94,6 @@ func New(opts Options) *Service {
 		}),
 		extractor: NewExtractor(opts.Models, builder),
 		deduper: NewDeduper(DeduperDeps{
-			DB:       opts.DB,
 			Mongo:    opts.Mongo,
 			Models:   opts.Models,
 			Vector:   opts.Vector,

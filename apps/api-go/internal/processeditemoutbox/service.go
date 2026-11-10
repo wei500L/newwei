@@ -539,9 +539,28 @@ func (s *Service) markDead(ctx context.Context, claimed *claimedEntry, message, 
 	s.compensateDead(ctx, claimed.ID, message, name)
 }
 
+// itemMetaStatusExecer is the ExecContext subset the dead-letter ItemMeta write
+// needs; both *sql.DB and *sql.Tx satisfy it, and tests inject a fake.
+type itemMetaStatusExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// markItemMetaFailedAfterDead writes the MySQL half of the dead-letter
+// compensation: the item is finished (failed) even though delivery never
+// completed, unless it was already classified as a duplicate. The write is
+// returned so the caller can log it with the outbox id; it must not be silently
+// discarded and it must not block the Mongo compensation.
+func markItemMetaFailedAfterDead(ctx context.Context, exec itemMetaStatusExecer, itemMetaID, orgID string, now time.Time) error {
+	_, err := exec.ExecContext(ctx,
+		"UPDATE `ItemMeta` SET `status` = ?, `updatedAt` = ? WHERE `id` = ? AND `orgId` = ? AND `status` <> ?",
+		itemsreading.ItemStatusFailed, now.UTC().Truncate(time.Millisecond), itemMetaID, orgID, itemsreading.ItemStatusDuplicate)
+	return err
+}
+
 // compensateDead ports the dead-letter compensation. A missing or invalid
-// payload is not compensated: its ids cannot be trusted. Every other failure
-// only logs a warning, exactly like the NestJS implementation.
+// payload is not compensated: its ids cannot be trusted. The MySQL ItemMeta and
+// the Mongo ProcessedItem/read model are then marked failed; a failed write is
+// logged and never returned, so one store cannot skip the other.
 func (s *Service) compensateDead(ctx context.Context, outboxID, message, name string) {
 	raw, err := s.store.loadPayload(ctx, outboxID)
 	if err != nil {
@@ -561,9 +580,17 @@ func (s *Service) compensateDead(ctx context.Context, outboxID, message, name st
 		log.Printf("processeditemoutbox: dead payload processed id is invalid outboxId=%s: %v", outboxID, err)
 		return
 	}
+	now := s.now()
+	// MySQL ItemMeta must not stay "processing" after delivery is dead, or the
+	// item is invisible to failure statistics, filters and retry entry points.
+	// A duplicate meta keeps its status (the delivery update uses the same
+	// guard). This is the first compensation step; a write failure is logged and
+	// never skips the Mongo compensation below.
+	if err := markItemMetaFailedAfterDead(ctx, s.store.db, document.ItemMetaID, document.OrgID, now); err != nil {
+		log.Printf("processeditemoutbox: compensate item meta failed outboxId=%s itemMetaId=%s: %v", outboxID, document.ItemMetaID, err)
+	}
 	errorMessage := truncateUTF16(message, 2000)
 	failure := bson.D{{Key: "message", Value: errorMessage}, {Key: "name", Value: name}}
-	now := s.now()
 	_, err = s.mongo.Collection(processedItemsCollection).UpdateOne(
 		ctx,
 		bson.D{{Key: "_id", Value: processedID}, {Key: "status", Value: "processing"}},

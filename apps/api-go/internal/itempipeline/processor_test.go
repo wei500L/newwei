@@ -73,3 +73,32 @@ func TestHandleFailureWritesTaskLogDataShape(t *testing.T) {
 	// No DB/Mongo/Redis is configured, so the only observable side effect is
 	// that the call does not panic and does not require the DLQ producer.
 }
+
+func TestResolveProcessedItemIDIsStableAcrossRetries(t *testing.T) {
+	processor := newTestProcessor(t, &fakePipeline{})
+	// A legacy/replay job without a processedItemId and with a rawItemId that is
+	// not an ObjectId must resolve to the same id on every attempt. Before the
+	// fix each attempt minted a fresh ObjectId.
+	data := Payload{OrgID: "org-1", ItemMetaID: "meta-1", RawItemID: "raw-not-an-object-id"}
+	first := processor.resolveProcessedItemID(context.Background(), data)
+	second := processor.resolveProcessedItemID(context.Background(), data)
+	if first == "" || !isValidObjectID(first) {
+		t.Fatalf("resolved id = %q, want a valid ObjectId hex", first)
+	}
+	if first != second {
+		t.Fatalf("retry ids differ: %q vs %q", first, second)
+	}
+
+	// A job-carried id always wins.
+	carried := data
+	carried.ProcessedItemID = "507f1f77bcf86cd799439099"
+	if got := processor.resolveProcessedItemID(context.Background(), carried); got != carried.ProcessedItemID {
+		t.Fatalf("carried id = %q, want %q", got, carried.ProcessedItemID)
+	}
+
+	// A valid raw item id keeps the legacy fallback.
+	legacy := Payload{OrgID: "org-1", ItemMetaID: "meta-1", RawItemID: "507f1f77bcf86cd799439022"}
+	if got := processor.resolveProcessedItemID(context.Background(), legacy); got != legacy.RawItemID {
+		t.Fatalf("legacy raw id = %q, want %q", got, legacy.RawItemID)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
 )
 
@@ -63,6 +64,10 @@ type pipelineStoreInput struct {
 	ArticleMetadataPatch json.RawMessage
 	ProcessedItemID      string
 	OutboxPayload        []byte
+	// DuplicateOf is set when the dedupe stage found a duplicate. The persist
+	// transaction flips this item's ItemMeta to duplicate atomically with the
+	// outbox write, so a rolled-back persist never leaves a duplicate mark.
+	DuplicateOf *string
 }
 
 // pipelineMySQLStore is the database/sql implementation. Every statement that
@@ -127,6 +132,7 @@ func (s *Service) persistProcessedResult(ctx context.Context, options pipelinePe
 		ArticleMetadataPatch: options.ArticleMetadataPatch,
 		ProcessedItemID:      processedItemID,
 		OutboxPayload:        encoded,
+		DuplicateOf:          options.DuplicateOf,
 	})
 	if err != nil {
 		return PersistResult{}, err
@@ -197,6 +203,15 @@ func (s *pipelineMySQLStore) persist(ctx context.Context, input pipelineStoreInp
 		}
 	}
 
+	// A duplicate result flips the ItemMeta status inside the same transaction as
+	// the outbox row: either both commit or neither does. Delivery's
+	// updateItemMeta skips duplicate rows, so the mark survives delivery.
+	if input.DuplicateOf != nil && *input.DuplicateOf != "" {
+		if err := pipelineMarkItemMetaDuplicate(ctx, tx, input.Job.ItemMetaID, input.Job.OrgID, now); err != nil {
+			return PersistResult{}, err
+		}
+	}
+
 	outboxID := pipelineNewRowID()
 	query, args := buildMongoOutboxInsertQuery(outboxID, input.Job.OrgID, input.OutboxPayload, now)
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
@@ -206,6 +221,20 @@ func (s *pipelineMySQLStore) persist(ctx context.Context, input pipelineStoreInp
 		return PersistResult{}, err
 	}
 	return PersistResult{ProcessedItemID: input.ProcessedItemID, OutboxID: outboxID}, nil
+}
+
+// pipelineExecer is the ExecContext subset shared by *sql.DB and *sql.Tx.
+type pipelineExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// pipelineMarkItemMetaDuplicate sets ItemMeta.status to duplicate inside the
+// persist transaction, scoped by tenant.
+func pipelineMarkItemMetaDuplicate(ctx context.Context, exec pipelineExecer, itemMetaID, orgID string, now time.Time) error {
+	_, err := exec.ExecContext(ctx,
+		"UPDATE `ItemMeta` SET `status` = ?, `updatedAt` = ? WHERE `id` = ? AND `orgId` = ?",
+		itemsreading.ItemStatusDuplicate, now.UTC().Truncate(time.Millisecond), itemMetaID, orgID)
+	return err
 }
 
 // pipelineResolveSourceIDForOrg mirrors createOutboxEntry's source resolution: a

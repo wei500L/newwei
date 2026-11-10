@@ -13,16 +13,13 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsingest"
+	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/pipelineenqueue"
 )
 
 const (
 	// rawItemsCollection is the Mongoose default collection name of RawItem.
 	rawItemsCollection = "rawitems"
-	// itemStatusPending is ItemStatus.Pending (apps/api/src/common/pipeline-status.ts).
-	itemStatusPending = "pending"
-	// itemStatusDuplicate is ItemStatus.Duplicate.
-	itemStatusDuplicate = "duplicate"
 )
 
 // ReplayResult is the POST /api/admin/quality/pipeline/replay body.
@@ -67,7 +64,7 @@ func (s *Service) Replay(ctx context.Context, orgID, itemMetaID, rawItemID strin
 	if err != nil {
 		return ReplayResult{}, err
 	}
-	if itemMeta.Status == itemStatusDuplicate {
+	if itemMeta.Status == string(itemsreading.ItemStatusDuplicate) {
 		return ReplayResult{}, newStatus(400, "Cannot replay duplicate item")
 	}
 	sourceRawID := itemMeta.MongoRef
@@ -93,7 +90,7 @@ func (s *Service) Replay(ctx context.Context, orgID, itemMetaID, rawItemID strin
 
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE ItemMeta SET mongoRef = ?, status = ?, updatedAt = ? WHERE id = ?",
-		clonedID.Hex(), itemStatusPending, timefmt.NowMillis(), itemMetaID); err != nil {
+		clonedID.Hex(), string(itemsreading.ItemStatusPending), timefmt.NowMillis(), itemMetaID); err != nil {
 		return ReplayResult{}, err
 	}
 
@@ -116,7 +113,7 @@ func (s *Service) Rollback(ctx context.Context, orgID, itemMetaID, rawItemID str
 	if err != nil {
 		return RollbackResult{}, err
 	}
-	if itemMeta.Status == itemStatusDuplicate {
+	if itemMeta.Status == string(itemsreading.ItemStatusDuplicate) {
 		return RollbackResult{}, newStatus(400, "Cannot rollback duplicate item")
 	}
 	sourceRawID := itemMeta.MongoRef
@@ -137,7 +134,7 @@ func (s *Service) Rollback(ctx context.Context, orgID, itemMetaID, rawItemID str
 
 	if _, err := s.db.ExecContext(ctx,
 		"UPDATE ItemMeta SET status = ?, updatedAt = ? WHERE id = ?",
-		itemStatusPending, timefmt.NowMillis(), itemMetaID); err != nil {
+		string(itemsreading.ItemStatusPending), timefmt.NowMillis(), itemMetaID); err != nil {
 		return RollbackResult{}, err
 	}
 
@@ -148,7 +145,7 @@ func (s *Service) Rollback(ctx context.Context, orgID, itemMetaID, rawItemID str
 			{Key: "rawItemId", Value: sourceOID},
 			{Key: "itemMetaId", Value: itemMetaID},
 			{Key: "orgId", Value: orgID},
-			{Key: "status", Value: itemStatusPending},
+			{Key: "status", Value: string(itemsreading.ItemStatusPending)},
 			{Key: "updatedAt", Value: now},
 		}},
 		{Key: "$setOnInsert", Value: bson.D{
