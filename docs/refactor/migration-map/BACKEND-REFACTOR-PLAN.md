@@ -53,6 +53,8 @@ Go 迁移以“与 NestJS 契约等价”为目标，并由多批窗口并行完
 | A | [REFACTOR-CLEANUP-001](tasks/REFACTOR-CLEANUP-001.md) | readJSON/writeError/authorize 收尾、3 份 `fn(*sql.Conn)` GET_LOCK（修复释放失败泄漏）与 4 处缓存锁、路由与 `cmd/api` 迁移期注释 | 无 | 是（避开 LLM-CLIENT/CRAWLWORKER 的包） |
 | B | [REFACTOR-HTTP-CLIENT-001](tasks/REFACTOR-HTTP-CLIENT-001.md) | 43 处 `&http.Client{` 收敛到 `internal/platform/outbound` 共享 Transport（SSRF 拨号器例外保留） | LLM-CLIENT 合入 | — |
 
+**结果（2026-11-10）**：4 个任务全部合入（#175–#183），main `695d73eb` 普通 CI success。不再派发的零碎：CLEANUP 记录的 5 份独特 `readJSON`、`toInt64` 变体、`cmd/api` 约 132 处事实性 Nest 参照；SAFE-GOROUTINE 扇出取舍。下一步候选仍是下节 BACKLOG（GraphQL 执行器、Nest 怪癖契约收敛、逐域业务规则复审）。
+
 文件所有权：`internal/bullmq/**` 只归 CRAWLWORKER；LLM 相关包只归 LLM-CLIENT（CLEANUP 显式排除）；`cmd/api` 中 CLEANUP 只改注释，其余两者只改构造参数，冲突用 merge 保留并集。SAFE-GOROUTINE 的扇出取舍不派发，保持现状。
 
 ## 不进入本轮的候选（只记 BACKLOG，不派发）

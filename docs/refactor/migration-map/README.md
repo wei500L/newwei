@@ -14,7 +14,7 @@
 
 已拆分为 10 个 REFACTOR 任务，分 5 个波次，见 [BACKEND-REFACTOR-PLAN](BACKEND-REFACTOR-PLAN.md) 与 [任务索引](tasks/README.md)。验证口径不变：静态审查 + 普通 CI，不部署。
 
-2026-11-05 更新：第一轮全部合入 main（#162–#174，main `6ab26a54` CI success），其中 BULLMQ-WORKER、OUTBOUND-CLIENTS 为部分完成；剩余项已在 2026-11-06 拆成第二轮 4 个任务（A 波 LLM-CLIENT、CRAWLWORKER、CLEANUP 并行，B 波 HTTP-CLIENT），见总计划与任务索引。
+2026-11-05 更新：第一轮全部合入 main（#162–#174，main `6ab26a54` CI success），其中 BULLMQ-WORKER、OUTBOUND-CLIENTS 为部分完成；剩余项已在 2026-11-06 拆成第二轮 4 个任务（A 波 LLM-CLIENT、CRAWLWORKER、CLEANUP 并行，B 波 HTTP-CLIENT），见总计划与任务索引。2026-11-10 第二轮全部合入（main `695d73eb` CI success），REFACTOR 系列两轮收尾。
 
 ## 2026-11-01 下一批：经济队列可靠性与组织审批恢复
 
