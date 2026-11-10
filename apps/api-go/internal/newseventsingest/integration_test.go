@@ -161,6 +161,7 @@ type integrationSettings struct {
 	MaxBatchSize                 int     `json:"maxBatchSize"`
 	BackfillDays                 int     `json:"backfillDays"`
 	LookbackDays                 int     `json:"lookbackDays"`
+	OverlapFallbackMaxGapHours   int     `json:"overlapFallbackMaxGapHours"`
 	VectorMinScore               float64 `json:"vectorMinScore"`
 	CrossLanguagePenalty         float64 `json:"crossLanguagePenalty"`
 	ClassificationGateEnabled    bool    `json:"classificationGateEnabled"`
@@ -180,6 +181,7 @@ func defaultIntegrationSettings() integrationSettings {
 		MaxBatchSize:                 100,
 		BackfillDays:                 30,
 		LookbackDays:                 30,
+		OverlapFallbackMaxGapHours:   72,
 		VectorMinScore:               0.82,
 		CrossLanguagePenalty:         0.1,
 		ClassificationGateEnabled:    true,
@@ -243,6 +245,21 @@ func insertIntegrationTopicEvent(t *testing.T, db *sql.DB, orgID, eventID, topic
 		" `title`, `summary`, `startAt`, `lastAt`, `metadata`, `createdAt`, `updatedAt`)"+
 		" VALUES (?, ?, 'active', 'en', ?, NULL, 'Existing event', 'Summary', ?, ?, ?, ?, ?)",
 		eventID, orgID, topic, lastAt, lastAt, nil, now, now); err != nil {
+		t.Fatalf("insert event: %v", err)
+	}
+}
+
+// insertIntegrationTopicEntityEvent inserts one active event with both a
+// primaryTopic and a primaryEntity, which the tightened overlap fallback
+// requires.
+func insertIntegrationTopicEntityEvent(t *testing.T, db *sql.DB, orgID, eventID, topic, entity string, lastAt time.Time) {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	lastAt = lastAt.UTC().Truncate(time.Millisecond)
+	if _, err := db.Exec("INSERT INTO `NewsEvent` (`id`, `orgId`, `status`, `language`, `primaryTopic`, `primaryEntity`,"+
+		" `title`, `summary`, `startAt`, `lastAt`, `metadata`, `createdAt`, `updatedAt`)"+
+		" VALUES (?, ?, 'active', 'en', ?, ?, 'Existing event', 'Summary', ?, ?, ?, ?, ?)",
+		eventID, orgID, topic, entity, lastAt, lastAt, nil, now, now); err != nil {
 		t.Fatalf("insert event: %v", err)
 	}
 }
@@ -416,21 +433,23 @@ func TestIngestionDefaultModeAssignsThroughAllPaths(t *testing.T) {
 	writeIntegrationSettings(t, fixture.db, orgID, defaultIntegrationSettings())
 
 	base := fixture.now.Add(-10 * time.Minute)
-	// A pre-existing event with a topic the overlap article shares. The casing is
-	// identical because the in-memory re-check is case-sensitive while the SQL
-	// comparison is not.
+	// A pre-existing event that shares BOTH the primaryTopic and the
+	// primaryEntity of the overlap article; the tightened fallback requires both.
+	// The casing is identical because the in-memory re-check is case-sensitive
+	// while the SQL comparison is not.
 	existingEventID := "cne_" + orgID + "_topic"
-	insertIntegrationTopicEvent(t, fixture.db, orgID, existingEventID, "AI", base)
+	insertIntegrationTopicEntityEvent(t, fixture.db, orgID, existingEventID, "AI", "OpenAI", base)
 
 	// 1. The vector article: its processed item has an embedding and the vector
 	//    service returns a membership for the same pre-existing event.
 	withinSettle := fixture.now.Add(-5 * time.Minute)
 	_, _ = insertIntegrationArticle(t, fixture.db, orgID, "vector",
 		withinSettle.Add(-2*time.Minute), stringPtr(`["tech"]`), stringPtr(`[]`), nil, stringPtr("675f1f2e9d3c4b5a6e7f8a91"))
-	// 2. The overlap article: same primaryTopic as the existing event, no vector.
+	// 2. The overlap article: same primaryTopic and primaryEntity as the existing
+	//    event within the fallback gap, and no vector.
 	overlapAt := withinSettle.Add(-time.Minute)
 	_, overlapArticleID := insertIntegrationArticle(t, fixture.db, orgID, "overlap",
-		overlapAt, stringPtr(`["AI"]`), stringPtr(`[]`), nil, nil)
+		overlapAt, stringPtr(`["AI"]`), stringPtr(`[{"name":"OpenAI","confidence":0.9}]`), nil, nil)
 	// 3. The new event article: no vector, no overlap, but a classification from
 	//    the ProcessedArticle.category fallback.
 	newAt := withinSettle
@@ -485,8 +504,8 @@ func TestIngestionDefaultModeAssignsThroughAllPaths(t *testing.T) {
 	if overlapItem.EventID != existingEventID || overlapItem.AssignedBy != "overlap" {
 		t.Fatalf("overlap assignment = %+v", overlapItem)
 	}
-	if !overlapItem.Similarity.Valid || overlapItem.Similarity.Float64 != 0.5 {
-		t.Fatalf("overlap similarity = %+v, want 0.5", overlapItem.Similarity)
+	if !overlapItem.Similarity.Valid || overlapItem.Similarity.Float64 != 1 {
+		t.Fatalf("overlap similarity = %+v, want 1", overlapItem.Similarity)
 	}
 
 	freshItem, ok := byArticle[newArticleID]

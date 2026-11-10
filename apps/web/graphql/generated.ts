@@ -2193,6 +2193,7 @@ export type NewsEventSettingsModel = {
   lookbackDays: Scalars['Int']['output'];
   maxBatchSize: Scalars['Int']['output'];
   minCategoryConfidenceForGate: Scalars['Float']['output'];
+  overlapFallbackMaxGapHours: Scalars['Int']['output'];
   timelineCrossCategoryWarningShare: Scalars['Float']['output'];
   timelineDriftKlThreshold: Scalars['Float']['output'];
   timelineEnabled: Scalars['Boolean']['output'];
@@ -3472,6 +3473,7 @@ export type UpdateNewsEventSettingsInput = {
   lookbackDays: Scalars['Int']['input'];
   maxBatchSize: Scalars['Int']['input'];
   minCategoryConfidenceForGate?: InputMaybe<Scalars['Float']['input']>;
+  overlapFallbackMaxGapHours?: InputMaybe<Scalars['Int']['input']>;
   timelineCrossCategoryWarningShare?: InputMaybe<Scalars['Float']['input']>;
   timelineDriftKlThreshold?: InputMaybe<Scalars['Float']['input']>;
   timelineEnabled: Scalars['Boolean']['input'];

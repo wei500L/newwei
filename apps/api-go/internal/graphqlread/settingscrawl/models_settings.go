@@ -68,6 +68,7 @@ type NewsEventSettingsModel struct {
 	LookbackDays                          int                     `graphql:"lookbackDays"`
 	MaxBatchSize                          int                     `graphql:"maxBatchSize"`
 	MinCategoryConfidenceForGate          float64                 `graphql:"minCategoryConfidenceForGate"`
+	OverlapFallbackMaxGapHours            int                     `graphql:"overlapFallbackMaxGapHours"`
 	TimelineCrossCategoryWarningShare     float64                 `graphql:"timelineCrossCategoryWarningShare"`
 	TimelineDriftKlThreshold              float64                 `graphql:"timelineDriftKlThreshold"`
 	TimelineEnabled                       bool                    `graphql:"timelineEnabled"`

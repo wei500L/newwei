@@ -238,6 +238,7 @@ type newsEventSettingsDocument struct {
 	MaxBatchSize                          int     `json:"maxBatchSize"`
 	BackfillDays                          int     `json:"backfillDays"`
 	LookbackDays                          int     `json:"lookbackDays"`
+	OverlapFallbackMaxGapHours            int     `json:"overlapFallbackMaxGapHours"`
 	TimelineMaxEventsPerRun               int     `json:"timelineMaxEventsPerRun"`
 	VectorMinScore                        float64 `json:"vectorMinScore"`
 	CrossLanguagePenalty                  float64 `json:"crossLanguagePenalty"`
@@ -270,6 +271,7 @@ func newNewsEventSettingsDocument(model settingscrawl.NewsEventSettingsModel) ne
 		MaxBatchSize:                          model.MaxBatchSize,
 		BackfillDays:                          model.BackfillDays,
 		LookbackDays:                          model.LookbackDays,
+		OverlapFallbackMaxGapHours:            model.OverlapFallbackMaxGapHours,
 		TimelineMaxEventsPerRun:               model.TimelineMaxEventsPerRun,
 		VectorMinScore:                        model.VectorMinScore,
 		CrossLanguagePenalty:                  model.CrossLanguagePenalty,

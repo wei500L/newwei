@@ -142,11 +142,52 @@ func (a *assigner) AssignNewsSignalToEvent(ctx context.Context, orgID string, si
 	return a.persistAssignment(ctx, orgID, signal, derived, picked)
 }
 
-// pickEventForSignal mirrors pickEventForSignal: the vector path first, then the
-// overlap path, then the "create a new event" fallback.
+// vectorJudgement records whether the vector path could judge a signal and, when
+// it could, the best gated candidate. attempted is true when the article has a
+// summary embedding and a searcher is configured; usable is SearchBestEffort's
+// second result, which is false when the service is disabled, misconfigured or
+// temporarily unavailable.
+type vectorJudgement struct {
+	attempted bool
+	usable    bool
+	best      *scoredEvent
+}
+
+// decideEventAssignment applies the vector-then-overlap precedence as a pure
+// decision so the branches are unit-testable without a database:
+//
+//   - When the vector path can judge (attempted && usable) its verdict is final:
+//     a best score at or above VectorMinScore joins that event, and anything
+//     else creates a new event. It never falls back to overlap, because an
+//     article the vector already found dissimilar must not be merged on a
+//     shared topic/entity word.
+//   - Only when the vector path cannot judge does the (already tightened)
+//     overlap candidate apply; without one a new event is created.
+//
+// A created event keeps the overlap assignment method so the stored
+// NewsEventItem.assignedBy value is unchanged.
+func decideEventAssignment(judgement vectorJudgement, overlap *assignment, minScore float64) assignment {
+	if judgement.attempted && judgement.usable {
+		if judgement.best != nil && judgement.best.Score >= minScore {
+			similarity := judgement.best.Score
+			return assignment{EventID: judgement.best.EventID, Similarity: &similarity, Method: assignmentMethodVector}
+		}
+		return assignment{Method: assignmentMethodOverlap}
+	}
+	if overlap != nil {
+		return *overlap
+	}
+	return assignment{Method: assignmentMethodOverlap}
+}
+
+// pickEventForSignal picks the event a new signal joins. The vector path is
+// authoritative whenever it can judge; overlap is only a fallback when it
+// cannot. See decideEventAssignment for the exact precedence.
 func (a *assigner) pickEventForSignal(ctx context.Context, orgID string, signal NewsSignal, derived derivedSignal, session *assignmentSession) (assignment, error) {
+	judgement := vectorJudgement{}
 	if vector := a.summaryVectorOf(signal.ProcessedItemID); vector != nil && a.vectors != nil {
-		matches, _ := a.vectors.SearchBestEffort(ctx, VectorSearchRequest{
+		judgement.attempted = true
+		matches, usable := a.vectors.SearchBestEffort(ctx, VectorSearchRequest{
 			OrgID:          orgID,
 			EmbeddingModel: vector.Model,
 			Vector:         vector.Embedding,
@@ -154,66 +195,68 @@ func (a *assigner) pickEventForSignal(ctx context.Context, orgID string, signal 
 			MinScore:       session.settings.VectorMinScore,
 			LookbackMs:     int64(session.settings.LookbackDays) * dayMillis,
 		})
-
-		matchIDs := make([]string, 0, len(matches))
-		for _, match := range matches {
-			if match.ProcessedItemID == "" {
-				continue
-			}
-			if signal.ProcessedItemID != nil && match.ProcessedItemID == *signal.ProcessedItemID {
-				continue
-			}
-			matchIDs = append(matchIDs, match.ProcessedItemID)
-		}
-
-		if len(matchIDs) > 0 {
-			memberships, err := a.store.listMemberships(ctx, orgID, matchIDs)
-			if err != nil {
-				return assignment{}, err
-			}
-			// Map insertion order matters: the first event id that reaches the
-			// best-score loop wins a tie. The last membership row of a duplicated
-			// processedItemId wins, exactly like `new Map(entries)`.
-			membershipByProcessedItemID := make(map[string]string, len(memberships))
-			for _, row := range memberships {
-				normalized := jsNormalizeOptionalString(row.ProcessedItemID)
-				if normalized == nil {
-					continue
-				}
-				membershipByProcessedItemID[*normalized] = row.EventID
-			}
-
-			scores := newOrderedScores()
+		judgement.usable = usable
+		if usable {
+			matchIDs := make([]string, 0, len(matches))
 			for _, match := range matches {
-				eventID, ok := membershipByProcessedItemID[match.ProcessedItemID]
-				if !ok || eventID == "" {
+				if match.ProcessedItemID == "" {
 					continue
 				}
-				scores.setIfHigher(eventID, match.Score)
+				if signal.ProcessedItemID != nil && match.ProcessedItemID == *signal.ProcessedItemID {
+					continue
+				}
+				matchIDs = append(matchIDs, match.ProcessedItemID)
 			}
 
-			if scores.len() > 0 {
-				events, err := a.store.listActiveEventsByIDs(ctx, orgID, scores.keys)
+			if len(matchIDs) > 0 {
+				memberships, err := a.store.listMemberships(ctx, orgID, matchIDs)
 				if err != nil {
 					return assignment{}, err
 				}
-				best := scoreVectorCandidates(scores.keys, scores.values, events, signal, derived, session)
-				if best != nil && best.Score >= session.settings.VectorMinScore {
-					similarity := best.Score
-					return assignment{EventID: best.EventID, Similarity: &similarity, Method: assignmentMethodVector}, nil
+				// Map insertion order matters: the first event id that reaches the
+				// best-score loop wins a tie. The last membership row of a duplicated
+				// processedItemId wins, exactly like `new Map(entries)`.
+				membershipByProcessedItemID := make(map[string]string, len(memberships))
+				for _, row := range memberships {
+					normalized := jsNormalizeOptionalString(row.ProcessedItemID)
+					if normalized == nil {
+						continue
+					}
+					membershipByProcessedItemID[*normalized] = row.EventID
+				}
+
+				scores := newOrderedScores()
+				for _, match := range matches {
+					eventID, ok := membershipByProcessedItemID[match.ProcessedItemID]
+					if !ok || eventID == "" {
+						continue
+					}
+					scores.setIfHigher(eventID, match.Score)
+				}
+
+				if scores.len() > 0 {
+					events, err := a.store.listActiveEventsByIDs(ctx, orgID, scores.keys)
+					if err != nil {
+						return assignment{}, err
+					}
+					judgement.best = scoreVectorCandidates(scores.keys, scores.values, events, signal, derived, session)
 				}
 			}
 		}
 	}
 
-	overlap, err := a.pickEventByOverlap(ctx, orgID, signal, derived, session)
-	if err != nil {
-		return assignment{}, err
+	// Overlap is consulted only when the vector path could not judge. A normal
+	// vector return that simply found nothing similar is still a judgement, so it
+	// creates a new event instead of falling back to overlap.
+	var overlap *assignment
+	if !(judgement.attempted && judgement.usable) {
+		picked, err := a.pickEventByOverlap(ctx, orgID, signal, derived, session)
+		if err != nil {
+			return assignment{}, err
+		}
+		overlap = picked
 	}
-	if overlap != nil {
-		return *overlap, nil
-	}
-	return assignment{Method: assignmentMethodOverlap}, nil
+	return decideEventAssignment(judgement, overlap, session.settings.VectorMinScore), nil
 }
 
 // pickEventByOverlap mirrors pickEventByOverlap.
@@ -230,25 +273,25 @@ func (a *assigner) pickEventByOverlap(ctx context.Context, orgID string, signal 
 	return &assignment{EventID: best.EventID, Similarity: &similarity, Method: assignmentMethodOverlap}, nil
 }
 
-// pickOverlapCandidates mirrors pickOverlapCandidates: the SQL candidates are
-// re-checked case-sensitively in memory, scored, gated, then stably sorted by
-// descending score.
-//
-// The NestJS comparator is `b.score - a.score`. A NaN score makes that
-// comparator return NaN, which the specification treats as "equal", so a stable
-// sort keeps the candidate order. Using `a.Score > b.Score` for
-// sort.SliceStable has exactly the same effect for NaN.
+// pickOverlapCandidates reads the broad 30-day SQL candidates, re-checks them
+// in memory with the tightened topic-AND-entity + 72h rule, gates them, then
+// stably sorts by descending score. The SQL window stays LookbackDays so the
+// query contract is unchanged; the narrower fallback rule lives in
+// scoreOverlapCandidates.
 func (a *assigner) pickOverlapCandidates(ctx context.Context, orgID string, signal NewsSignal, derived derivedSignal, session *assignmentSession) ([]scoredEvent, error) {
-	if derived.PrimaryTopic == "" && derived.PrimaryEntity == "" {
+	// Both the topic and the entity are required now, so a signal missing either
+	// one can never produce an overlap candidate.
+	if derived.PrimaryTopic == "" || derived.PrimaryEntity == "" {
 		return nil, nil
 	}
-	since := a.clock().Add(-time.Duration(session.settings.LookbackDays) * 24 * time.Hour)
+	now := a.clock()
+	since := now.Add(-time.Duration(session.settings.LookbackDays) * 24 * time.Hour)
 	candidates, err := a.store.listOverlapCandidates(ctx, orgID, since, derived.PrimaryTopic, derived.PrimaryEntity)
 	if err != nil {
 		return nil, err
 	}
 
-	scored := scoreOverlapCandidates(candidates, signal, derived, session)
+	scored := scoreOverlapCandidates(candidates, signal, derived, session, now)
 	sortScoredEvents(scored)
 	return scored, nil
 }
@@ -276,29 +319,26 @@ func scoreVectorCandidates(orderedEventIDs []string, rawScores map[string]float6
 	return best
 }
 
-// scoreOverlapCandidates re-checks the SQL candidates case-sensitively, scores
-// them by matching fields, and applies the language penalty and the category
-// gate in that order.
-func scoreOverlapCandidates(candidates []eventRecord, signal NewsSignal, derived derivedSignal, session *assignmentSession) []scoredEvent {
+// scoreOverlapCandidates is the tightened overlap fallback. A candidate must
+// match BOTH the derived primary topic and primary entity (literal,
+// case-sensitive) and its lastAt must fall within OverlapFallbackMaxGapHours of
+// now. A shared topic or a shared entity alone is no longer enough — that
+// loose match is what let the vector-dissimilar "giant events" keep growing. A
+// double match scores 1.0 before the language penalty and the category gate.
+func scoreOverlapCandidates(candidates []eventRecord, signal NewsSignal, derived derivedSignal, session *assignmentSession, now time.Time) []scoredEvent {
+	gap := time.Duration(session.settings.OverlapFallbackMaxGapHours) * time.Hour
 	scored := make([]scoredEvent, 0, len(candidates))
 	for _, candidate := range candidates {
 		topicMatch := derived.PrimaryTopic != "" && candidate.PrimaryTopic != nil && *candidate.PrimaryTopic == derived.PrimaryTopic
 		entityMatch := derived.PrimaryEntity != "" && candidate.PrimaryEntity != nil && *candidate.PrimaryEntity == derived.PrimaryEntity
-		matches := 0
-		if topicMatch {
-			matches++
+		if !topicMatch || !entityMatch {
+			continue
 		}
-		if entityMatch {
-			matches++
-		}
-		if matches <= 0 {
+		if now.Sub(candidate.LastAt) > gap {
 			continue
 		}
 
-		// A topic and an entity match weigh half each, so a double match scores
-		// 1.0 and a single match 0.5 before the penalties.
-		score := float64(matches) / 2
-		score = applyLanguagePenalty(score, derived.Language, candidate.Language, session.settings)
+		score := applyLanguagePenalty(1, derived.Language, candidate.Language, session.settings)
 		categoryAdjusted, accepted := session.applyCategoryGate(score, signal, candidate.MetadataJSON)
 		if !accepted {
 			continue

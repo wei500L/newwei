@@ -109,6 +109,7 @@ type updateNewsEventSettingsInput struct {
 	MaxBatchSize                          int
 	BackfillDays                          int
 	LookbackDays                          int
+	OverlapFallbackMaxGapHours            *int
 	TimelineMaxEventsPerRun               int
 	VectorMinScore                        float64
 	CrossLanguagePenalty                  float64
@@ -552,6 +553,8 @@ func parseUpdateNewsEventSettingsInput(args map[string]any) (updateNewsEventSett
 		MaxBatchSize:     requiredInt(raw, "maxBatchSize", 1, 500, &messages),
 		BackfillDays:     requiredInt(raw, "backfillDays", 1, 365, &messages),
 		LookbackDays:     requiredInt(raw, "lookbackDays", 1, 180, &messages),
+		OverlapFallbackMaxGapHours: optionalInt(
+			raw, "overlapFallbackMaxGapHours", 1, 720, &messages),
 		TimelineMaxEventsPerRun: requiredInt(
 			raw, "timelineMaxEventsPerRun", 1, 200, &messages),
 		VectorMinScore:       requiredFloat(raw, "vectorMinScore", 0, 1, &messages),
