@@ -473,6 +473,7 @@ type newsEventSettingsDocument struct {
 	MaxBatchSize                          json.RawMessage `json:"maxBatchSize"`
 	BackfillDays                          json.RawMessage `json:"backfillDays"`
 	LookbackDays                          json.RawMessage `json:"lookbackDays"`
+	OverlapFallbackMaxGapHours            json.RawMessage `json:"overlapFallbackMaxGapHours"`
 	TimelineMaxEventsPerRun               json.RawMessage `json:"timelineMaxEventsPerRun"`
 	VectorMinScore                        json.RawMessage `json:"vectorMinScore"`
 	CrossLanguagePenalty                  json.RawMessage `json:"crossLanguagePenalty"`
@@ -506,6 +507,7 @@ func defaultNewsEventSettings() NewsEventSettingsModel {
 		MaxBatchSize:                          100,
 		BackfillDays:                          30,
 		LookbackDays:                          30,
+		OverlapFallbackMaxGapHours:            72,
 		TimelineMaxEventsPerRun:               50,
 		VectorMinScore:                        0.82,
 		CrossLanguagePenalty:                  0.1,
@@ -589,6 +591,7 @@ func normalizeNewsEventSettings(raw []byte, fallback NewsEventSettingsModel) New
 		MaxBatchSize:                    clampIntRounded(settingNumber(document.MaxBatchSize, float64(fallback.MaxBatchSize)), 1, 500),
 		BackfillDays:                    clampIntRounded(settingNumber(document.BackfillDays, float64(fallback.BackfillDays)), 1, 365),
 		LookbackDays:                    clampIntRounded(settingNumber(document.LookbackDays, float64(fallback.LookbackDays)), 1, 180),
+		OverlapFallbackMaxGapHours:      clampIntRounded(settingNumber(document.OverlapFallbackMaxGapHours, float64(fallback.OverlapFallbackMaxGapHours)), 1, 720),
 		TimelineMaxEventsPerRun:         clampIntRounded(settingNumber(document.TimelineMaxEventsPerRun, float64(fallback.TimelineMaxEventsPerRun)), 1, 200),
 		VectorMinScore:                  clampFloatBounds(settingNumber(document.VectorMinScore, fallback.VectorMinScore), 0, 1),
 		CrossLanguagePenalty:            clampFloatBounds(settingNumber(document.CrossLanguagePenalty, fallback.CrossLanguagePenalty), 0, 1),

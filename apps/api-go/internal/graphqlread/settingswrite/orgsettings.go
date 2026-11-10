@@ -152,6 +152,7 @@ func (s *service) updateNewsEventSettings(ctx context.Context, identity contract
 		MaxBatchSize:                          input.MaxBatchSize,
 		BackfillDays:                          input.BackfillDays,
 		LookbackDays:                          input.LookbackDays,
+		OverlapFallbackMaxGapHours:            intOr(input.OverlapFallbackMaxGapHours, current.OverlapFallbackMaxGapHours),
 		TimelineMaxEventsPerRun:               input.TimelineMaxEventsPerRun,
 		VectorMinScore:                        input.VectorMinScore,
 		CrossLanguagePenalty:                  input.CrossLanguagePenalty,

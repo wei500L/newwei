@@ -1845,6 +1845,7 @@ type NewsEventSettingsModel {
   lookbackDays: Int!
   maxBatchSize: Int!
   minCategoryConfidenceForGate: Float!
+  overlapFallbackMaxGapHours: Int!
   timelineCrossCategoryWarningShare: Float!
   timelineDriftKlThreshold: Float!
   timelineEnabled: Boolean!
@@ -2779,6 +2780,7 @@ input UpdateNewsEventSettingsInput {
   lookbackDays: Int!
   maxBatchSize: Int!
   minCategoryConfidenceForGate: Float
+  overlapFallbackMaxGapHours: Int
   timelineCrossCategoryWarningShare: Float
   timelineDriftKlThreshold: Float
   timelineEnabled: Boolean!

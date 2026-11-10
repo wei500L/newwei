@@ -30,6 +30,7 @@ type Settings struct {
 	MaxBatchSize                 int
 	BackfillDays                 int
 	LookbackDays                 int
+	OverlapFallbackMaxGapHours   int
 	VectorMinScore               float64
 	CrossLanguagePenalty         float64
 	ClassificationGateEnabled    bool
@@ -60,6 +61,7 @@ func SettingsFromReadModel(model settingscrawl.NewsEventSettingsModel) Settings 
 		MaxBatchSize:                 model.MaxBatchSize,
 		BackfillDays:                 model.BackfillDays,
 		LookbackDays:                 model.LookbackDays,
+		OverlapFallbackMaxGapHours:   model.OverlapFallbackMaxGapHours,
 		VectorMinScore:               model.VectorMinScore,
 		CrossLanguagePenalty:         model.CrossLanguagePenalty,
 		ClassificationGateEnabled:    model.ClassificationGateEnabled,

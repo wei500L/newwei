@@ -3,6 +3,7 @@ package newseventsingest
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func baseSettings() Settings {
@@ -16,6 +17,7 @@ func baseSettings() Settings {
 		MaxBatchSize:                 100,
 		BackfillDays:                 30,
 		LookbackDays:                 30,
+		OverlapFallbackMaxGapHours:   72,
 		VectorMinScore:               0.82,
 		CrossLanguagePenalty:         0.1,
 		ClassificationGateEnabled:    true,
@@ -156,39 +158,177 @@ func TestScoreVectorCandidatesKeepsFirstOnTie(t *testing.T) {
 	}
 }
 
-// TestScoreOverlapCandidatesMatchesJSOrdering locks the match weighting, the
-// stable descending sort and the NaN-equals rule of the JS comparator.
-func TestScoreOverlapCandidatesMatchesJSOrdering(t *testing.T) {
+// TestScoreOverlapCandidatesRequiresTopicAndEntityWithinGap locks the tightened
+// fallback: a candidate needs BOTH a case-sensitive primaryTopic and
+// primaryEntity match AND a lastAt inside OverlapFallbackMaxGapHours. Topic-only,
+// entity-only, stale and case-mismatched candidates are all excluded, and a
+// double match scores 1.0.
+func TestScoreOverlapCandidatesRequiresTopicAndEntityWithinGap(t *testing.T) {
 	settings := gateDisabledSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	session := &assignmentSession{orgID: "org_1", settings: settings}
 	signal := NewsSignal{ProcessedArticleID: "pa_1"}
 	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
 
 	candidates := []eventRecord{
-		{ID: "ev_both", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI")},
-		{ID: "ev_topic", PrimaryTopic: stringPtr("ai")},
-		{ID: "ev_entity", PrimaryEntity: stringPtr("OpenAI")},
-		{ID: "ev_none", PrimaryTopic: stringPtr("tech")},
+		{ID: "ev_both", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour)},
+		{ID: "ev_topic", PrimaryTopic: stringPtr("ai"), LastAt: now.Add(-time.Hour)},
+		{ID: "ev_entity", PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour)},
+		{ID: "ev_stale", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-73 * time.Hour)},
 		// The SQL collation is case-insensitive but the in-memory re-check is not.
-		{ID: "ev_case", PrimaryTopic: stringPtr("AI")},
+		{ID: "ev_case", PrimaryTopic: stringPtr("AI"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour)},
 	}
-	scored := scoreOverlapCandidates(candidates, signal, derived, session)
-	if len(scored) != 3 {
-		t.Fatalf("scored = %#v, want 3 entries", scored)
+	scored := scoreOverlapCandidates(candidates, signal, derived, session, now)
+	if len(scored) != 1 || scored[0].EventID != "ev_both" || scored[0].Score != 1 {
+		t.Fatalf("scored = %#v, want only ev_both at 1.0", scored)
 	}
-	if scored[0].EventID != "ev_both" || scored[0].Score != 1 {
-		t.Fatalf("scored[0] = %#v, want ev_both 1.0", scored[0])
+}
+
+// pickOverlapBest mirrors pickEventByOverlap's "stably sorted first candidate"
+// selection for the in-memory decision tests. A nil result means no overlap
+// candidate survived the tightened rule.
+func pickOverlapBest(candidates []eventRecord, signal NewsSignal, derived derivedSignal, session *assignmentSession, now time.Time) *assignment {
+	scored := scoreOverlapCandidates(candidates, signal, derived, session, now)
+	if len(scored) == 0 {
+		return nil
 	}
-	if scored[1].Score != 0.5 || scored[2].Score != 0.5 {
-		t.Fatalf("single matches = %#v, want 0.5 each", scored[1:])
-	}
-	// The sort is stable: ev_topic came first in the input, so it stays first.
 	sortScoredEvents(scored)
-	if scored[0].EventID != "ev_both" {
-		t.Fatalf("sorted[0] = %q", scored[0].EventID)
+	best := scored[0]
+	similarity := best.Score
+	return &assignment{EventID: best.EventID, Similarity: &similarity, Method: assignmentMethodOverlap}
+}
+
+// TestVectorLowScoreCreatesNewEventWithoutOverlapFallback is the core L1
+// regression: the vector path judged the article dissimilar (best score below
+// VectorMinScore), so even a same-topic AND same-entity candidate inside the gap
+// must be ignored and a new event created.
+func TestVectorLowScoreCreatesNewEventWithoutOverlapFallback(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_existing", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour),
+	}}, signal, derived, session, now)
+	if overlap == nil {
+		t.Fatal("expected a same-topic same-entity candidate within the gap")
 	}
-	if scored[1].EventID != "ev_topic" || scored[2].EventID != "ev_entity" {
-		t.Fatalf("tie order changed: %q,%q", scored[1].EventID, scored[2].EventID)
+
+	judgement := vectorJudgement{attempted: true, usable: true, best: &scoredEvent{EventID: "ev_existing", Score: 0.5}}
+	got := decideEventAssignment(judgement, overlap, settings.VectorMinScore)
+	if got.EventID != "" {
+		t.Fatalf("vector low score must create a new event, got %+v", got)
+	}
+	if got.Similarity != nil {
+		t.Fatalf("a created event carries no similarity, got %v", got.Similarity)
+	}
+}
+
+// TestOverlapFallbackAssignsWhenTopicAndEntityMatchWithinGap: no embedding means
+// the vector cannot judge, so a same-topic AND same-entity event inside 72h is
+// joined.
+func TestOverlapFallbackAssignsWhenTopicAndEntityMatchWithinGap(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_existing", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-71 * time.Hour),
+	}}, signal, derived, session, now)
+	got := decideEventAssignment(vectorJudgement{attempted: false}, overlap, settings.VectorMinScore)
+	if got.EventID != "ev_existing" || got.Method != assignmentMethodOverlap {
+		t.Fatalf("got %+v, want overlap into ev_existing", got)
+	}
+	if got.Similarity == nil || *got.Similarity != 1 {
+		t.Fatalf("similarity = %v, want 1", got.Similarity)
+	}
+}
+
+// TestOverlapFallbackIgnoresTopicOnlyMatch: no embedding, only the topic matches,
+// so a new event is created.
+func TestOverlapFallbackIgnoresTopicOnlyMatch(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_topic", PrimaryTopic: stringPtr("ai"), LastAt: now.Add(-time.Hour),
+	}}, signal, derived, session, now)
+	if overlap != nil {
+		t.Fatalf("a topic-only match must not be a candidate: %#v", overlap)
+	}
+	got := decideEventAssignment(vectorJudgement{attempted: false}, overlap, settings.VectorMinScore)
+	if got.EventID != "" {
+		t.Fatalf("got %+v, want a new event", got)
+	}
+}
+
+// TestOverlapFallbackIgnoresCandidateOutsideGap: no embedding, both match but the
+// event lastAt is older than 72h, so a new event is created.
+func TestOverlapFallbackIgnoresCandidateOutsideGap(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_stale", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-73 * time.Hour),
+	}}, signal, derived, session, now)
+	if overlap != nil {
+		t.Fatalf("a candidate outside the gap must not match: %#v", overlap)
+	}
+	got := decideEventAssignment(vectorJudgement{attempted: false}, overlap, settings.VectorMinScore)
+	if got.EventID != "" {
+		t.Fatalf("got %+v, want a new event", got)
+	}
+}
+
+// TestOverlapFallbackAssignsWhenVectorUnavailable: the vector path attempted but
+// the service was unavailable (usable false), so the tightened overlap applies.
+func TestOverlapFallbackAssignsWhenVectorUnavailable(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_existing", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour),
+	}}, signal, derived, session, now)
+	judgement := vectorJudgement{attempted: true, usable: false}
+	got := decideEventAssignment(judgement, overlap, settings.VectorMinScore)
+	if got.EventID != "ev_existing" || got.Method != assignmentMethodOverlap {
+		t.Fatalf("got %+v, want overlap into ev_existing", got)
+	}
+}
+
+// TestVectorHitKeepsVectorAssignment: when the vector path can judge and the best
+// score reaches the threshold, it joins that event with the vector method, and
+// any overlap candidate is ignored.
+func TestVectorHitKeepsVectorAssignment(t *testing.T) {
+	settings := baseSettings()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	session := &assignmentSession{orgID: "org_1", settings: settings}
+	signal := NewsSignal{ProcessedArticleID: "pa_1"}
+	derived := derivedSignal{PrimaryTopic: "ai", PrimaryEntity: "OpenAI"}
+
+	overlap := pickOverlapBest([]eventRecord{{
+		ID: "ev_overlap", PrimaryTopic: stringPtr("ai"), PrimaryEntity: stringPtr("OpenAI"), LastAt: now.Add(-time.Hour),
+	}}, signal, derived, session, now)
+	judgement := vectorJudgement{attempted: true, usable: true, best: &scoredEvent{EventID: "ev_vector", Score: 0.93}}
+	got := decideEventAssignment(judgement, overlap, settings.VectorMinScore)
+	if got.EventID != "ev_vector" || got.Method != assignmentMethodVector {
+		t.Fatalf("got %+v, want the vector event", got)
+	}
+	if got.Similarity == nil || *got.Similarity != 0.93 {
+		t.Fatalf("similarity = %v, want 0.93", got.Similarity)
 	}
 }
 

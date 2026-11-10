@@ -56,6 +56,7 @@ interface NewsEventSettingsModel {
   categoryConflictReject: boolean;
   categorySoftPenalty: number;
   minCategoryConfidenceForGate: number;
+  overlapFallbackMaxGapHours: number;
   timelineLowConfidenceThreshold: number;
   timelineHighConfidenceThreshold: number;
   timelineDriftKlThreshold: number;
@@ -95,6 +96,7 @@ interface FormValues {
   categoryConflictReject: boolean;
   categorySoftPenalty: number;
   minCategoryConfidenceForGate: number;
+  overlapFallbackMaxGapHours: number;
   timelineLowConfidenceThreshold: number;
   timelineHighConfidenceThreshold: number;
   timelineDriftKlThreshold: number;
@@ -182,6 +184,7 @@ const NEWS_EVENT_SETTINGS_QUERY = gql`
       categoryConflictReject
       categorySoftPenalty
       minCategoryConfidenceForGate
+      overlapFallbackMaxGapHours
       timelineLowConfidenceThreshold
       timelineHighConfidenceThreshold
       timelineDriftKlThreshold
@@ -217,6 +220,7 @@ const UPDATE_NEWS_EVENT_SETTINGS_MUTATION = gql`
       categoryConflictReject
       categorySoftPenalty
       minCategoryConfidenceForGate
+      overlapFallbackMaxGapHours
       timelineLowConfidenceThreshold
       timelineHighConfidenceThreshold
       timelineDriftKlThreshold
@@ -957,6 +961,20 @@ export function NewsEventsSettingsPanel() {
             ]}
           >
             <InputNumber min={1} max={365} style={{ width: "100%" }} />
+          </Form.Item>
+
+          <Form.Item
+            label={t("settings.newsEvents.fields.overlapFallbackMaxGapHours")}
+            name="overlapFallbackMaxGapHours"
+            extra={t("settings.newsEvents.hints.overlapFallbackMaxGapHours")}
+            rules={[
+              {
+                required: true,
+                message: t("settings.newsEvents.validation.required"),
+              },
+            ]}
+          >
+            <InputNumber min={1} max={720} style={{ width: "100%" }} />
           </Form.Item>
         </Space>
 
