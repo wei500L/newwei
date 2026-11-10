@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationsignals"
 )
 
@@ -235,15 +236,13 @@ func (s *Service) newOrefHTTPClient(proxyAuth string) (*http.Client, error) {
 	}
 	cloned := transport.Clone()
 	cloned.Proxy = http.ProxyURL(proxyURL)
-	return &http.Client{
-		Transport: cloned,
-		Timeout:   time.Duration(s.env.OrefCurlTimeoutSeconds) * time.Second,
-		// curl without -L does not follow redirects; a 3xx is a non-2xx body
-		// (and therefore a B3 failure) rather than a transparent follow.
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}, nil
+	// curl without -L does not follow redirects; a 3xx is a non-2xx body (and
+	// therefore a B3 failure) rather than a transparent follow.
+	return outbound.NewClient(
+		time.Duration(s.env.OrefCurlTimeoutSeconds)*time.Second,
+		outbound.NoRedirect(),
+		outbound.WithTransport(cloned),
+	), nil
 }
 
 // parseOrefAlertsResponse mirrors the response parsing of pollOrefOnce with the

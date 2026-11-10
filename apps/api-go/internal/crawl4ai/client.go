@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // maxResponseBytes bounds how much of a /crawl response is decoded. The NestJS
@@ -23,12 +24,6 @@ const maxResponseBytes = 32 << 20
 // healthCheckFailedMessage is the NestJS `crawl4ai health check failed` text. It
 // carries no status, so the crawl worker classifies it by its message hints.
 const healthCheckFailedMessage = "crawl4ai health check failed"
-
-// maxIdleConnsPerHost keeps the keep-alive pool at least as large as the
-// discovery chain's widest fan-out (deep discovery pageConcurrency <= 6, list
-// discovery listPageConcurrency <= 5, head fetches <= 5). The pool is shared by
-// every caller of one client instance.
-const maxIdleConnsPerHost = 50
 
 // Settings is the crawl client settings subset the client needs. It is loaded
 // from the shared crawl_client:settings cache/SystemSetting row by the caller so
@@ -70,15 +65,7 @@ type Client struct {
 func New(options Options) *Client {
 	httpClient := options.HTTPClient
 	if httpClient == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.MaxIdleConnsPerHost = maxIdleConnsPerHost
-		transport.MaxIdleConns = maxIdleConnsPerHost * 2
-		httpClient = &http.Client{
-			Transport: transport,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
+		httpClient = outbound.NewClient(0, outbound.NoRedirect())
 	}
 	return &Client{options: options, httpClient: httpClient}
 }

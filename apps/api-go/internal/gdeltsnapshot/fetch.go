@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // GDELT DOC 2.0 endpoint and request limits. GDELT_MAX_RECORDS is the hard cap
@@ -85,8 +87,8 @@ func newGDeltFetcher(now func() time.Time) *gdeltFetcher {
 		doc2URL:  gdeltDoc2URL,
 		timeout:  fetchTimeout,
 		now:      now,
-		primary:  &http.Client{},
-		ipv4Only: &http.Client{Transport: ipv4Transport},
+		primary:  outbound.NewClient(0),
+		ipv4Only: outbound.NewClient(0, outbound.WithTransport(ipv4Transport)),
 	}
 }
 

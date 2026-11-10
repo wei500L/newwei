@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/settingscrypto"
 )
@@ -63,7 +64,7 @@ func newLiveTranslator(cache blobCache, db settingsDB, cfg translationConfig) *l
 	if cfg.MaxConcurrency < 1 {
 		cfg.MaxConcurrency = 2
 	}
-	return &liveTranslator{cache: cache, db: db, config: cfg, http: &http.Client{}}
+	return &liveTranslator{cache: cache, db: db, config: cfg, http: outbound.NewClient(0)}
 }
 
 func (t *liveTranslator) ToZH(ctx context.Context, texts []string) map[string]string {

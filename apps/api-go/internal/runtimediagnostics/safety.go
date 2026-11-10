@@ -11,6 +11,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmgatewayprofiles"
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/platformgovernance"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
@@ -62,7 +63,7 @@ func NewSafetyService(profiles ProfilePort, governance GovernancePort, safety Sa
 		openaiKeys: openaiKeys,
 		envBase:    envBase,
 		envKey:     envKey,
-		http:       &http.Client{},
+		http:       outbound.NewClient(0),
 		now:        time.Now,
 	}
 }

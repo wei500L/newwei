@@ -51,6 +51,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/notificationssocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mongodb"
 	"github.com/wei500L/newwei/apps/api-go/internal/platform/mysqldb"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/publicportal"
 	"github.com/wei500L/newwei/apps/api-go/internal/realtimesocket"
 	"github.com/wei500L/newwei/apps/api-go/internal/usersettings"
@@ -81,7 +82,7 @@ func runHealthcheck() int {
 			port = raw
 		}
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := outbound.NewClient(3 * time.Second)
 	resp, err := client.Get("http://127.0.0.1:" + port + "/__go/healthz")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "api-go healthcheck: request failed")

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // ForecastHTTPConfig is the effective model-service configuration the alert
@@ -66,10 +68,11 @@ type forecastHTTPClient struct {
 // transport settings and still honours the configured timeout.
 func NewForecastHTTPClient(config ForecastHTTPConfig, client *http.Client) ForecastClient {
 	if client == nil {
-		client = &http.Client{}
+		timeout := time.Duration(0)
 		if config.TimeoutMs > 0 {
-			client.Timeout = time.Duration(config.TimeoutMs) * time.Millisecond
+			timeout = time.Duration(config.TimeoutMs) * time.Millisecond
 		}
+		client = outbound.NewClient(timeout)
 	}
 	return &forecastHTTPClient{config: config, client: client}
 }

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/aisrelay"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // shutdownBudget bounds a graceful shutdown, matching the Node relay's 5s force exit.
@@ -98,7 +99,7 @@ func runHealthcheck() int {
 		return 1
 	}
 
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := outbound.NewClient(3 * time.Second)
 	response, err := client.Get("http://127.0.0.1:" + strconv.Itoa(cfg.ListenPort) + "/healthz/live")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ais-relay healthcheck: request failed")

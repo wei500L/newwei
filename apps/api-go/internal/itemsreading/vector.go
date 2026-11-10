@@ -19,6 +19,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmembed"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Vector service defaults and storage keys mirrored from the NestJS env schema
@@ -168,7 +169,7 @@ func newVectorSearcherFromEnv() *vectorSearcher {
 	return &vectorSearcher{
 		baseURL:         baseURL,
 		token:           token,
-		client:          &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		client:          outbound.NewClient(time.Duration(timeoutMs) * time.Millisecond),
 		maxRetries:      maxRetries,
 		fallbackToMongo: fallbackToMongo,
 	}

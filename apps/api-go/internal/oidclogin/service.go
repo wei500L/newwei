@@ -20,6 +20,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/accountsecurity"
 	"github.com/wei500L/newwei/apps/api-go/internal/authlogin"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssources"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Service owns the three public SSO entries. It shares MySQL, Redis and the
@@ -47,7 +48,7 @@ func NewService(db *sql.DB, redisClient *redis.Client, cfg Config, login Trusted
 		cfg:     cfg,
 		login:   login,
 		secrets: secrets,
-		http:    &http.Client{},
+		http:    outbound.NewClient(0),
 		now:     time.Now,
 	}
 	if db != nil {

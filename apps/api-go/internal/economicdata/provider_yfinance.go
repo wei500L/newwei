@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 type yfinanceProvider struct{ service *Service }
@@ -240,16 +242,17 @@ func (p *yfinanceProvider) fetchChart(ctx context.Context, config ProviderConfig
 	query.Set("includePrePost", strconv.FormatBool(requestParams.IncludePrePost))
 	query.Set("events", requestParams.Events)
 	chartURL.RawQuery = query.Encode()
-	client := &http.Client{
-		Transport: p.service.http.Transport,
-		Timeout:   12 * time.Second,
-		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+	// Reuse the service transport (and its connection pool) while applying the
+	// yfinance-specific timeout and the three-hop redirect cap.
+	client := outbound.NewClient(12*time.Second,
+		outbound.WithTransport(p.service.http.Transport),
+		outbound.WithCheckRedirect(func(_ *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return http.ErrUseLastResponse
 			}
 			return nil
-		},
-	}
+		}),
+	)
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		response, err := fetchYfinanceJSON(ctx, client, chartURL.String())

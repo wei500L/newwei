@@ -11,6 +11,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -59,13 +60,7 @@ func NewServiceWithHTTPClient(db *sql.DB, redisClient *redis.Client, client *htt
 // automatic redirect following is disabled so each hop can be validated; the
 // transport keeps its default transparent gzip handling.
 func newMetadataHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	return &http.Client{
-		Transport: transport,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	return outbound.NewClient(0, outbound.NoRedirect())
 }
 
 func (s *Service) httpClient() *http.Client {

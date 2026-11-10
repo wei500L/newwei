@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 const (
@@ -107,8 +109,8 @@ func ErrorName(err error) string {
 
 // Client performs vector-go upserts. The zero value is ready to use.
 type Client struct {
-	// HTTPClient is the transport. A nil value uses http.DefaultTransport with
-	// no global timeout; each attempt applies Config.TimeoutMs.
+	// HTTPClient is the transport. A nil value uses the shared outbound client
+	// with no global timeout; each attempt applies Config.TimeoutMs.
 	HTTPClient *http.Client
 	// Sleep is injectable for tests. A nil value uses a context-aware timer.
 	Sleep func(context.Context, time.Duration) error
@@ -220,7 +222,7 @@ func (c *Client) upsertOnce(ctx context.Context, endpoint, token string, body []
 
 	client := c.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = outbound.NewClient(0)
 	}
 	response, err := client.Do(req)
 	if err != nil {

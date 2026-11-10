@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Model-service client limits mirrored from ModelServiceClient.
@@ -139,7 +140,7 @@ type modelClient struct {
 func NewModelClient(reader ModelConfigReader) ModelServiceClient {
 	return &modelClient{
 		config: reader,
-		http:   &http.Client{Timeout: 30 * time.Second},
+		http:   outbound.NewClient(30 * time.Second),
 		now:    time.Now,
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // This file adds the assistant model surface: non-streaming chat/responses
@@ -160,7 +161,7 @@ func NewAssistantLLM(settings BriefSettingsReader, env AssistantGatewayEnv) Assi
 	if env.MaxOutputTokens <= 0 {
 		env.MaxOutputTokens = 1_200
 	}
-	return &assistantClient{store: settings, env: env, http: &http.Client{}}
+	return &assistantClient{store: settings, env: env, http: outbound.NewClient(0)}
 }
 
 // Complete performs one non-streaming completion over the active profile and

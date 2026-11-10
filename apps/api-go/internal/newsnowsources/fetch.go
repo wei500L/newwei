@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // browserUserAgent is the myFetch default header. Providers that pass their own
@@ -35,9 +37,11 @@ type fetchClient struct {
 }
 
 // newFetchClient mirrors myFetch: 10 second timeout per attempt and three
-// retries.
+// retries. It owns a dedicated transport rather than the shared outbound one
+// because the source unit calls CloseIdleConnections on shutdown, which must
+// drain only this unit's pool, not every other caller's.
 func newFetchClient() *fetchClient {
-	return &fetchClient{client: &http.Client{Timeout: 10 * time.Second}}
+	return &fetchClient{client: outbound.NewClient(10*time.Second, outbound.WithTransport(http.DefaultTransport.(*http.Transport).Clone()))}
 }
 
 // closeIdleConnections releases pooled upstream connections at shutdown.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Hit 是一条 rerank 命中。Index 相对本次 documents。
@@ -66,7 +67,7 @@ type Client struct {
 
 // NewClient 不绑定写死的模型名。模型来自当前启用的 embedding 或 rerank profile。
 func NewClient(db *sql.DB) *Client {
-	return &Client{db: db, http: &http.Client{}}
+	return &Client{db: db, http: outbound.NewClient(0)}
 }
 
 // Embed 调用当前 embedding profile。失败返回通用错误，不返回空向量冒充成功。

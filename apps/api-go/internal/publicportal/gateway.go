@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // StatusError 是要按 Nest HTTP 异常原样返回的失败。
@@ -119,7 +120,7 @@ func newGateway(store BriefSettingsReader, env GatewayEnv) *gatewayClient {
 	if env.MaxOutputTokens <= 0 {
 		env.MaxOutputTokens = 2_048
 	}
-	return &gatewayClient{store: store, env: env, http: &http.Client{}}
+	return &gatewayClient{store: store, env: env, http: outbound.NewClient(0)}
 }
 
 // litellmConfig maps the public portal GatewayEnv onto the shared litellmcompat

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/dataruntimesettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // This file ports fetchJsonWithRetry and fetchWithIpv4Fallback. The request shape
@@ -68,8 +69,8 @@ func newHTTPClient() *httpClient {
 		return dialer.DialContext(ctx, "tcp4", address)
 	}
 	return &httpClient{
-		primary: &http.Client{},
-		ipv4:    &http.Client{Transport: ipv4Transport},
+		primary: outbound.NewClient(0),
+		ipv4:    outbound.NewClient(0, outbound.WithTransport(ipv4Transport)),
 	}
 }
 

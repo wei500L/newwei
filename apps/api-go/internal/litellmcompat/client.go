@@ -17,6 +17,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 const responseLimit = 8 << 20
@@ -43,7 +44,7 @@ type Client struct {
 // NewClient wires the shared MySQL pool and the request-log writer. A nil writer
 // disables logging only; request behaviour is unchanged.
 func NewClient(db *sql.DB, logs LogWriter, cfg Config) *Client {
-	return &Client{db: db, logs: logs, cfg: cfg.defaulted(), http: &http.Client{}, now: time.Now}
+	return &Client{db: db, logs: logs, cfg: cfg.defaulted(), http: outbound.NewClient(0), now: time.Now}
 }
 
 // defaulted fills the environment fallbacks Nest applies under a stored profile.
@@ -102,7 +103,7 @@ func (c *Client) WithHTTP(httpClient *http.Client) *Client {
 // already hold those rows (the public portal store, the crawl frontier client)
 // use it so profile resolution and RunCompletion stay in one place.
 func NewSettingsClient(profilesJSON, governanceJSON []byte, cfg Config) *Client {
-	client := &Client{cfg: cfg.defaulted(), http: &http.Client{}, now: time.Now}
+	client := &Client{cfg: cfg.defaulted(), http: outbound.NewClient(0), now: time.Now}
 	client.loadRow = func(_ context.Context, key string) (json.RawMessage, bool, error) {
 		switch key {
 		case gatewaySettingsKey:
