@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +53,7 @@ type Service struct {
 	outbox     OutboxDispatcher
 	snapshots  SnapshotRefresher
 	config     RuntimeConfig
+	stageCache stageCache
 	now        func() time.Time
 	logf       func(format string, args ...any)
 
@@ -81,16 +83,22 @@ func New(opts Options) *Service {
 	settings := NewSettingsReader(opts.DB, opts.Redis, opts.Config)
 	builder := NewPromptBuilder()
 
+	// The stage cache key carries the configured completion model; an empty
+	// config model becomes the "default" token so the key is always well-formed.
+	stageCacheModel := strings.TrimSpace(opts.Config.LiteLLM.Model)
+	cache := newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, stageCacheModel, logf)
+
 	service := &Service{
 		settings: settings,
 		cleaner: NewCleaner(CleanerDeps{
-			DB:       opts.DB,
-			Mongo:    opts.Mongo,
-			Config:   opts.Config,
-			Models:   opts.Models,
-			Crawl:    opts.Crawl,
-			Settings: settings,
-			Now:      now,
+			DB:         opts.DB,
+			Mongo:      opts.Mongo,
+			Config:     opts.Config,
+			Models:     opts.Models,
+			Crawl:      opts.Crawl,
+			Settings:   settings,
+			StageCache: cache,
+			Now:        now,
 		}),
 		extractor: NewExtractor(opts.Models, builder),
 		deduper: NewDeduper(DeduperDeps{
@@ -99,6 +107,7 @@ func New(opts Options) *Service {
 			Vector:   opts.Vector,
 			Settings: settings,
 			Runtime:  opts.Config.Pipeline,
+			Redis:    opts.Redis,
 			Now:      now,
 			Random:   random,
 		}),
@@ -107,6 +116,7 @@ func New(opts Options) *Service {
 		outbox:     opts.Outbox,
 		snapshots:  opts.Snapshots,
 		config:     opts.Config.Pipeline,
+		stageCache: cache,
 		now:        now,
 		logf:       logf,
 		mongo:      opts.Mongo,

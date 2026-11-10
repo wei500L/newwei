@@ -579,3 +579,136 @@ func pipelineTestEqualStrings(left, right []string) bool {
 	}
 	return true
 }
+
+// --- stage product cache on retry (D2) -------------------------------------
+
+func pipelineTestCountCall(calls []string, name string) int {
+	count := 0
+	for _, call := range calls {
+		if call == name {
+			count++
+		}
+	}
+	return count
+}
+
+// TestStagedEnrichmentStagesReuseStageCacheOnRetry reproduces the D2 defect at
+// the pipeline level: the first attempt fails in classification, the retry must
+// not call the entity/sentiment/kg models again and must persist the same
+// products.
+func TestStagedEnrichmentStagesReuseStageCacheOnRetry(t *testing.T) {
+	service, recorder, _ := newPipelineTestService(t)
+	service.stageCache = newMemoryStageCache("model-x")
+	job := pipelineTestJob()
+	cleanResult := CleanResult{
+		Cleaned:     pipelineTestCleaned(),
+		LLM:         pipelineTestLLM(),
+		ContentHash: "content-hash-cache",
+	}
+	service.settings = &pipelineFakeSettings{
+		extraction: pipelineTestStagedSettings(),
+		prompt:     PromptConfig{Version: "prompt-v1"},
+	}
+	service.cleaner = &pipelineFakeCleaner{recorder: recorder, article: pipelineTestArticle(), cleanResult: cleanResult}
+	service.extractor = &pipelineFakeExtractor{
+		recorder:  recorder,
+		entities:  []Entity{{Name: "ACME", Type: "org", Confidence: 0.9}},
+		sentiment: "positive",
+		relations: []KGRelation{{
+			Subject:    KGEntityRef{Name: "ACME", Type: "org"},
+			Predicate:  "acquires",
+			Object:     KGEntityRef{Name: "Beta", Type: "org"},
+			Confidence: 0.8,
+		}},
+		llm: pipelineTestLLMPtr(),
+	}
+	classifier := &pipelineFakeClassifier{recorder: recorder, result: newsclassifierResultForTest(), err: errors.New("classify boom")}
+	service.classifier = classifier
+	service.deduper = &pipelineFakeDeduper{recorder: recorder}
+	store := &pipelineFakeStore{recorder: recorder}
+	service.store = store
+
+	if _, err := service.Process(context.Background(), job, pipelineTestRaw()); err == nil {
+		t.Fatalf("first attempt must fail in classification")
+	}
+	firstCalls := recorder.list()
+	for _, stage := range []string{"extract_entities", "extract_sentiment", "extract_kg"} {
+		if pipelineTestCountCall(firstCalls, stage) != 1 {
+			t.Fatalf("first attempt %s calls = %d, want 1", stage, pipelineTestCountCall(firstCalls, stage))
+		}
+	}
+
+	classifier.err = nil
+	if _, err := service.Process(context.Background(), job, pipelineTestRaw()); err != nil {
+		t.Fatalf("retry after classification failure: %v", err)
+	}
+	secondCalls := recorder.list()[len(firstCalls):]
+	for _, stage := range []string{"extract_entities", "extract_sentiment", "extract_kg"} {
+		if pipelineTestCountCall(secondCalls, stage) != 0 {
+			t.Fatalf("retry must reuse the stage cache for %s, got %d calls", stage, pipelineTestCountCall(secondCalls, stage))
+		}
+	}
+	if len(store.input.Cleaned.Entities) != 1 || store.input.Cleaned.Entities[0].Name != "ACME" {
+		t.Fatalf("retry entities = %#v", store.input.Cleaned.Entities)
+	}
+	if store.input.Cleaned.Sentiment == nil || *store.input.Cleaned.Sentiment != "positive" {
+		t.Fatalf("retry sentiment = %v", store.input.Cleaned.Sentiment)
+	}
+	if len(store.input.Cleaned.KGRelations) != 1 {
+		t.Fatalf("retry kg relations = %#v", store.input.Cleaned.KGRelations)
+	}
+	meta := store.input.Cleaned.StageMeta
+	if meta == nil || meta.Entities == nil || meta.Entities.Provider == nil || *meta.Entities.Provider != "stage_cache" {
+		t.Fatalf("retry entities provider = %#v, want stage_cache", meta)
+	}
+	if meta.Sentiment == nil || meta.Sentiment.Provider == nil || *meta.Sentiment.Provider != "stage_cache" {
+		t.Fatalf("retry sentiment provider = %#v, want stage_cache", meta.Sentiment)
+	}
+	if meta.KG == nil || meta.KG.Provider == nil || *meta.KG.Provider != "stage_cache" {
+		t.Fatalf("retry kg provider = %#v, want stage_cache", meta.KG)
+	}
+	// The cached entries keep the original model/token metadata.
+	if meta.Entities.Model == nil || *meta.Entities.Model != "model-x" {
+		t.Fatalf("cached entities model = %v", meta.Entities.Model)
+	}
+	if meta.Entities.TotalTokens == nil || *meta.Entities.TotalTokens != 150 {
+		t.Fatalf("cached entities tokens = %v", meta.Entities.TotalTokens)
+	}
+}
+
+// TestStagedPipelineCompletesWithoutStageCache verifies the cache is optional:
+// with no cache the pipeline still runs to completion (the model is called each
+// attempt).
+func TestStagedPipelineCompletesWithoutStageCache(t *testing.T) {
+	service, recorder, _ := newPipelineTestService(t)
+	service.stageCache = nil
+	job := pipelineTestJob()
+	cleanResult := CleanResult{
+		Cleaned:     pipelineTestCleaned(),
+		LLM:         pipelineTestLLM(),
+		ContentHash: "content-hash-nocache",
+	}
+	service.settings = &pipelineFakeSettings{
+		extraction: pipelineTestStagedSettings(),
+		prompt:     PromptConfig{Version: "prompt-v1"},
+	}
+	service.cleaner = &pipelineFakeCleaner{recorder: recorder, article: pipelineTestArticle(), cleanResult: cleanResult}
+	service.extractor = &pipelineFakeExtractor{recorder: recorder, entities: []Entity{}, sentiment: "neutral", relations: []KGRelation{}, llm: pipelineTestLLMPtr()}
+	service.classifier = &pipelineFakeClassifier{recorder: recorder, result: newsclassifierResultForTest()}
+	service.deduper = &pipelineFakeDeduper{recorder: recorder}
+	service.store = &pipelineFakeStore{recorder: recorder}
+
+	if _, err := service.Process(context.Background(), job, pipelineTestRaw()); err != nil {
+		t.Fatalf("pipeline without a stage cache: %v", err)
+	}
+	if pipelineTestCountCall(recorder.list(), "extract_entities") != 1 {
+		t.Fatalf("without a cache the model must run: %v", recorder.list())
+	}
+}
+
+// pipelineTestLLMPtr is the pointer form of pipelineTestLLM for the fake
+// extractor's llm metadata return.
+func pipelineTestLLMPtr() *LLMMetadata {
+	llm := pipelineTestLLM()
+	return &llm
+}

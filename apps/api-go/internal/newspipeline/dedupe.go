@@ -48,6 +48,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 	"github.com/wei500L/newwei/apps/api-go/internal/vectorclient"
@@ -94,6 +96,9 @@ type DeduperDeps struct {
 	Settings *SettingsReader
 	// Runtime is the pipeline runtime config.
 	Runtime RuntimeConfig
+	// Redis backs the in-flight duplicate registry. A nil value disables the
+	// registry (tests and deployments without Redis).
+	Redis *redis.Client
 	// Now is an optional clock (tests).
 	Now func() time.Time
 	// Random is an optional jitter source kept for wiring parity.
@@ -109,6 +114,7 @@ type Deduper struct {
 	settings dedupeSettingsProvider
 	runtime  RuntimeConfig
 	now      func() time.Time
+	inflight *inflightRegistry
 }
 
 // dedupeSettingsProvider is the org-scoped dedupe settings read. *SettingsReader
@@ -234,6 +240,9 @@ func NewDeduper(deps DeduperDeps) *Deduper {
 	if deps.Settings != nil {
 		deduper.settings = deps.Settings
 	}
+	if deps.Redis != nil {
+		deduper.inflight = newInflightRegistry(&redisInflightKV{client: deps.Redis}, deps.Runtime.InflightTTLSeconds)
+	}
 	return deduper
 }
 
@@ -262,6 +271,22 @@ func (d *Deduper) EvaluateSummaryDedupe(ctx context.Context, input DedupeInput) 
 			DuplicateOf:         stringPointer(*ref),
 			DuplicateSimilarity: floatPointer(1),
 		}, nil
+	}
+
+	// In-flight duplicate: a concurrent item with the same content hash or
+	// normalized title already registered before either persisted. The
+	// registration value carries the registrant's processedItemId, which the
+	// itemPipeline processor resolves before the pipeline runs, so it is known
+	// at registration time. When the job has no valid ObjectId processedItemId
+	// (legacy/replay), skip the registry and fall back to the persisted
+	// candidate sets.
+	if d.inflight != nil && pipelineObjectIDIsValid(input.Job.ProcessedItemID) {
+		if peer := d.inflight.checkAndRegister(ctx, input.Job.OrgID, input.Job.ItemMetaID, input.Job.ProcessedItemID, input.ContentHash, input.Cleaned.Title); peer != nil {
+			return DedupeResult{
+				DuplicateOf:         stringPointer(*peer),
+				DuplicateSimilarity: floatPointer(1),
+			}, nil
+		}
 	}
 
 	if !cfg.SummaryDedupEnabled {

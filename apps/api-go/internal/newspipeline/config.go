@@ -712,6 +712,11 @@ func normalizeCrawlerDefaults(raw map[string]any, markdown *crawlMarkdownOptions
 func normalizePipelineRuntimeConfig(raw map[string]any, getenv func(string) string) RuntimeConfig {
 	envCacheTTL := envPositiveInt(getenv, "NEWS_PIPELINE_CACHE_TTL_SECONDS", 3_600)
 	envMaxInputChars := envPositiveInt(getenv, "NEWS_PIPELINE_MAX_INPUT_CHARS", 48_000)
+	// The stage product cache and the in-flight dedupe registry both default to
+	// a 24h / 10m window; the env overrides let an operator tune the retry-reuse
+	// window and the concurrency dedupe window independently.
+	envStageCacheTTL := envPositiveInt(getenv, "NEWS_PIPELINE_STAGE_CACHE_TTL_SECONDS", 86_400)
+	envInflightTTL := envPositiveInt(getenv, "NEWS_PIPELINE_INFLIGHT_TTL_SECONDS", 600)
 	configPath := jsTrimString(getenv("NEWS_PIPELINE_CONFIG_PATH"))
 	if configPath == "" {
 		configPath = defaultNewsPipelineConfigPath
@@ -730,6 +735,8 @@ func normalizePipelineRuntimeConfig(raw map[string]any, getenv func(string) stri
 		SummaryDedupMaxCandidates: ensurePositiveIntConfig(configFileOr(raw, "summary_dedup_max_candidates", nil), 100),
 		SummaryDedupMinChars:      ensurePositiveIntConfig(configFileOr(raw, "summary_dedup_min_chars", nil), 40),
 		OutboxDeliveryConcurrency: ensurePositiveIntConfig(configFileOr(raw, "outbox_delivery_concurrency", nil), 10),
+		StageCacheTTLSeconds:      ensurePositiveIntConfig(configFileOr(raw, "stage_cache_ttl_seconds", nil), envStageCacheTTL),
+		InflightTTLSeconds:        ensurePositiveIntConfig(configFileOr(raw, "inflight_ttl_seconds", nil), envInflightTTL),
 	}
 }
 

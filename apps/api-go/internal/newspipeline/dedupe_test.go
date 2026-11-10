@@ -1088,3 +1088,157 @@ func dedupeValuesEqual(left, right any) bool {
 	}
 	return string(leftBytes) == string(rightBytes)
 }
+
+// --- in-flight duplicate registry (D1) -------------------------------------
+
+// memoryInflightEntry is one memoryInflightKV value with its expiry.
+type memoryInflightEntry struct {
+	value     string
+	expiresAt time.Time
+}
+
+// memoryInflightKV is an in-memory inflightKV that honours the TTL against an
+// injected clock, so the expiry path can be tested without Redis.
+type memoryInflightKV struct {
+	mu      sync.Mutex
+	entries map[string]memoryInflightEntry
+	now     func() time.Time
+}
+
+func newMemoryInflightKV(now func() time.Time) *memoryInflightKV {
+	return &memoryInflightKV{entries: map[string]memoryInflightEntry{}, now: now}
+}
+
+func (m *memoryInflightKV) get(_ context.Context, key string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, ok := m.entries[key]
+	if !ok {
+		return "", false
+	}
+	if !entry.expiresAt.IsZero() && !m.now().Before(entry.expiresAt) {
+		delete(m.entries, key)
+		return "", false
+	}
+	return entry.value, true
+}
+
+func (m *memoryInflightKV) setNX(_ context.Context, key, value string, ttl time.Duration) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := m.entries[key]; ok && (entry.expiresAt.IsZero() || m.now().Before(entry.expiresAt)) {
+		return false
+	}
+	m.entries[key] = memoryInflightEntry{value: value, expiresAt: m.now().Add(ttl)}
+	return true
+}
+
+func dedupeInflightHarness(t *testing.T) *dedupeHarness {
+	t.Helper()
+	harness := newDedupeHarness(nil)
+	harness.withRuntime(RuntimeConfig{SummaryDedupEnabled: false, InflightTTLSeconds: 600})
+	harness.deduper.inflight = newInflightRegistry(newMemoryInflightKV(func() time.Time { return harness.now }), 600)
+	return harness
+}
+
+func dedupeInflightInput(itemMetaID, processedItemID, contentHash, title, summary string) DedupeInput {
+	return DedupeInput{
+		Job: Job{
+			OrgID:           "org-1",
+			ItemMetaID:      itemMetaID,
+			JobID:           "job-" + itemMetaID,
+			ProcessedItemID: processedItemID,
+		},
+		Cleaned:     CleanedNews{Title: dedupeStringPtr(title), Summary: dedupeStringPtr(summary)},
+		ContentHash: contentHash,
+	}
+}
+
+// TestInflightDuplicateMarksLateConcurrentItem reproduces the D1 defect: two
+// concurrent items with the same content hash do not see each other in the
+// persisted candidate sets, so the later one must be caught by the in-flight
+// registry.
+func TestInflightDuplicateMarksLateConcurrentItem(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	owner := dedupeObjectIDHex(1)
+
+	first, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-1", owner, "content-hash-1", "Same Headline", "summary one"))
+	if err != nil {
+		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
+	}
+	if first.DuplicateOf != nil {
+		t.Fatalf("first item must not be a duplicate, got %v", first.DuplicateOf)
+	}
+
+	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-2", dedupeObjectIDHex(2), "content-hash-1", "Same Headline", "summary two"))
+	if err != nil {
+		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
+	}
+	if second.DuplicateOf == nil || *second.DuplicateOf != owner {
+		t.Fatalf("second item DuplicateOf = %v, want %s", second.DuplicateOf, owner)
+	}
+	if second.DuplicateSimilarity == nil || *second.DuplicateSimilarity != 1 {
+		t.Fatalf("second item DuplicateSimilarity = %v, want 1", second.DuplicateSimilarity)
+	}
+}
+
+// TestInflightDuplicateMatchesNormalizedTitle covers the title dimension: the
+// same headline with different punctuation/whitespace and a different content
+// hash is still an in-flight duplicate.
+func TestInflightDuplicateMatchesNormalizedTitle(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	owner := dedupeObjectIDHex(3)
+
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-1", owner, "content-hash-a", "Breaking  News!", "summary one")); err != nil {
+		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
+	}
+	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-2", dedupeObjectIDHex(4), "content-hash-b", "breaking news", "summary two"))
+	if err != nil {
+		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
+	}
+	if second.DuplicateOf == nil || *second.DuplicateOf != owner {
+		t.Fatalf("normalized title match DuplicateOf = %v, want %s", second.DuplicateOf, owner)
+	}
+}
+
+// TestInflightDuplicateIgnoresSameItemRetry verifies a retry of the same item
+// recognises its own registration and is not treated as a duplicate.
+func TestInflightDuplicateIgnoresSameItemRetry(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	input := dedupeInflightInput("meta-1", dedupeObjectIDHex(5), "content-hash-retry", "Retry Headline", "summary")
+
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), input); err != nil {
+		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
+	}
+	retry, err := harness.deduper.EvaluateSummaryDedupe(context.Background(), input)
+	if err != nil {
+		t.Fatalf("retry EvaluateSummaryDedupe: %v", err)
+	}
+	if retry.DuplicateOf != nil {
+		t.Fatalf("same-item retry must not be a duplicate, got %v", retry.DuplicateOf)
+	}
+}
+
+// TestInflightDuplicateExpiresAfterTTL verifies a registration expires after the
+// configured TTL, so a later non-concurrent item is not marked a duplicate.
+func TestInflightDuplicateExpiresAfterTTL(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-1", dedupeObjectIDHex(6), "content-hash-expire", "Expiring Headline", "summary one")); err != nil {
+		t.Fatalf("first EvaluateSummaryDedupe: %v", err)
+	}
+
+	harness.now = harness.now.Add(601 * time.Second)
+	second, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-2", dedupeObjectIDHex(7), "content-hash-expire", "Expiring Headline", "summary two"))
+	if err != nil {
+		t.Fatalf("second EvaluateSummaryDedupe: %v", err)
+	}
+	if second.DuplicateOf != nil {
+		t.Fatalf("expired registration must not be a duplicate, got %v", second.DuplicateOf)
+	}
+}

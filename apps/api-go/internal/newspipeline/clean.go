@@ -54,13 +54,14 @@ type MarkdownForLlm struct {
 
 // CleanerDeps wires the clean stage.
 type CleanerDeps struct {
-	DB       *sql.DB
-	Mongo    *mongo.Database
-	Config   NewsPipelineConfig
-	Models   Models
-	Crawl    CrawlExecutor
-	Settings *SettingsReader
-	Now      func() time.Time
+	DB         *sql.DB
+	Mongo      *mongo.Database
+	Config     NewsPipelineConfig
+	Models     Models
+	Crawl      CrawlExecutor
+	Settings   *SettingsReader
+	StageCache stageCache
+	Now        func() time.Time
 }
 
 // cleanPendingState is the per-job side channel. The clean stage contract passes
@@ -74,17 +75,18 @@ type cleanPendingState struct {
 
 // Cleaner ports NewsPipelineCleanService.
 type Cleaner struct {
-	db        *sql.DB
-	sql       contentSQL
-	contents  contentReader
-	config    NewsPipelineConfig
-	models    Models
-	crawl     CrawlExecutor
-	settings  *SettingsReader
-	now       func() time.Time
-	bridge    *crawlBridge
-	prompts   *PromptBuilder
-	extractor *Extractor
+	db         *sql.DB
+	sql        contentSQL
+	contents   contentReader
+	config     NewsPipelineConfig
+	models     Models
+	crawl      CrawlExecutor
+	settings   *SettingsReader
+	stageCache stageCache
+	now        func() time.Time
+	bridge     *crawlBridge
+	prompts    *PromptBuilder
+	extractor  *Extractor
 
 	pendingMu    sync.Mutex
 	pending      map[string]cleanPendingState
@@ -99,17 +101,18 @@ func NewCleaner(deps CleanerDeps) *Cleaner {
 	}
 	builder := NewPromptBuilder()
 	cleaner := &Cleaner{
-		db:        deps.DB,
-		sql:       newContentSQL(deps.DB),
-		contents:  newContentReader(deps.Mongo),
-		config:    deps.Config,
-		models:    deps.Models,
-		crawl:     deps.Crawl,
-		settings:  deps.Settings,
-		now:       now,
-		prompts:   builder,
-		extractor: NewExtractor(deps.Models, builder),
-		pending:   map[string]cleanPendingState{},
+		db:         deps.DB,
+		sql:        newContentSQL(deps.DB),
+		contents:   newContentReader(deps.Mongo),
+		config:     deps.Config,
+		models:     deps.Models,
+		crawl:      deps.Crawl,
+		settings:   deps.Settings,
+		stageCache: deps.StageCache,
+		now:        now,
+		prompts:    builder,
+		extractor:  NewExtractor(deps.Models, builder),
+		pending:    map[string]cleanPendingState{},
 	}
 	cleaner.bridge = newCrawlBridge(deps.DB, deps.Mongo, deps.Crawl, deps.Config, now)
 	return cleaner
@@ -1002,6 +1005,25 @@ func (c *Cleaner) CleanArticle(ctx context.Context, payload NormalizedPayload, a
 		return CleanResult{}, fmt.Errorf("Unsupported clean provider: %s", provider)
 	}
 
+	// Reuse a successful clean product from a previous attempt. This sits after
+	// the ProcessedArticle cache lookup and the provider check, so the exact
+	// content-duplicate path is unchanged: only the expensive LLM (clean +
+	// repair) work is skipped on a retry.
+	stageCacheKey := ""
+	if c.stageCache != nil {
+		stageCacheKey = c.stageCache.key(job.OrgID, "clean", contentHash, promptConfig.Version)
+		var cached cleanStageCacheEntry
+		if c.stageCache.get(ctx, stageCacheKey, &cached) {
+			return CleanResult{
+				Cleaned:              withResolvedContentType(cached.Cleaned, payload, &article),
+				LLM:                  cached.LLM,
+				ContentHash:          contentHash,
+				ArticleMetadataPatch: cached.ArticleMetadataPatch,
+				StageCacheHit:        true,
+			}, nil
+		}
+	}
+
 	metadata := contentJSONObjectOrEmpty(payload.Metadata)
 	metadata.merge(state.patch)
 	if article.PublishedAt != nil {
@@ -1051,12 +1073,20 @@ func (c *Cleaner) CleanArticle(ctx context.Context, payload NormalizedPayload, a
 	llm.LatencyMS = llmStage.LatencyMS
 
 	repaired := c.maybeRepairCleanedArticle(ctx, job, payload, article, cleaned)
-	return CleanResult{
+	result := CleanResult{
 		Cleaned:              repaired.cleaned,
 		LLM:                  mergeLlmMetadata(llm, repaired.llmDelta),
 		ContentHash:          contentHash,
 		ArticleMetadataPatch: cleanRepairPatchJSON(repaired.metadata, false),
-	}, nil
+	}
+	if c.stageCache != nil {
+		c.stageCache.set(ctx, stageCacheKey, cleanStageCacheEntry{
+			Cleaned:              result.Cleaned,
+			LLM:                  result.LLM,
+			ArticleMetadataPatch: result.ArticleMetadataPatch,
+		})
+	}
+	return result, nil
 }
 
 // cleanApplyCleanedMarkdownFallback is applyCleanedMarkdownFallback on the typed
