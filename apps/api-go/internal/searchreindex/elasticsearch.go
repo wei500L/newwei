@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Elasticsearch environment defaults mirror apps/api/src/modules/config/
@@ -177,7 +179,7 @@ func newElasticsearch(config elasticsearchConfig) *Elasticsearch {
 		apiKey:     config.apiKey,
 		username:   config.username,
 		password:   config.password,
-		client:     &http.Client{Timeout: config.requestTimeout},
+		client:     outbound.NewClient(config.requestTimeout),
 	}
 }
 

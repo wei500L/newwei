@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -414,7 +415,7 @@ func (s *insightsService) httpClient() *http.Client {
 	if s.client != nil {
 		return s.client
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return outbound.NewClient(30 * time.Second)
 }
 
 func (s *insightsService) finnhubEndpoint() string {

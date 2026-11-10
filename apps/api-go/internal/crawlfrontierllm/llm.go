@@ -14,6 +14,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/litellmcompat"
 	"github.com/wei500L/newwei/apps/api-go/internal/llmlogs"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // llm.go is the LiteLLM gateway client for the two Frontier LLM chains. It
@@ -103,7 +104,7 @@ func NewLLMClient(options LLMClientOptions) *LLMClient {
 	}
 	httpClient := options.HTTP
 	if httpClient == nil {
-		httpClient = &http.Client{}
+		httpClient = outbound.NewClient(0)
 	}
 	client := &LLMClient{
 		db:      options.DB,

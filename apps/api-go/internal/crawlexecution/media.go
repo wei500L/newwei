@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // mediaReservedKeys is mediaReservedKeys: the item fields with a dedicated slot
@@ -903,7 +905,7 @@ func fetchMediaAsset(
 	item mediaItem,
 ) *downloadedMediaAsset {
 	if client == nil {
-		client = &http.Client{}
+		client = outbound.NewClient(0)
 	}
 	fetchCtx, cancel := context.WithTimeout(ctx, time.Duration(config.FetchTimeoutMs)*time.Millisecond)
 	defer cancel()

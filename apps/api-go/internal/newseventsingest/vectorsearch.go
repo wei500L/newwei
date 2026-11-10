@@ -18,6 +18,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Vector-service settings storage, mirroring VectorServiceSettingsService.
@@ -131,7 +132,7 @@ func NewVectorSearcher(options VectorSearcherOptions) VectorSearcher {
 		maxRetries = 10
 	}
 	options.MaxRetries = maxRetries
-	return &vectorSearcher{options: options, http: &http.Client{}, now: now}
+	return &vectorSearcher{options: options, http: outbound.NewClient(0), now: now}
 }
 
 // SearchBestEffort implements VectorSearcher: nil-and-false means the service is

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 type openskyViewport interface {
@@ -67,7 +69,7 @@ type liveOpensky struct {
 }
 
 func newLiveOpensky(rdb *redis.Client, cache blobCache, db settingsDB, env openskyEnv) *liveOpensky {
-	return &liveOpensky{redis: rdb, cache: cache, db: db, env: env, http: &http.Client{}}
+	return &liveOpensky{redis: rdb, cache: cache, db: db, env: env, http: outbound.NewClient(0)}
 }
 
 const openskyBudgetLua = `

@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/situationinsights/analysis"
 )
 
@@ -47,7 +48,7 @@ func NewInsightsService(db *sql.DB, redisClient *redis.Client, mongoDatabase *mo
 		cache:              newInsightsCache(redisClient),
 		mongo:              mongoDatabase,
 		settings:           settings,
-		client:             &http.Client{Timeout: 30 * time.Second},
+		client:             outbound.NewClient(30 * time.Second),
 		now:                time.Now,
 		finnhubURL:         insightsFinnhubQuoteURL,
 		fredURL:            insightsFredObservationsURL,

@@ -15,6 +15,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/httpx"
 	"github.com/wei500L/newwei/apps/api-go/internal/infrastructuresettings"
 	"github.com/wei500L/newwei/apps/api-go/internal/newsnowclusteringops"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 const (
@@ -49,7 +50,7 @@ type VectorSearcher struct {
 // search return no candidates, which the caller treats exactly like the NestJS
 // searchBestEffort returning null.
 func NewVectorSearcher(settings VectorConfigReader) *VectorSearcher {
-	return &VectorSearcher{settings: settings, client: &http.Client{}}
+	return &VectorSearcher{settings: settings, client: outbound.NewClient(0)}
 }
 
 // vectorSearchRequest is the /v1/search body.

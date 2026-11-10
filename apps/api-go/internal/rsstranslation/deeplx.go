@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -41,7 +42,7 @@ func newDeepLxClient(settings SettingsReader, cache *rssCache) *deepLxClient {
 	return &deepLxClient{
 		settings: settings,
 		cache:    cache,
-		http:     &http.Client{},
+		http:     outbound.NewClient(0),
 		sem:      newSemaphore(defaultLLMConcurrency),
 	}
 }

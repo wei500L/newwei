@@ -17,6 +17,7 @@ import (
 	"github.com/wei500L/newwei/apps/api-go/internal/itemsreading"
 	"github.com/wei500L/newwei/apps/api-go/internal/newssourcescheduler"
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Config carries the environment values the crawl execution path reads. They
@@ -134,11 +135,7 @@ func New(options Options) *Service {
 	}
 	httpClient := options.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
+		httpClient = outbound.NewClient(0, outbound.NoRedirect())
 	}
 	settings := options.Settings
 	if settings == nil {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/rediscache"
 )
 
@@ -116,7 +117,7 @@ type cachedAcledAuthState struct {
 
 // acledHTTPClient issues the OAuth token request. The caller applies the
 // per-attempt timeout through the request context, matching AbortController.
-var acledHTTPClient = &http.Client{}
+var acledHTTPClient = outbound.NewClient(0)
 
 func acledPolicyEnabled() bool { return acledAPIEnabled }
 

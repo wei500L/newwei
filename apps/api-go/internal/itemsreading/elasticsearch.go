@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Item search defaults mirrored from ELASTICSEARCH_* env schema entries and
@@ -145,7 +146,7 @@ func newElasticsearchFromEnv() *elasticSearcher {
 		apiKey: strings.TrimSpace(os.Getenv("ELASTICSEARCH_API_KEY")),
 		user:   os.Getenv("ELASTICSEARCH_USERNAME"),
 		pass:   os.Getenv("ELASTICSEARCH_PASSWORD"),
-		client: &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		client: outbound.NewClient(time.Duration(timeoutMs) * time.Millisecond),
 	}
 }
 

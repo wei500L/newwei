@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Vector-service storage keys and client defaults mirrored from
@@ -140,7 +141,7 @@ func NewSearcher(options SearcherOptions) *SearchClient {
 	if health == nil {
 		health = &Health{}
 	}
-	return &SearchClient{options: options, http: &http.Client{}, now: now, random: random, health: health}
+	return &SearchClient{options: options, http: outbound.NewClient(0), now: now, random: random, health: health}
 }
 
 // searchConfig is the effective vector-service configuration.

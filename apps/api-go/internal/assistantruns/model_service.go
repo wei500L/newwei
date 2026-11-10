@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/modelaccesssettings"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // ModelServiceForecastRequest is the /v1/forecast/holdout_last body. Field
@@ -48,7 +49,7 @@ type ModelServiceClient struct {
 
 // NewModelServiceClient builds the production client.
 func NewModelServiceClient(access ModelAccessReader) *ModelServiceClient {
-	return &ModelServiceClient{access: access, http: &http.Client{}}
+	return &ModelServiceClient{access: access, http: outbound.NewClient(0)}
 }
 
 // ForecastHoldoutLast calls forecastHoldoutLastOrThrow. Retry count, status

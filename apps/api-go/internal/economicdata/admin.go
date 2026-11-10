@@ -15,6 +15,7 @@ import (
 
 	"github.com/wei500L/newwei/apps/api-go/internal/authhttp"
 
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"github.com/wei500L/newwei/apps/api-go/internal/safego"
 )
 
@@ -26,7 +27,7 @@ type adminClient struct {
 
 func newAdminClient(env Env) *adminClient {
 	base := strings.TrimRight(strings.TrimSpace(env.AkshareBaseURL), "/")
-	return &adminClient{baseURL: base, token: strings.TrimSpace(env.AkshareAdminToken), client: &http.Client{Timeout: 20 * time.Second}}
+	return &adminClient{baseURL: base, token: strings.TrimSpace(env.AkshareAdminToken), client: outbound.NewClient(20 * time.Second)}
 }
 
 // AdminHandler serves the three settings.manage AkShare gateway routes.

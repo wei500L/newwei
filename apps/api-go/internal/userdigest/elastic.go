@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/metrics"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // elasticSearcher 只实现摘要用到的字面关键词检索。
@@ -53,7 +54,7 @@ func NewElasticsearchFromEnv() ItemSearcher {
 		apiKey: strings.TrimSpace(os.Getenv("ELASTICSEARCH_API_KEY")),
 		user:   os.Getenv("ELASTICSEARCH_USERNAME"),
 		pass:   os.Getenv("ELASTICSEARCH_PASSWORD"),
-		client: &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		client: outbound.NewClient(time.Duration(timeoutMs) * time.Millisecond),
 	}
 }
 

@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // Cache is the blob cache the geocoder reads and writes. The dashboard war map
@@ -195,7 +197,7 @@ func NewClient(cache Cache, rdb *redis.Client, db SettingsReader, cfg Config) *C
 		config: cfg,
 		script: redis.NewScript(slidingWindowLua),
 		now:    time.Now,
-		http:   &http.Client{},
+		http:   outbound.NewClient(0),
 	}
 }
 

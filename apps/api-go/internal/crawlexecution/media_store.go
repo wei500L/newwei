@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/objectstorage"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 )
 
 // mediaUploadCacheControl is the Cache-Control of every crawl media object,
@@ -212,7 +213,7 @@ func newMediaStore(service *Service) *mediaStore {
 	return &mediaStore{
 		storageConfig: storageConfig,
 		repository:    &sqlMediaAssetRepository{db: db},
-		httpClient:    &http.Client{},
+		httpClient:    outbound.NewClient(0),
 		now:           now,
 		newID:         newRowID,
 		newObjects: func(config objectstorage.RuntimeConfig) (mediaObjectWriter, error) {

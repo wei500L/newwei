@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/economicqueue"
+	"github.com/wei500L/newwei/apps/api-go/internal/platform/outbound"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
@@ -63,7 +64,7 @@ type Service struct {
 func NewService(options Options) *Service {
 	httpClient := options.HTTP
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = outbound.NewClient(30 * time.Second)
 	}
 	service := &Service{
 		db:    options.DB,
