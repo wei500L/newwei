@@ -84,8 +84,12 @@ func New(opts Options) *Service {
 	builder := NewPromptBuilder()
 
 	// The stage cache key carries the provider and the settings-resolved
-	// completion model, resolved per stage call (see stageCacheModel).
-	cache := newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, logf)
+	// completion model, resolved per stage call (see stageCacheModel). Without
+	// Redis the cache stays nil so every stage keeps its original behavior.
+	var cache stageCache
+	if opts.Redis != nil {
+		cache = newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, logf)
+	}
 
 	service := &Service{
 		settings: settings,
