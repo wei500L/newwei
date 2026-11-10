@@ -27,18 +27,19 @@ import (
 // -> requestViaDeepLx / requestViaFallbackApi. The situation insights callers
 // are intentionally not migrated.
 //
-// The client is best-effort at the batch level exactly like NestJS: a settings
-// read failure, a disabled runtime or any rejected task makes the whole batch
-// return an empty map, while inner cache entries written by the tasks that
-// already succeeded stay in Redis.
+// The client is best-effort per text: a settings read failure or a disabled
+// runtime returns an empty map, but once a batch starts a text that cannot be
+// translated is skipped and every successful text is still returned. Inner
+// cache entries are written for each successful text; a Redis write failure is
+// logged but never discards an already translated text.
 type deepLxClient struct {
 	settings SettingsReader
-	cache    *rssCache
+	cache    translationCache
 	http     *http.Client
 	sem      *semaphore
 }
 
-func newDeepLxClient(settings SettingsReader, cache *rssCache) *deepLxClient {
+func newDeepLxClient(settings SettingsReader, cache translationCache) *deepLxClient {
 	return &deepLxClient{
 		settings: settings,
 		cache:    cache,
@@ -97,8 +98,11 @@ func (c *deepLxClient) TranslateBestEffort(ctx context.Context, texts []string) 
 }
 
 // translateHashes reads the inner 30 day cache and translates the misses under
-// the shared concurrency limit. A single rejected task fails the batch, but the
-// cache entries of the tasks that already completed are kept.
+// the shared concurrency limit. Results are collected per text: a text that
+// cannot be translated is skipped and only summarized in one log line, while a
+// successful text is returned even if writing its cache entry fails. Only a
+// batch where nothing at all could be translated returns an error, so
+// TranslateBestEffort keeps its "provider unavailable" log for that case.
 func (c *deepLxClient) translateHashes(ctx context.Context, targets map[string]string, order []string, runtime itemsreading.TranslationRuntimeConfig) (map[string]string, error) {
 	translated := make(map[string]string, len(order))
 	missing := make([]string, 0, len(order))
@@ -115,14 +119,8 @@ func (c *deepLxClient) translateHashes(ctx context.Context, targets map[string]s
 
 	var mu sync.Mutex
 	var wait sync.WaitGroup
+	var failed int
 	var firstErr error
-	var errOnce sync.Once
-	recordErr := func(err error) {
-		if err == nil {
-			return
-		}
-		errOnce.Do(func() { firstErr = err })
-	}
 	for _, hash := range missing {
 		wait.Add(1)
 		hash := hash
@@ -142,16 +140,32 @@ func (c *deepLxClient) translateHashes(ctx context.Context, targets map[string]s
 				mu.Lock()
 				translated[hash] = zh
 				mu.Unlock()
-				taskErr = c.cache.setString(ctx, deepLxInnerKey(text), zh, deepLxInnerCacheTTLSeconds)
+				// A failed cache write is not a translation failure: the text
+				// is already translated and must reach the caller. The entry is
+				// simply retried on a later request once Redis is healthy.
+				if err := c.cache.setString(ctx, deepLxInnerKey(text), zh, deepLxInnerCacheTTLSeconds); err != nil {
+					log.Printf("api-go: RSS translation DeepLX cache write failed: %v", err)
+				}
 			})
 			if permitErr != nil {
 				taskErr = permitErr
 			}
-			recordErr(taskErr)
+			if taskErr == nil {
+				return
+			}
+			mu.Lock()
+			failed++
+			if firstErr == nil {
+				firstErr = taskErr
+			}
+			mu.Unlock()
 		})
 	}
 	wait.Wait()
-	if firstErr != nil {
+	if failed > 0 {
+		log.Printf("api-go: RSS translation DeepLX batch: %d of %d texts failed; first error: %v", failed, len(missing), firstErr)
+	}
+	if len(translated) == 0 && failed > 0 {
 		return nil, firstErr
 	}
 	return translated, nil
