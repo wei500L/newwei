@@ -1137,19 +1137,23 @@ func (m *memoryInflightKV) setNX(_ context.Context, key, value string, ttl time.
 	return true
 }
 
-func (m *memoryInflightKV) releaseOwned(_ context.Context, orgID, itemMetaID string) {
+func (m *memoryInflightKV) set(_ context.Context, key, value string, ttl time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	prefix := fmt.Sprintf("pipeline:inflight:%s:content:", orgID)
-	for key, entry := range m.entries {
-		if !strings.HasPrefix(key, prefix) {
-			continue
-		}
+	m.entries[key] = memoryInflightEntry{value: value, expiresAt: m.now().Add(ttl)}
+}
+
+func (m *memoryInflightKV) releaseOwned(_ context.Context, orgID, itemMetaID, contentHash string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	contentKey := fmt.Sprintf("pipeline:inflight:%s:content:%s", orgID, contentHash)
+	if entry, ok := m.entries[contentKey]; ok {
 		var registration inflightRegistration
 		if json.Unmarshal([]byte(entry.value), &registration) == nil && registration.ItemMetaID == itemMetaID {
-			delete(m.entries, key)
+			delete(m.entries, contentKey)
 		}
 	}
+	delete(m.entries, fmt.Sprintf("pipeline:inflight:%s:owner:%s", orgID, itemMetaID))
 }
 
 func dedupeInflightHarness(t *testing.T) *dedupeHarness {
@@ -1300,5 +1304,64 @@ func TestInflightReleaseOnlyRemovesOwnKeys(t *testing.T) {
 	}
 	if blocked.DuplicateOf == nil || *blocked.DuplicateOf != dedupeObjectIDHex(12) {
 		t.Fatalf("other item's registration must survive release, got %v", blocked.DuplicateOf)
+	}
+}
+
+// TestInflightReleaseWithoutReverseIndexIsNoop verifies release is a no-op when
+// the reverse index is missing, leaving the content registration intact.
+func TestInflightReleaseWithoutReverseIndexIsNoop(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	contentHash := "content-hash-noindex"
+	owner := dedupeObjectIDHex(14)
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-owner", owner, contentHash, "summary owner")); err != nil {
+		t.Fatalf("owner EvaluateSummaryDedupe: %v", err)
+	}
+
+	kv := harness.deduper.inflight.kv.(*memoryInflightKV)
+	kv.mu.Lock()
+	delete(kv.entries, "pipeline:inflight:org-1:owner:meta-owner")
+	kv.mu.Unlock()
+
+	harness.deduper.inflight.release(context.Background(), "org-1", "meta-owner")
+
+	blocked, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-new", dedupeObjectIDHex(15), contentHash, "summary new"))
+	if err != nil {
+		t.Fatalf("post-release EvaluateSummaryDedupe: %v", err)
+	}
+	if blocked.DuplicateOf == nil || *blocked.DuplicateOf != owner {
+		t.Fatalf("missing reverse index release must be a no-op; content registration should still block, got %v", blocked.DuplicateOf)
+	}
+}
+
+// TestInflightReleaseWithExpiredReverseIndexIsNoop verifies an expired reverse
+// index also makes release a no-op.
+func TestInflightReleaseWithExpiredReverseIndexIsNoop(t *testing.T) {
+	harness := dedupeInflightHarness(t)
+	contentHash := "content-hash-expiredindex"
+	owner := dedupeObjectIDHex(16)
+	if _, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-owner", owner, contentHash, "summary owner")); err != nil {
+		t.Fatalf("owner EvaluateSummaryDedupe: %v", err)
+	}
+
+	kv := harness.deduper.inflight.kv.(*memoryInflightKV)
+	ownerKey := "pipeline:inflight:org-1:owner:meta-owner"
+	kv.mu.Lock()
+	entry := kv.entries[ownerKey]
+	entry.expiresAt = harness.now.Add(-time.Second)
+	kv.entries[ownerKey] = entry
+	kv.mu.Unlock()
+
+	harness.deduper.inflight.release(context.Background(), "org-1", "meta-owner")
+
+	blocked, err := harness.deduper.EvaluateSummaryDedupe(context.Background(),
+		dedupeInflightInput("meta-new", dedupeObjectIDHex(17), contentHash, "summary new"))
+	if err != nil {
+		t.Fatalf("post-release EvaluateSummaryDedupe: %v", err)
+	}
+	if blocked.DuplicateOf == nil || *blocked.DuplicateOf != owner {
+		t.Fatalf("expired reverse index release must be a no-op; content registration should still block, got %v", blocked.DuplicateOf)
 	}
 }

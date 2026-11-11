@@ -38,9 +38,11 @@ import (
 type inflightKV interface {
 	get(ctx context.Context, key string) (string, bool)
 	setNX(ctx context.Context, key, value string, ttl time.Duration) bool
-	// releaseOwned deletes every in-flight key for orgID whose stored
-	// registration belongs to itemMetaID.
-	releaseOwned(ctx context.Context, orgID, itemMetaID string)
+	set(ctx context.Context, key, value string, ttl time.Duration)
+	// releaseOwned deletes the item's content registration (only when its stored
+	// itemMetaId is still itemMetaID) and the reverse-index key. contentHash is
+	// the value previously read from the reverse index.
+	releaseOwned(ctx context.Context, orgID, itemMetaID, contentHash string)
 }
 
 // inflightRegistration is the value stored under each in-flight key. The
@@ -87,6 +89,9 @@ func (r *inflightRegistry) checkAndRegister(ctx context.Context, orgID, itemMeta
 		return peer
 	}
 	if r.kv.setNX(ctx, key, string(encoded), r.ttl) {
+		// Write the reverse index with the same TTL so release can find this
+		// item's content key without scanning the keyspace.
+		r.kv.set(ctx, inflightOwnerKey(orgID, itemMetaID), contentHash, r.ttl)
 		return nil
 	}
 	// The SET NX lost a race: a peer wins the conflict, while losing to our own
@@ -95,15 +100,29 @@ func (r *inflightRegistry) checkAndRegister(ctx context.Context, orgID, itemMeta
 	if peer, ok := inflightPeer(value, found, itemMetaID); ok {
 		return peer
 	}
+	if found {
+		var registration inflightRegistration
+		if json.Unmarshal([]byte(value), &registration) == nil && registration.ItemMetaID == itemMetaID {
+			// Our own registration: make sure a missing/expired reverse index is
+			// restored so a later final failure can still release it.
+			r.kv.set(ctx, inflightOwnerKey(orgID, itemMetaID), contentHash, r.ttl)
+		}
+	}
 	return nil
 }
 
-// release removes this item's own in-flight registrations for orgID.
+// release removes this item's own in-flight registrations for orgID. It first
+// reads the reverse index; a missing or expired index means there is nothing to
+// release (no-op).
 func (r *inflightRegistry) release(ctx context.Context, orgID, itemMetaID string) {
 	if r == nil || r.kv == nil || itemMetaID == "" {
 		return
 	}
-	r.kv.releaseOwned(ctx, orgID, itemMetaID)
+	contentHash, ok := r.kv.get(ctx, inflightOwnerKey(orgID, itemMetaID))
+	if !ok || contentHash == "" {
+		return
+	}
+	r.kv.releaseOwned(ctx, orgID, itemMetaID, contentHash)
 }
 
 // inflightPeer decodes a stored registration and reports it as a peer when it
@@ -123,9 +142,14 @@ func inflightPeer(value string, found bool, selfItemMetaID string) (*string, boo
 	return &processedItemID, true
 }
 
-// inflightContentKey is the single in-flight key for one item.
+// inflightContentKey is the content registration key for one item.
 func inflightContentKey(orgID, contentHash string) string {
 	return fmt.Sprintf("pipeline:inflight:%s:content:%s", orgID, contentHash)
+}
+
+// inflightOwnerKey is the reverse index from itemMetaId to its content hash.
+func inflightOwnerKey(orgID, itemMetaID string) string {
+	return fmt.Sprintf("pipeline:inflight:%s:owner:%s", orgID, itemMetaID)
 }
 
 // ReleaseInflightRegistrations removes the in-flight registrations owned by
@@ -141,27 +165,21 @@ func ReleaseInflightRegistrations(ctx context.Context, client *redis.Client, org
 	registry.release(ctx, orgID, itemMetaID)
 }
 
-// inflightReleaseScript scans the org's in-flight keys and deletes only the ones
-// whose stored itemMetaId equals ARGV[2]. Compare and delete happen in one Lua
-// invocation so a key re-registered by another item in between is preserved.
+// inflightReleaseScript deletes the content key only when its stored itemMetaId
+// still belongs to this item, then deletes the reverse index. Both keys are
+// declared explicitly (KEYS[1] content, KEYS[2] owner) so the script never scans
+// the keyspace; keeping the compare and delete in one invocation preserves a key
+// that another item re-registered in between.
 var inflightReleaseScript = redis.NewScript(`
-local cursor = "0"
-local removed = 0
-repeat
-  local reply = redis.call("SCAN", cursor, "MATCH", ARGV[1], "COUNT", 200)
-  cursor = reply[1]
-  local keys = reply[2]
-  for i = 1, #keys do
-    local value = redis.call("GET", keys[i])
-    if value then
-      local ok, decoded = pcall(cjson.decode, value)
-      if ok and type(decoded) == "table" and decoded["itemMetaId"] == ARGV[2] then
-        removed = removed + redis.call("DEL", keys[i])
-      end
-    end
+local value = redis.call("GET", KEYS[1])
+if value then
+  local ok, decoded = pcall(cjson.decode, value)
+  if ok and type(decoded) == "table" and decoded["itemMetaId"] == ARGV[1] then
+    redis.call("DEL", KEYS[1])
   end
-until cursor == "0"
-return removed
+end
+redis.call("DEL", KEYS[2])
+return 1
 `)
 
 // redisInflightKV is the Redis-backed inflightKV.
@@ -195,12 +213,22 @@ func (k *redisInflightKV) setNX(ctx context.Context, key, value string, ttl time
 	return ok
 }
 
-func (k *redisInflightKV) releaseOwned(ctx context.Context, orgID, itemMetaID string) {
-	if k == nil || k.client == nil || orgID == "" || itemMetaID == "" {
+func (k *redisInflightKV) set(ctx context.Context, key, value string, ttl time.Duration) {
+	if k == nil || k.client == nil {
 		return
 	}
-	pattern := fmt.Sprintf("pipeline:inflight:%s:content:*", orgID)
-	if _, err := inflightReleaseScript.Run(ctx, k.client, nil, pattern, itemMetaID).Result(); err != nil {
+	if err := k.client.Set(ctx, key, value, ttl).Err(); err != nil {
+		log.Printf("newspipeline: in-flight reverse index write failed key=%s: %v", key, err)
+	}
+}
+
+func (k *redisInflightKV) releaseOwned(ctx context.Context, orgID, itemMetaID, contentHash string) {
+	if k == nil || k.client == nil || itemMetaID == "" || contentHash == "" {
+		return
+	}
+	contentKey := inflightContentKey(orgID, contentHash)
+	ownerKey := inflightOwnerKey(orgID, itemMetaID)
+	if _, err := inflightReleaseScript.Run(ctx, k.client, []string{contentKey, ownerKey}, itemMetaID).Result(); err != nil {
 		log.Printf("newspipeline: in-flight release failed orgId=%s itemMetaId=%s: %v", orgID, itemMetaID, err)
 	}
 }
