@@ -51,7 +51,9 @@ type Service struct {
 	store      pipelineStore
 	outbox     OutboxDispatcher
 	snapshots  SnapshotRefresher
+	models     Models
 	config     RuntimeConfig
+	stageCache stageCache
 	now        func() time.Time
 	logf       func(format string, args ...any)
 
@@ -81,16 +83,25 @@ func New(opts Options) *Service {
 	settings := NewSettingsReader(opts.DB, opts.Redis, opts.Config)
 	builder := NewPromptBuilder()
 
+	// The stage cache key carries the provider and the settings-resolved
+	// completion model, resolved per stage call (see stageCacheModel). Without
+	// Redis the cache stays nil so every stage keeps its original behavior.
+	var cache stageCache
+	if opts.Redis != nil {
+		cache = newRedisStageCache(opts.Redis, opts.Config.Pipeline.StageCacheTTLSeconds, logf)
+	}
+
 	service := &Service{
 		settings: settings,
 		cleaner: NewCleaner(CleanerDeps{
-			DB:       opts.DB,
-			Mongo:    opts.Mongo,
-			Config:   opts.Config,
-			Models:   opts.Models,
-			Crawl:    opts.Crawl,
-			Settings: settings,
-			Now:      now,
+			DB:         opts.DB,
+			Mongo:      opts.Mongo,
+			Config:     opts.Config,
+			Models:     opts.Models,
+			Crawl:      opts.Crawl,
+			Settings:   settings,
+			StageCache: cache,
+			Now:        now,
 		}),
 		extractor: NewExtractor(opts.Models, builder),
 		deduper: NewDeduper(DeduperDeps{
@@ -99,6 +110,7 @@ func New(opts Options) *Service {
 			Vector:   opts.Vector,
 			Settings: settings,
 			Runtime:  opts.Config.Pipeline,
+			Redis:    opts.Redis,
 			Now:      now,
 			Random:   random,
 		}),
@@ -106,7 +118,9 @@ func New(opts Options) *Service {
 		store:      &pipelineMySQLStore{db: opts.DB, now: now},
 		outbox:     opts.Outbox,
 		snapshots:  opts.Snapshots,
+		models:     opts.Models,
 		config:     opts.Config.Pipeline,
+		stageCache: cache,
 		now:        now,
 		logf:       logf,
 		mongo:      opts.Mongo,

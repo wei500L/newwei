@@ -62,6 +62,7 @@ func (s *Service) processLegacyPipeline(ctx context.Context, job Job, raw RawIte
 			Payload:            payload,
 			Cleaned:            cleaned,
 			ContentDuplicateOf: cleanResult.ContentDuplicateOf,
+			ContentHash:        cleanResult.ContentHash,
 		})
 	}, nil)
 	if err != nil {
@@ -165,7 +166,9 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 
 	stagedCleaned := stripEnrichmentFields(cleanResult.Cleaned)
 	cleanProvider := "processed_cache"
-	if llm.Model != nil {
+	if cleanResult.StageCacheHit {
+		cleanProvider = "stage_cache"
+	} else if llm.Model != nil {
 		cleanProvider = "llm"
 	}
 	cleanEntry := NewStageMetaEntry("completed", &cleanProvider)
@@ -232,7 +235,7 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 		}, persistErrorData)
 	}
 
-	stagedCleaned = s.runIndependentEnrichmentStages(ctx, job, payload, article.CrawledArticle, stagedCleaned, settings)
+	stagedCleaned = s.runIndependentEnrichmentStages(ctx, job, payload, article.CrawledArticle, stagedCleaned, cleanResult.ContentHash, settings)
 
 	classified, err := s.runClassificationStage(ctx, job, payload, article.CrawledArticle, stagedCleaned)
 	if err != nil {
@@ -246,6 +249,7 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 			Payload:            payload,
 			Cleaned:            stagedCleaned,
 			ContentDuplicateOf: cleanResult.ContentDuplicateOf,
+			ContentHash:        cleanResult.ContentHash,
 		})
 	}, nil)
 	if err != nil {
@@ -293,8 +297,13 @@ func (s *Service) processStagedPipeline(ctx context.Context, job Job, raw RawIte
 // runIndependentEnrichmentStages is runIndependentEnrichmentStages: entities,
 // sentiment and kg are independent, failures are contained and recorded, and
 // the returned cleaned news carries the stage_meta entries.
-func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, payload NormalizedPayload, article CrawledArticle, cleaned CleanedNews, settings ExtractionSettings) CleanedNews {
+func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, payload NormalizedPayload, article CrawledArticle, cleaned CleanedNews, contentHash string, settings ExtractionSettings) CleanedNews {
 	promptConfig := s.settings.PromptConfig(ctx)
+	cacheModel := ""
+	cacheOK := false
+	if s.stageCache != nil {
+		cacheModel, cacheOK = s.stageCacheModel(ctx)
+	}
 	stageContext := StageContext{OrgID: job.OrgID, JobID: job.JobID}
 	language := cleaned.Language
 	if language == nil {
@@ -319,23 +328,41 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		stageMeta.Entities = entry
 		s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
 	} else {
-		entities, llmMetadata, err := s.extractor.ExtractEntities(ctx, stageContext, promptConfig, settings.Providers.Entities, promptInput)
-		if err != nil {
-			next.Entities = []Entity{}
-			entry := NewStageMetaEntry("failed", &settings.Providers.Entities)
-			entry.Reason = pipelineStageFailureReason(err, "entity_extraction_failed")
-			stageMeta.Entities = entry
-			s.logStageFailure(ctx, job, "extract_entities", nil, err)
-			s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
-		} else {
+		entitiesKey := ""
+		if cacheOK {
+			entitiesKey = s.stageCacheKey(job.OrgID, "entities", settings.Providers.Entities, contentHash, promptConfig.Version, cacheModel)
+		}
+		var cached entitiesStageCacheEntry
+		if s.loadStageCache(ctx, entitiesKey, &cached) {
+			entities := cached.Entities
 			if entities == nil {
 				entities = []Entity{}
 			}
 			next.Entities = entities
-			entry := NewStageMetaEntry("completed", &settings.Providers.Entities)
-			pipelineFillStageMetaLLM(entry, llmMetadata, promptConfig.Version)
+			entry := NewStageMetaEntry("completed", stringPointer("stage_cache"))
+			pipelineFillStageMetaLLM(entry, cached.LLM, promptConfig.Version)
 			stageMeta.Entities = entry
 			s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
+		} else {
+			entities, llmMetadata, err := s.extractor.ExtractEntities(ctx, stageContext, promptConfig, settings.Providers.Entities, promptInput)
+			if err != nil {
+				next.Entities = []Entity{}
+				entry := NewStageMetaEntry("failed", &settings.Providers.Entities)
+				entry.Reason = pipelineStageFailureReason(err, "entity_extraction_failed")
+				stageMeta.Entities = entry
+				s.logStageFailure(ctx, job, "extract_entities", nil, err)
+				s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
+			} else {
+				if entities == nil {
+					entities = []Entity{}
+				}
+				next.Entities = entities
+				entry := NewStageMetaEntry("completed", &settings.Providers.Entities)
+				pipelineFillStageMetaLLM(entry, llmMetadata, promptConfig.Version)
+				stageMeta.Entities = entry
+				s.recordStageOutcome(ctx, job, "extract_entities", entry, nil)
+				s.storeStageCache(ctx, entitiesKey, entitiesStageCacheEntry{Entities: entities, LLM: llmMetadata})
+			}
 		}
 	}
 
@@ -344,31 +371,68 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		stageMeta.Sentiment = entry
 		s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
 	} else {
-		label, llmMetadata, err := s.extractor.AnalyzeSentiment(ctx, stageContext, promptConfig, settings.Providers.Sentiment, promptInput)
-		if err != nil {
-			next.Sentiment = nil
-			next.SentimentLabel = nil
-			entry := NewStageMetaEntry("failed", &settings.Providers.Sentiment)
-			entry.Reason = pipelineStageFailureReason(err, "sentiment_extraction_failed")
-			stageMeta.Sentiment = entry
-			s.logStageFailure(ctx, job, "extract_sentiment", nil, err)
-			s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
-		} else {
+		sentimentKey := ""
+		if cacheOK {
+			sentimentKey = s.stageCacheKey(job.OrgID, "sentiment", settings.Providers.Sentiment, contentHash, promptConfig.Version, cacheModel)
+		}
+		var cached sentimentStageCacheEntry
+		if s.loadStageCache(ctx, sentimentKey, &cached) {
 			var labelPointer *string
-			if label != "" {
-				labelPointer = stringPointer(label)
+			if cached.Label != "" {
+				labelPointer = stringPointer(cached.Label)
 			}
 			next.Sentiment = labelPointer
 			next.SentimentLabel = labelPointer
-			entry := NewStageMetaEntry("completed", &settings.Providers.Sentiment)
-			pipelineFillStageMetaLLM(entry, llmMetadata, promptConfig.Version)
+			entry := NewStageMetaEntry("completed", stringPointer("stage_cache"))
+			pipelineFillStageMetaLLM(entry, cached.LLM, promptConfig.Version)
 			stageMeta.Sentiment = entry
 			s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
+		} else {
+			label, llmMetadata, err := s.extractor.AnalyzeSentiment(ctx, stageContext, promptConfig, settings.Providers.Sentiment, promptInput)
+			if err != nil {
+				next.Sentiment = nil
+				next.SentimentLabel = nil
+				entry := NewStageMetaEntry("failed", &settings.Providers.Sentiment)
+				entry.Reason = pipelineStageFailureReason(err, "sentiment_extraction_failed")
+				stageMeta.Sentiment = entry
+				s.logStageFailure(ctx, job, "extract_sentiment", nil, err)
+				s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
+			} else {
+				var labelPointer *string
+				if label != "" {
+					labelPointer = stringPointer(label)
+				}
+				next.Sentiment = labelPointer
+				next.SentimentLabel = labelPointer
+				entry := NewStageMetaEntry("completed", &settings.Providers.Sentiment)
+				pipelineFillStageMetaLLM(entry, llmMetadata, promptConfig.Version)
+				stageMeta.Sentiment = entry
+				s.recordStageOutcome(ctx, job, "extract_sentiment", entry, nil)
+				s.storeStageCache(ctx, sentimentKey, sentimentStageCacheEntry{Label: label, LLM: llmMetadata})
+			}
 		}
 	}
 
 	if !settings.Capabilities.KG {
 		entry := NewStageMetaEntryWithReason("skipped", &settings.Providers.KG, "capability_disabled")
+		stageMeta.KG = entry
+		s.recordStageOutcome(ctx, job, "extract_kg", entry, nil)
+		return next
+	}
+
+	kgKey := ""
+	if cacheOK {
+		kgKey = s.stageCacheKey(job.OrgID, "kg", settings.Providers.KG, contentHash, promptConfig.Version, cacheModel)
+	}
+	var cachedKG kgStageCacheEntry
+	if s.loadStageCache(ctx, kgKey, &cachedKG) {
+		relations := cachedKG.Relations
+		if relations == nil {
+			relations = []KGRelation{}
+		}
+		next.KGRelations = relations
+		entry := NewStageMetaEntry("completed", stringPointer("stage_cache"))
+		pipelineFillStageMetaLLM(entry, cachedKG.LLM, promptConfig.Version)
 		stageMeta.KG = entry
 		s.recordStageOutcome(ctx, job, "extract_kg", entry, nil)
 		return next
@@ -393,6 +457,7 @@ func (s *Service) runIndependentEnrichmentStages(ctx context.Context, job Job, p
 		pipelineFillStageMetaLLM(entry, llmMetadata, promptConfig.Version)
 		stageMeta.KG = entry
 		s.recordStageOutcome(ctx, job, "extract_kg", entry, nil)
+		s.storeStageCache(ctx, kgKey, kgStageCacheEntry{Relations: relations, LLM: llmMetadata})
 	}
 	return next
 }

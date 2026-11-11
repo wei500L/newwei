@@ -63,6 +63,9 @@ type Processor struct {
 	sourceFailure SourceFailureConfig
 	now           func() time.Time
 	random        func() float64
+	// releaseInflight removes the item's own in-flight dedupe registrations
+	// when the job reaches its final failure. Nil when Redis is not configured.
+	releaseInflight func(ctx context.Context, orgID, itemMetaID string)
 }
 
 // NewProcessor builds the processor. Redis is only required for the DLQ
@@ -102,6 +105,10 @@ func NewProcessor(options ProcessorOptions) (*Processor, error) {
 			return nil, err
 		}
 		processor.dlq = producer
+		redisClient := options.Redis
+		processor.releaseInflight = func(ctx context.Context, orgID, itemMetaID string) {
+			newspipeline.ReleaseInflightRegistrations(ctx, redisClient, orgID, itemMetaID)
+		}
 	}
 	return processor, nil
 }
@@ -246,6 +253,13 @@ func (p *Processor) HandleFailure(ctx context.Context, job Job, failure FailureI
 	})
 	if !shouldSendToDLQ {
 		return
+	}
+
+	// Final failure: this item will never persist, so release its own in-flight
+	// dedupe registration. Otherwise a later same-content item would be marked a
+	// duplicate of an owner that produced nothing. Best effort only.
+	if p.releaseInflight != nil {
+		p.releaseInflight(ctx, orgID, itemMetaID)
 	}
 
 	originalJobID := job.ID

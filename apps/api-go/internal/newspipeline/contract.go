@@ -263,6 +263,10 @@ type CleanResult struct {
 	ProcessedArticleID   *string
 	ContentDuplicateOf   *string
 	ArticleMetadataPatch json.RawMessage
+	// StageCacheHit reports that the clean product came from the short-lived
+	// Redis stage cache rather than a fresh model call. The staged pipeline
+	// stamps stage_meta.clean.provider = "stage_cache" when it is set.
+	StageCacheHit bool
 }
 
 // PersistInput is persistProcessedResult's input.
@@ -438,6 +442,13 @@ type RuntimeConfig struct {
 	SummaryDedupMaxCandidates int
 	SummaryDedupMinChars      int
 	OutboxDeliveryConcurrency int
+	// StageCacheTTLSeconds bounds how long a successful LLM stage product is
+	// cached so a BullMQ retry reuses it instead of paying for the same calls
+	// again. Zero disables the stage cache.
+	StageCacheTTLSeconds int
+	// InflightTTLSeconds bounds how long an in-flight dedupe registration lives
+	// so concurrent near-identical items see each other before either persists.
+	InflightTTLSeconds int
 }
 
 // LiteLLMConfig is LiteLlmConfig: the config-file and env LiteLLM defaults.
@@ -504,6 +515,11 @@ type DedupeInput struct {
 	Payload            NormalizedPayload
 	Cleaned            CleanedNews
 	ContentDuplicateOf *string
+	// ContentHash is the clean stage's hash of the crawled body. The dedupe
+	// stage uses it (with the normalized title) for the in-flight duplicate
+	// registry that catches concurrent near-identical items before either
+	// persists.
+	ContentHash string
 }
 
 // SettingsProvider is the org-scoped settings surface (SettingsReader).
@@ -521,6 +537,10 @@ type Models interface {
 	Rerank(ctx context.Context, req litellmcompat.RerankRequest) (litellmcompat.RerankResponse, error)
 	RuntimeEmbeddingModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
 	RuntimeRerankModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
+	// RuntimeCompletionModel reports the settings-resolved completion model the
+	// next completion call would use. The stage cache keys on it so a model
+	// change (not just the env default) misses the old product.
+	RuntimeCompletionModel(ctx context.Context) (litellmcompat.RuntimeModel, error)
 	CompletionTimeoutMS(ctx context.Context) (int, error)
 }
 

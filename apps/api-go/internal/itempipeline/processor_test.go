@@ -3,6 +3,7 @@ package itempipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/wei500L/newwei/apps/api-go/internal/newspipeline"
@@ -100,5 +101,38 @@ func TestResolveProcessedItemIDIsStableAcrossRetries(t *testing.T) {
 	legacy := Payload{OrgID: "org-1", ItemMetaID: "meta-1", RawItemID: "507f1f77bcf86cd799439022"}
 	if got := processor.resolveProcessedItemID(context.Background(), legacy); got != legacy.RawItemID {
 		t.Fatalf("legacy raw id = %q, want %q", got, legacy.RawItemID)
+	}
+}
+
+// TestHandleFailureReleasesInflightOnlyOnFinalFailure verifies the failure
+// listener releases the item's own in-flight dedupe registration only when the
+// job is going to the dead letter queue, not on a retryable failure.
+func TestHandleFailureReleasesInflightOnlyOnFinalFailure(t *testing.T) {
+	processor := newTestProcessor(t, &fakePipeline{})
+	calls := 0
+	var gotOrgID, gotItemMetaID string
+	processor.releaseInflight = func(_ context.Context, orgID, itemMetaID string) {
+		calls++
+		gotOrgID = orgID
+		gotItemMetaID = itemMetaID
+	}
+	job := Job{
+		ID:      "job-1",
+		Payload: Payload{RawItemID: "507f1f77bcf86cd799439011", ItemMetaID: "m1", OrgID: "o1"},
+		Data:    json.RawMessage(`{"rawItemId":"507f1f77bcf86cd799439011","itemMetaId":"m1","orgId":"o1"}`),
+		Opts:    JobOptions{Attempts: 5},
+	}
+
+	// Permanent failure is final: it goes to the DLQ and must release.
+	processor.HandleFailure(context.Background(), job, FailureInfo{Cause: NewPermanentError("boom"), RemainingAttempts: 4})
+	if calls != 1 || gotOrgID != "o1" || gotItemMetaID != "m1" {
+		t.Fatalf("final failure release calls=%d org=%q item=%q, want 1/o1/m1", calls, gotOrgID, gotItemMetaID)
+	}
+
+	// A retryable failure keeps the registration so the retry recognises itself.
+	calls = 0
+	processor.HandleFailure(context.Background(), job, FailureInfo{Cause: errors.New("transient"), RemainingAttempts: 4})
+	if calls != 0 {
+		t.Fatalf("retryable failure must not release, calls=%d", calls)
 	}
 }

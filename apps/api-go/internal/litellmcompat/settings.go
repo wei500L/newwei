@@ -393,6 +393,22 @@ func (c *Client) RuntimeRerankModel(ctx context.Context) (RuntimeModel, error) {
 	return RuntimeModel{Model: model, Configured: model != ""}, nil
 }
 
+// RuntimeCompletionModel reports the completion model resolveCompletion would
+// select for the next call, so callers can key per-model caches on the effective
+// settings-resolved model rather than a process-wide env default. A missing
+// profile is (not configured); a configuration read failure is an error.
+func (c *Client) RuntimeCompletionModel(ctx context.Context) (RuntimeModel, error) {
+	profile, err := c.resolveCompletion(ctx)
+	if errors.Is(err, ErrCompletionUnavailable) {
+		return RuntimeModel{}, nil
+	}
+	if err != nil {
+		return RuntimeModel{}, err
+	}
+	model := strings.TrimSpace(profile.Model)
+	return RuntimeModel{Model: model, Configured: model != ""}, nil
+}
+
 // managedGovernance is the resolved litellm_proxy_governance state.
 type managedGovernance struct {
 	Enabled  bool

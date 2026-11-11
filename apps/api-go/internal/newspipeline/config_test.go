@@ -331,3 +331,24 @@ func TestCrawlerDefaultsJSONDecodes(t *testing.T) {
 		t.Fatalf("disabled virtual scroll must be omitted")
 	}
 }
+
+func TestLoadConfigStageCacheAndInflightDefaults(t *testing.T) {
+	config := LoadConfig(envFrom(nil), "")
+	if config.Pipeline.StageCacheTTLSeconds != 86_400 {
+		t.Fatalf("stage cache ttl default = %d", config.Pipeline.StageCacheTTLSeconds)
+	}
+	if config.Pipeline.InflightTTLSeconds != 600 {
+		t.Fatalf("inflight ttl default = %d", config.Pipeline.InflightTTLSeconds)
+	}
+
+	overridden := LoadConfig(envFrom(map[string]string{
+		"NEWS_PIPELINE_STAGE_CACHE_TTL_SECONDS": "120",
+		"NEWS_PIPELINE_INFLIGHT_TTL_SECONDS":    "30",
+	}), "")
+	if overridden.Pipeline.StageCacheTTLSeconds != 120 {
+		t.Fatalf("stage cache ttl env override = %d", overridden.Pipeline.StageCacheTTLSeconds)
+	}
+	if overridden.Pipeline.InflightTTLSeconds != 30 {
+		t.Fatalf("inflight ttl env override = %d", overridden.Pipeline.InflightTTLSeconds)
+	}
+}

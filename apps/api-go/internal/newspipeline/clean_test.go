@@ -186,6 +186,10 @@ type contentTestModels struct {
 	requests    []litellmcompat.CompletionRequest
 	timeoutMS   int
 	timeoutErr  error
+	// completionModel is returned by RuntimeCompletionModel so the stage cache
+	// key can be driven across a model change in tests.
+	completionModel string
+	modelErr        error
 }
 
 func (m *contentTestModels) Completion(_ context.Context, req litellmcompat.CompletionRequest) (litellmcompat.CompletionResponse, error) {
@@ -213,6 +217,15 @@ func (m *contentTestModels) RuntimeEmbeddingModel(context.Context) (litellmcompa
 
 func (m *contentTestModels) RuntimeRerankModel(context.Context) (litellmcompat.RuntimeModel, error) {
 	return litellmcompat.RuntimeModel{}, nil
+}
+
+func (m *contentTestModels) RuntimeCompletionModel(context.Context) (litellmcompat.RuntimeModel, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.modelErr != nil {
+		return litellmcompat.RuntimeModel{}, m.modelErr
+	}
+	return litellmcompat.RuntimeModel{Model: m.completionModel, Configured: m.completionModel != ""}, nil
 }
 
 func (m *contentTestModels) CompletionTimeoutMS(context.Context) (int, error) {
@@ -799,5 +812,142 @@ func TestAssessPipelineMarkdownQualityFlagsListPages(t *testing.T) {
 	emptyQuality := assessPipelineMarkdownQuality("   ")
 	if emptyQuality.Words != 0 || emptyQuality.IsListLike {
 		t.Fatalf("empty quality = %+v", emptyQuality)
+	}
+}
+
+// --- stage product cache (D2) ----------------------------------------------
+
+// cleanCacheTestResponse is a complete clean response so the repair call is not
+// triggered: title, author, source and published_at are all present.
+func cleanCacheTestResponse() litellmcompat.CompletionResponse {
+	return litellmcompat.CompletionResponse{
+		Content: `{"cleaned_markdown":"# A\n\nBody","title":"A","author":"Au","source":"Src","published_at":"2024-01-02T03:04:05Z"}`,
+		Model:   "gpt-clean",
+		Usage: litellmcompat.Usage{
+			PromptTokens:     floatPointer(10),
+			CompletionTokens: floatPointer(20),
+			TotalTokens:      floatPointer(30),
+			CostUSD:          floatPointer(0.001),
+		},
+	}
+}
+
+// TestCleanArticleStageCacheSkipsSecondModelCall reproduces the D2 defect: a
+// retry after a later stage failed must reuse the cached clean product instead
+// of calling the clean model again.
+func TestCleanArticleStageCacheSkipsSecondModelCall(t *testing.T) {
+	models := &contentTestModels{completions: []contentTestCompletion{{response: cleanCacheTestResponse()}}}
+	crawl := &contentTestCrawl{}
+	cleaner, sqlFake, _ := contentTestCleaner(t, models, crawl)
+	cleaner.stageCache = newMemoryStageCache()
+	sqlFake.queryRowFn = func(string, []any) contentRow { return contentTestRow{} }
+
+	payload := NormalizedPayload{URL: "https://example.com/a"}
+	article := CrawledArticle{SourceURL: payload.URL, Markdown: "# A\n\nBody", ContentHash: "hash-clean-cache"}
+
+	first, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("first CleanArticle: %v", err)
+	}
+	if len(models.requests) != 1 {
+		t.Fatalf("first clean model calls = %d, want 1", len(models.requests))
+	}
+	if first.StageCacheHit {
+		t.Fatalf("first run must not report a stage cache hit")
+	}
+
+	second, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("second CleanArticle: %v", err)
+	}
+	if len(models.requests) != 1 {
+		t.Fatalf("cached clean must not call the model again, got %d calls", len(models.requests))
+	}
+	if !second.StageCacheHit {
+		t.Fatalf("second run must report a stage cache hit")
+	}
+	if second.LLM.Model == nil || *second.LLM.Model != "gpt-clean" {
+		t.Fatalf("cached llm model = %v", second.LLM.Model)
+	}
+	if second.LLM.TotalTokens == nil || *second.LLM.TotalTokens != 30 {
+		t.Fatalf("cached total tokens = %v", second.LLM.TotalTokens)
+	}
+	if !pipelineEqualStringPointer(first.Cleaned.Title, second.Cleaned.Title) ||
+		!pipelineEqualStringPointer(first.Cleaned.Summary, second.Cleaned.Summary) ||
+		first.Cleaned.CleanedMarkdown != second.Cleaned.CleanedMarkdown {
+		t.Fatalf("cached cleaned differs from the first run:\nfirst=%#v\nsecond=%#v", first.Cleaned, second.Cleaned)
+	}
+	if string(first.ArticleMetadataPatch) != string(second.ArticleMetadataPatch) {
+		t.Fatalf("cached metadata patch differs: %s vs %s", first.ArticleMetadataPatch, second.ArticleMetadataPatch)
+	}
+}
+
+// TestCleanArticleStageCacheUnavailableStillCleans verifies the cache is a pure
+// optimization: with no cache wired the clean stage calls the model every run
+// and still succeeds.
+func TestCleanArticleStageCacheUnavailableStillCleans(t *testing.T) {
+	models := &contentTestModels{completions: []contentTestCompletion{
+		{response: cleanCacheTestResponse()},
+		{response: cleanCacheTestResponse()},
+	}}
+	crawl := &contentTestCrawl{}
+	cleaner, sqlFake, _ := contentTestCleaner(t, models, crawl)
+	cleaner.stageCache = nil
+	sqlFake.queryRowFn = func(string, []any) contentRow { return contentTestRow{} }
+
+	payload := NormalizedPayload{URL: "https://example.com/a"}
+	article := CrawledArticle{SourceURL: payload.URL, Markdown: "# A\n\nBody", ContentHash: "hash-clean-nocache"}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm"); err != nil {
+			t.Fatalf("CleanArticle attempt %d with no cache: %v", attempt, err)
+		}
+	}
+	if len(models.requests) != 2 {
+		t.Fatalf("without a cache each run should call the model, got %d calls", len(models.requests))
+	}
+}
+
+// TestCleanArticleStageCacheMissesAfterModelChange covers the review fix: the
+// cache key includes the settings-resolved completion model, so switching the
+// model must miss the old product and call the model again.
+func TestCleanArticleStageCacheMissesAfterModelChange(t *testing.T) {
+	models := &contentTestModels{completions: []contentTestCompletion{
+		{response: cleanCacheTestResponse()},
+		{response: cleanCacheTestResponse()},
+	}}
+	models.completionModel = "model-a"
+	crawl := &contentTestCrawl{}
+	cleaner, sqlFake, _ := contentTestCleaner(t, models, crawl)
+	cleaner.stageCache = newMemoryStageCache()
+	sqlFake.queryRowFn = func(string, []any) contentRow { return contentTestRow{} }
+
+	payload := NormalizedPayload{URL: "https://example.com/a"}
+	article := CrawledArticle{SourceURL: payload.URL, Markdown: "# A\n\nBody", ContentHash: "hash-model-change"}
+
+	first, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("first CleanArticle: %v", err)
+	}
+	if len(models.requests) != 1 || first.StageCacheHit {
+		t.Fatalf("first run calls=%d hit=%v, want 1/false", len(models.requests), first.StageCacheHit)
+	}
+
+	models.mu.Lock()
+	models.completionModel = "model-b"
+	models.mu.Unlock()
+	second, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("second CleanArticle: %v", err)
+	}
+	if len(models.requests) != 2 || second.StageCacheHit {
+		t.Fatalf("model change must miss the cache: calls=%d hit=%v, want 2/false", len(models.requests), second.StageCacheHit)
+	}
+
+	third, err := cleaner.CleanArticle(context.Background(), payload, article, contentTestJob(), "llm")
+	if err != nil {
+		t.Fatalf("third CleanArticle: %v", err)
+	}
+	if len(models.requests) != 2 || !third.StageCacheHit {
+		t.Fatalf("same model must hit the second product: calls=%d hit=%v, want 2/true", len(models.requests), third.StageCacheHit)
 	}
 }
